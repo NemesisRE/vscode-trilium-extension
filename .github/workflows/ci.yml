@@ -57,6 +57,13 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Update package.json version to match release tag
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          npm version "$VERSION" --no-git-tag-version --allow-same-version
+        env:
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+
       - name: Package VSIX
         run: npx @vscode/vsce package --no-dependencies
 

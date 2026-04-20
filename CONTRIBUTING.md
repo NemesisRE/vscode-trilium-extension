@@ -115,14 +115,12 @@ Releases are managed through GitHub's release UI, assisted by [Release Drafter](
 
 2. **Draft release** — Release Drafter automatically maintains a draft release at the top of the [Releases page](https://github.com/NemesisRE/vscode-trilium-extension/releases). Review the draft, edit the title/notes if needed.
 
-3. **Update `package.json` `"version"`** to match the version shown in the draft (e.g. `1.0.0`). Commit and merge to `main`.
+3. **Publish the draft release** on GitHub. This triggers the `release` event in CI.
 
-4. **Publish the draft release** on GitHub. This triggers the `release` event in CI.
-
-5. **CI runs automatically** — the `package` job builds the VSIX, uploads it as a workflow artifact, and attaches it to the GitHub Release as a downloadable asset.
+4. **CI runs automatically** — the `package` job extracts the version from the release tag, updates `package.json` automatically, builds the VSIX, and attaches it to the GitHub Release as a downloadable asset.
 
 The `.vsix` file is named `trilium-notes-<version>.vsix` and appears in the release assets within a few minutes of publishing.
 
-### Version alignment
+### Version synchronization
 
-The version in `package.json` must match the Git tag that Release Drafter generates (e.g. tag `v1.0.0` ↔ `"version": "1.0.0"`). Mismatches will produce a VSIX with the wrong internal version.
+The CI workflow automatically extracts the version from the Git tag (e.g., `v1.0.1` → `1.0.1`) and updates `package.json` before building. You don't need to manually update `package.json` before creating a release — the tag is the single source of truth.
