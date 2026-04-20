@@ -13,7 +13,7 @@ const buildOptions = {
   platform: 'node',
   sourcemap: !production,
   minify: production,
-  target: 'node22',
+  target: 'node24',
   logLevel: 'info',
 };
 
