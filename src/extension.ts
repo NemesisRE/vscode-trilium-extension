@@ -73,7 +73,40 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
 
     vscode.commands.registerCommand('trilium.createNote', async (item?: NoteItem) => {
-      await createNoteOfType('text', undefined, item, treeProvider, tempFileManager);
+      interface NoteTypeOption extends vscode.QuickPickItem {
+        type: 'text' | 'code' | 'mermaid' | 'canvas' | 'mindMap';
+      }
+      const NOTE_TYPE_OPTIONS: NoteTypeOption[] = [
+        { label: '$(edit) Text Note', type: 'text' },
+        { label: '$(code) Code Note', type: 'code' },
+        { label: '$(type-hierarchy) Mermaid Diagram', type: 'mermaid' },
+        { label: '$(symbol-misc) Canvas (Excalidraw)', type: 'canvas' },
+        { label: '$(type-hierarchy-sub) Mind Map', type: 'mindMap' },
+      ];
+      const typePick = await vscode.window.showQuickPick(NOTE_TYPE_OPTIONS, {
+        title: 'New Note — select type',
+        ignoreFocusOut: true,
+      });
+      if (!typePick) { return; }
+
+      if (typePick.type === 'code') {
+        const langPick = await vscode.window.showQuickPick(CODE_LANGUAGE_OPTIONS, {
+          title: 'Select code language',
+          placeHolder: 'Language',
+          ignoreFocusOut: true,
+        });
+        if (!langPick) { return; }
+        await createNoteOfType('code', langPick.mime, item, treeProvider, tempFileManager);
+        return;
+      }
+
+      const defaults: Partial<Record<NoteTypeOption['type'], string>> = {
+        mermaid: 'graph TD\n    A[Start] --> B[End]',
+        canvas: JSON.stringify({ type: 'excalidraw', version: 2, elements: [], appState: {} }),
+        mindMap: JSON.stringify({ nodeData: { id: 'root', topic: 'Mind Map', children: [] } }),
+      };
+      await createNoteOfType(typePick.type, undefined, item, treeProvider, tempFileManager,
+        defaults[typePick.type] ?? '');
     }),
 
     vscode.commands.registerCommand('trilium.createNoteText', async (item?: NoteItem) => {

@@ -160,7 +160,7 @@
     "menus": {
       "view/title/context": [
         {
-          "submenu": "trilium.newNoteSubmenu",
+          "command": "trilium.createNote",
           "when": "view == triliumNoteTree",
           "group": "navigation"
         }
