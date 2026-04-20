@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+
+# Build output
+out/
+
+# Packaged extension
+*.vsix
+
+# TypeScript incremental build info
+*.tsbuildinfo
+
+# VS Code test runner artifacts
+.vscode-test/
+
+# Environment / secrets
+.env
+.env.*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/*
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/settings.json
+!.vscode/tasks.json
+
+# Logs
+npm-debug.log*
+

@@ -1,0 +1,7 @@
+{
+  "globs": ["**/*.md"],
+  "config": {
+    "default": true
+  },
+  "ignores": ["LICENSE"]
+}

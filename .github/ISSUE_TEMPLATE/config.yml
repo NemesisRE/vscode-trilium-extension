@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Trilium Notes Documentation
+    url: https://github.com/zadam/trilium/wiki
+    about: For questions about Trilium Notes itself, please check the upstream wiki.
+  - name: ETAPI Reference
+    url: https://triliumnotes.org/api
+    about: REST API documentation for Trilium ETAPI.

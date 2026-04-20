@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none">
+  <!-- Trunk -->
+  <line x1="8" y1="13" x2="8" y2="7" stroke="#C8A400" stroke-width="1.4" stroke-linecap="round"/>
+  <!-- Three leaf clusters (Trilium motif) -->
+  <circle cx="8"  cy="4"  r="2.8" fill="#C8A400" opacity="0.95"/>
+  <circle cx="4"  cy="10" r="2.4" fill="#C8A400" opacity="0.85"/>
+  <circle cx="12" cy="10" r="2.4" fill="#C8A400" opacity="0.85"/>
+  <!-- Branch lines -->
+  <line x1="8" y1="8" x2="4.5"  y2="9"  stroke="#C8A400" stroke-width="1.1" stroke-linecap="round"/>
+  <line x1="8" y1="8" x2="11.5" y2="9"  stroke="#C8A400" stroke-width="1.1" stroke-linecap="round"/>
+</svg>
