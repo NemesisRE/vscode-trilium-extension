@@ -61,7 +61,7 @@ jobs:
         run: npx @vscode/vsce package --no-dependencies
 
       - name: Upload VSIX artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: trilium-notes-vsix
           path: '*.vsix'
