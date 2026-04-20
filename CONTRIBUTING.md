@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- **Node.js** 22 (matches CI)
+- **Node.js** 24 (matches CI)
 - **npm** (comes with Node.js)
 - **VS Code** 1.116 or later (desktop)
 - **npx** / **@vscode/vsce** — installed automatically via `npm ci`
