@@ -114,7 +114,7 @@ export class AttributesViewProvider implements vscode.WebviewViewProvider {
           }
         }
       } catch (err) {
-        void vscode.window.showErrorMessage(`Trilium: Failed to update attribute: ${err}`);
+        void vscode.window.showErrorMessage(`Trilium: Operation failed: ${err}`);
       }
     });
 
