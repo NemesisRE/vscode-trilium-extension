@@ -106,18 +106,21 @@ Select any note in the tree to see its **labels**, **relations**, and **attachme
 ### Revision History
 
 Right-click any note and choose **Show Note Revisions…** to see all saved revisions, most recent first. For each revision you can:
+
 - Click the **(→)** button or press Enter to open the revision in a read-only tab.
 - Click the **(⊟)** button to open a diff view comparing the revision against the current note content.
 
 ### Clone & Move Notes
 
 Right-click any note in the tree for these placement commands:
+
 - **Clone Note…** — places the note in a second location in the tree (Trilium's linked-note model). A live-search picker lets you choose the destination parent.
 - **Move Note…** — moves the note to a new parent by creating the new branch and deleting the old one. Moving is blocked if the note has only one location (which would effectively delete it); use Clone in that case.
 
 ### Export Subtree
 
 Right-click any note and choose **Export Subtree…** to export the note and all its descendants as a ZIP archive. Two formats are available:
+
 - **HTML ZIP** — full HTML export with embedded assets.
 - **Markdown ZIP** — plain-text Markdown export.
 
