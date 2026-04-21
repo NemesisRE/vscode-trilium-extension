@@ -102,6 +102,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }
   }
 
+  function updateTreeDescription(info: AppInfo | undefined): void {
+    treeView.description = info ? `Trilium v${info.appVersion}` : 'Not connected';
+  }
+
   const treeView = vscode.window.createTreeView('triliumNoteTree', {
     treeDataProvider: treeProvider,
     showCollapseAll: true,
@@ -114,6 +118,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // Attempt to restore a previously stored connection on activation.
   const initialInfo = await tryConnect(context.secrets, treeProvider);
   updateStatusBar(initialInfo);
+  updateTreeDescription(initialInfo);
   attributesProvider.setClient(treeProvider.getClient());
 
   context.subscriptions.push(
@@ -129,6 +134,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand('trilium.connect', async () => {
       const info = await runConnectWizard(context.secrets, treeProvider);
       updateStatusBar(info);
+      updateTreeDescription(info);
       attributesProvider.setClient(treeProvider.getClient());
     }),
 
