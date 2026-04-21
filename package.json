@@ -308,16 +308,6 @@
           "command": "trilium.refresh",
           "when": "view == triliumNoteTree",
           "group": "navigation"
-        },
-        {
-          "command": "trilium.connect",
-          "when": "view == triliumNoteTree && !trilium.connected",
-          "group": "navigation"
-        },
-        {
-          "command": "trilium.reconnect",
-          "when": "view == triliumNoteTree && trilium.connected",
-          "group": "navigation"
         }
       ],
       "trilium.newNoteSubmenu": [
