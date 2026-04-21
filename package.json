@@ -17,6 +17,18 @@
   ],
   "main": "./out/extension.js",
   "contributes": {
+    "customEditors": [
+      {
+        "viewType": "trilium.textEditor",
+        "displayName": "Trilium Text Editor",
+        "selector": [
+          {
+            "filenamePattern": "*.trilium-text"
+          }
+        ],
+        "priority": "default"
+      }
+    ],
     "viewsContainers": {
       "activitybar": [
         {
@@ -65,6 +77,12 @@
         "command": "trilium.openNoteAsHtml",
         "title": "Open as HTML",
         "icon": "$(file-code)",
+        "category": "Trilium"
+      },
+      {
+        "command": "trilium.openNoteAsMarkdown",
+        "title": "Open as Markdown",
+        "icon": "$(markdown)",
         "category": "Trilium"
       },
       {
@@ -155,6 +173,11 @@
         "id": "trilium.newNoteSubmenu",
         "label": "New Note...",
         "icon": "$(add)"
+      },
+      {
+        "id": "trilium.openAsSubmenu",
+        "label": "Open as...",
+        "icon": "$(file-code)"
       }
     ],
     "menus": {
@@ -193,11 +216,36 @@
         }
       ],
       "trilium.newNoteSubmenu": [
-        { "command": "trilium.createNoteText", "group": "types@1" },
-        { "command": "trilium.createNoteCode", "group": "types@2" },
-        { "command": "trilium.createNoteMermaid", "group": "types@3" },
-        { "command": "trilium.createNoteCanvas", "group": "types@4" },
-        { "command": "trilium.createNoteMindMap", "group": "types@5" }
+        {
+          "command": "trilium.createNoteText",
+          "group": "types@1"
+        },
+        {
+          "command": "trilium.createNoteCode",
+          "group": "types@2"
+        },
+        {
+          "command": "trilium.createNoteMermaid",
+          "group": "types@3"
+        },
+        {
+          "command": "trilium.createNoteCanvas",
+          "group": "types@4"
+        },
+        {
+          "command": "trilium.createNoteMindMap",
+          "group": "types@5"
+        }
+      ],
+      "trilium.openAsSubmenu": [
+        {
+          "command": "trilium.openNoteAsMarkdown",
+          "group": "formats@1"
+        },
+        {
+          "command": "trilium.openNoteAsHtml",
+          "group": "formats@2"
+        }
       ],
       "view/item/context": [
         {
@@ -226,7 +274,7 @@
           "group": "navigation@1"
         },
         {
-          "command": "trilium.openNoteAsHtml",
+          "submenu": "trilium.openAsSubmenu",
           "when": "viewItem == noteText",
           "group": "navigation@2"
         },
@@ -317,10 +365,18 @@
         "name": "trilium_createNote",
         "displayName": "Create Trilium Note",
         "modelDescription": "Creates a single note in Trilium Notes. Supports types: text (rich HTML), code (source code with language), mermaid (diagram), canvas (Excalidraw drawing). Returns the new noteId.",
-        "tags": ["trilium", "notes", "create"],
+        "tags": [
+          "trilium",
+          "notes",
+          "create"
+        ],
         "inputSchema": {
           "type": "object",
-          "required": ["title", "type", "content"],
+          "required": [
+            "title",
+            "type",
+            "content"
+          ],
           "properties": {
             "parentNoteId": {
               "type": "string",
@@ -332,7 +388,12 @@
             },
             "type": {
               "type": "string",
-              "enum": ["text", "code", "mermaid", "canvas"],
+              "enum": [
+                "text",
+                "code",
+                "mermaid",
+                "canvas"
+              ],
               "description": "Note type. 'text'=rich HTML, 'code'=source code, 'mermaid'=Mermaid diagram syntax, 'canvas'=Excalidraw JSON."
             },
             "content": {
@@ -350,10 +411,17 @@
         "name": "trilium_importNotes",
         "displayName": "Import Notes Tree to Trilium",
         "modelDescription": "Recursively creates an entire hierarchy of notes in Trilium Notes from a JSON spec. Use this when the user asks to create documentation, a set of notes, or any multi-level note structure. Returns the total number of notes created.",
-        "tags": ["trilium", "notes", "import", "documentation"],
+        "tags": [
+          "trilium",
+          "notes",
+          "import",
+          "documentation"
+        ],
         "inputSchema": {
           "type": "object",
-          "required": ["notes"],
+          "required": [
+            "notes"
+          ],
           "properties": {
             "parentNoteId": {
               "type": "string",
@@ -370,20 +438,38 @@
           "$defs": {
             "NoteImportSpec": {
               "type": "object",
-              "required": ["title"],
+              "required": [
+                "title"
+              ],
               "properties": {
-                "title": { "type": "string", "description": "Note title." },
+                "title": {
+                  "type": "string",
+                  "description": "Note title."
+                },
                 "type": {
                   "type": "string",
-                  "enum": ["text", "code", "mermaid", "canvas"],
+                  "enum": [
+                    "text",
+                    "code",
+                    "mermaid",
+                    "canvas"
+                  ],
                   "description": "Note type. Defaults to 'text'."
                 },
-                "mime": { "type": "string", "description": "MIME type for code notes (e.g. 'text/javascript')." },
-                "content": { "type": "string", "description": "Note body (HTML for text, Mermaid syntax for mermaid, Excalidraw JSON for canvas, raw source for code)." },
+                "mime": {
+                  "type": "string",
+                  "description": "MIME type for code notes (e.g. 'text/javascript')."
+                },
+                "content": {
+                  "type": "string",
+                  "description": "Note body (HTML for text, Mermaid syntax for mermaid, Excalidraw JSON for canvas, raw source for code)."
+                },
                 "children": {
                   "type": "array",
                   "description": "Child notes to create recursively under this note.",
-                  "items": { "$ref": "#/$defs/NoteImportSpec" }
+                  "items": {
+                    "$ref": "#/$defs/NoteImportSpec"
+                  }
                 }
               }
             }
@@ -405,6 +491,18 @@
           "type": "string",
           "default": "http://localhost:8080",
           "description": "URL of the Trilium Notes server (e.g. http://localhost:8080)"
+        },
+        "trilium.editor.fontSize": {
+          "type": "number",
+          "default": 14,
+          "minimum": 8,
+          "maximum": 32,
+          "description": "Font size in pixels for the CKEditor content area."
+        },
+        "trilium.editor.spellcheck": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable the browser's built-in spellcheck in the CKEditor content area."
         }
       }
     }
@@ -434,6 +532,7 @@
     "typescript": "^6.0.3"
   },
   "dependencies": {
+    "@ckeditor/ckeditor5-build-classic": "^44.3.0",
     "marked": "^18.0.2",
     "turndown": "^7.2.4"
   }

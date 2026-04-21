@@ -20,3 +20,11 @@ export async function storeToken(secrets: vscode.SecretStorage, token: string): 
 export async function deleteToken(secrets: vscode.SecretStorage): Promise<void> {
   await secrets.delete(SECRET_KEY);
 }
+
+export function getEditorFontSize(): number {
+  return vscode.workspace.getConfiguration('trilium').get<number>('editor.fontSize', 14);
+}
+
+export function getEditorSpellcheck(): boolean {
+  return vscode.workspace.getConfiguration('trilium').get<boolean>('editor.spellcheck', false);
+}
