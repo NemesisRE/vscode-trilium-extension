@@ -5,6 +5,8 @@ import { NoteItem, NoteTreeProvider, NoteTreeDecorationProvider } from './noteTr
 import { getServerUrl, getToken, storeToken } from './settings';
 import { TempFileManager } from './tempFileManager';
 import { AttributesViewProvider } from './attributesViewProvider';
+import { TriliumTextEditorProvider } from './triliumTextEditorProvider';
+import { VirtualDocumentProvider, createVirtualDocumentUri } from './virtualDocumentProvider';
 
 type Note = import('./etapiClient').Note;
 
@@ -42,6 +44,30 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const tempFileManager = new TempFileManager();
   const treeProvider = new NoteTreeProvider();
   const attributesProvider = new AttributesViewProvider();
+
+  // Register virtual document provider for trilium-text:// URIs
+  const virtualDocProvider = new VirtualDocumentProvider(() => treeProvider.getClient());
+  context.subscriptions.push(
+    vscode.workspace.registerTextDocumentContentProvider('trilium-text', virtualDocProvider),
+  );
+
+  // Register custom text editor provider for CKEditor webview
+  const textEditorProvider = new TriliumTextEditorProvider(
+    context,
+    () => treeProvider.getClient(),
+  );
+  context.subscriptions.push(
+    vscode.window.registerCustomEditorProvider(
+      TriliumTextEditorProvider.viewType,
+      textEditorProvider,
+      {
+        webviewOptions: {
+          retainContextWhenHidden: true,
+        },
+        supportsMultipleEditorsPerDocument: false,
+      },
+    ),
+  );
 
   const output = vscode.window.createOutputChannel('Trilium Notes');
   output.appendLine('Extension activated (v1.0.0)');
@@ -161,10 +187,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           );
           return;
         }
+
+        // Text notes: open with CKEditor custom editor
+        if (note.type === 'text') {
+          const uri = createVirtualDocumentUri(note.noteId, note.title);
+          await vscode.commands.executeCommand('vscode.openWith', uri, TriliumTextEditorProvider.viewType);
+          return;
+        }
+
+        // Other note types: use temp file approach
         const rawContent = await client.getNoteContent(note.noteId);
         const filePath = tempFileManager.getTempPath(note);
         const fileContent =
-          note.type === 'text' ? tempFileManager.htmlToMarkdown(rawContent) :
           note.type === 'mindMap' ? tempFileManager.mindMapJsonToMarkdown(rawContent) :
           rawContent;
         fs.writeFileSync(filePath, fileContent, 'utf8');
@@ -477,13 +511,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
 
       try {
+        // Text notes: open with CKEditor custom editor (WYSIWYG, no conversion)
+        if (note.type === 'text') {
+          const uri = createVirtualDocumentUri(note.noteId, note.title);
+          await vscode.commands.executeCommand('vscode.openWith', uri, TriliumTextEditorProvider.viewType);
+          return;
+        }
+
+        // Other note types: use temp file approach (code, mermaid, canvas, mindMap)
         const rawContent = await client.getNoteContent(note.noteId);
         const filePath = tempFileManager.getTempPath(note);
 
-        // Text notes: convert CKEditor HTML → Markdown for editing.
         // Mind map notes: convert MindElixir JSON → Markdown for editing.
         const fileContent =
-          note.type === 'text' ? tempFileManager.htmlToMarkdown(rawContent) :
           note.type === 'mindMap' ? tempFileManager.mindMapJsonToMarkdown(rawContent) :
           rawContent;
 
@@ -497,6 +537,46 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         await vscode.window.showTextDocument(doc, { preview: false });
       } catch (err) {
         void vscode.window.showErrorMessage(`Trilium: Failed to open note: ${err}`);
+      }
+    }),
+
+    vscode.commands.registerCommand('trilium.openNoteAsMarkdown', async (item: NoteItem) => {
+      const client = treeProvider.getClient();
+      if (!client) {
+        void vscode.window.showErrorMessage(
+          'Trilium: Not connected. Use "Trilium: Connect to Trilium Server" first.',
+        );
+        return;
+      }
+
+      const { note } = item;
+      if (note.type !== 'text') {
+        void vscode.window.showWarningMessage(
+          `Trilium: "Open as Markdown" is only available for text notes.`,
+        );
+        return;
+      }
+
+      if (note.isProtected) {
+        void vscode.window.showWarningMessage(
+          `Trilium: "${note.title}" is a protected note. Unlock it in Trilium first (Options → Protected Session).`,
+        );
+        return;
+      }
+
+      try {
+        // Use old Markdown conversion approach for fallback editing
+        const rawContent = await client.getNoteContent(note.noteId);
+        const filePath = tempFileManager.getTempPath(note);
+        const fileContent = tempFileManager.htmlToMarkdown(rawContent);
+
+        fs.writeFileSync(filePath, fileContent, 'utf8');
+
+        const doc = await vscode.workspace.openTextDocument(filePath);
+        await vscode.languages.setTextDocumentLanguage(doc, 'markdown');
+        await vscode.window.showTextDocument(doc, { preview: false });
+      } catch (err) {
+        void vscode.window.showErrorMessage(`Trilium: Failed to open note as Markdown: ${err}`);
       }
     }),
 
