@@ -338,6 +338,7 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
         background: var(--vscode-editorWidget-border, #454545) !important;
       }
       .ck.ck-editor__top { border: none !important; }
+      .ck.ck-editor__top .ck-sticky-panel .ck-sticky-panel__content { border: none !important; }
       .ck.ck-editor {
         flex: 1 !important;
         min-height: 0 !important;
