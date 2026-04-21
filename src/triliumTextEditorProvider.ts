@@ -51,6 +51,10 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
     // back to the webview and creating an infinite update loop.
     let pendingWebviewUpdate = false;
 
+    // Extract the note ID from the virtual document URI so the breadcrumb can
+    // walk the parent chain once the webview is ready.
+    const noteIdForBreadcrumb = new URLSearchParams(document.uri.query).get('noteId') ?? '';
+
     // Send initial content once webview is ready
     const sendContent = () => {
       webviewPanel.webview.postMessage({
@@ -65,6 +69,9 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
         case 'ready':
           // Webview signals it's ready to receive content
           sendContent();
+          if (noteIdForBreadcrumb) {
+            void this.sendBreadcrumb(webviewPanel, noteIdForBreadcrumb);
+          }
           break;
 
         case 'contentChanged':
@@ -156,6 +163,29 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
     } catch (err) {
       void vscode.window.showErrorMessage(`Trilium: Failed to save note: ${err}`);
     }
+  }
+
+  private async sendBreadcrumb(panel: vscode.WebviewPanel, noteId: string): Promise<void> {
+    const client = this.getClient();
+    if (!client) { return; }
+
+    const parts: string[] = [];
+    const visited = new Set<string>();
+    let currentId: string = noteId;
+
+    while (currentId && !visited.has(currentId)) {
+      visited.add(currentId);
+      try {
+        const note = await client.getNote(currentId);
+        parts.unshift(note.title);
+        if (currentId === 'root' || note.parentNoteIds.length === 0) { break; }
+        currentId = note.parentNoteIds[0];
+      } catch {
+        break;
+      }
+    }
+
+    panel.webview.postMessage({ type: 'breadcrumb', path: parts.join(' › ') });
   }
 
   /**
@@ -258,9 +288,24 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
         margin: 0;
         height: 100vh;
         overflow: hidden;
+        display: flex;
+        flex-direction: column;
+      }
+      #breadcrumb {
+        flex-shrink: 0;
+        font-size: 0.78em;
+        padding: 3px 12px;
+        color: var(--vscode-descriptionForeground);
+        background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+        border-bottom: 1px solid var(--vscode-editorWidget-border, #444);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        user-select: none;
       }
       #editor-container {
-        height: 100vh;
+        flex: 1;
+        min-height: 0;
         display: flex;
         flex-direction: column;
       }
@@ -317,6 +362,7 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
     </style>
 </head>
 <body>
+    <div id="breadcrumb"></div>
     <div id="editor-container"></div>
     
     <script nonce="${nonce}" src="${ckeditorUri}"></script>
@@ -450,6 +496,11 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
                 isUpdatingFromExtension = false;
               }
               break;
+            case 'breadcrumb': {
+              const el = document.getElementById('breadcrumb');
+              if (el) { el.textContent = message.path; }
+              break;
+            }
           }
         });
       })();

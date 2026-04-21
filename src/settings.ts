@@ -28,3 +28,7 @@ export function getEditorFontSize(): number {
 export function getEditorSpellcheck(): boolean {
   return vscode.workspace.getConfiguration('trilium').get<boolean>('editor.spellcheck', false);
 }
+
+export function getRootNoteId(): string {
+  return vscode.workspace.getConfiguration('trilium').get<string>('rootNoteId', 'root');
+}
