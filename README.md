@@ -4,6 +4,8 @@
 [![VS Code Engine](https://img.shields.io/badge/VS%20Code-%5E1.116.0-007ACC?logo=visualstudiocode&logoColor=white)](https://code.visualstudio.com)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
 [![CI](https://github.com/NemesisRE/vscode-trilium-extension/actions/workflows/ci.yml/badge.svg)](https://github.com/NemesisRE/vscode-trilium-extension/actions/workflows/ci.yml)
+[![GitHub Release](https://img.shields.io/github/v/release/NemesisRE/vscode-trilium-extension?style=flat&logo=github&label=release)](https://github.com/NemesisRE/vscode-trilium-extension/releases/latest)
+[![GitHub Downloads](https://img.shields.io/github/downloads/NemesisRE/vscode-trilium-extension/total?style=flat&logo=github&label=downloads)](https://github.com/NemesisRE/vscode-trilium-extension/releases)
 [![GitHub Stars](https://img.shields.io/github/stars/NemesisRE/vscode-trilium-extension?style=flat&logo=github)](https://github.com/NemesisRE/vscode-trilium-extension/stargazers)
 
 Browse, search, and edit your [Trilium Notes](https://github.com/zadam/trilium) directly inside VS Code using the [ETAPI REST API](https://triliumnotes.org/api).
