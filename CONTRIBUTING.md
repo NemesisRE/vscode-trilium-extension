@@ -36,13 +36,15 @@ Press **F5** in VS Code to launch the Extension Development Host with the extens
 
 ## Project Structure
 
-```
+```text
 src/
   extension.ts            Entry point — activate(), deactivate(), command registrations
   etapiClient.ts          HTTP client wrapping the Trilium ETAPI REST API
   noteTreeProvider.ts     VS Code TreeDataProvider + FileDecorationProvider for the note tree
-  settings.ts             Read serverUrl from configuration, read/write ETAPI token via SecretStorage
-  tempFileManager.ts      Create/manage temp files for editing notes; HTML↔Markdown and MindMap conversions
+  settings.ts             Read serverUrl from configuration, read/write ETAPI token via SecretStorage; getEditorFontSize() / getEditorSpellcheck() for CKEditor settings
+  tempFileManager.ts      Create/manage temp files for editing notes; HTML↔Markdown and MindMap conversions (fallback path)
+  triliumTextEditorProvider.ts  CustomTextEditorProvider serving the CKEditor 5 WYSIWYG webview for text notes
+  virtualDocumentProvider.ts   TextDocumentContentProvider backing the trilium-text:// URI scheme used by the WYSIWYG editor
   attributesViewProvider.ts  WebviewViewProvider rendering the Attributes sidebar panel
 
 test/
@@ -73,9 +75,17 @@ Thin wrapper around `fetch`. All methods throw an `EtapiError` (with `.code` and
 
 `NoteItem` extends `vscode.TreeItem`. Icon is resolved from the `#iconClass` label attribute (BoxIcon name) via a static `BOXICON_TO_CODICON` lookup table, falling back to a per-type default. Color is resolved from the `#color` label attribute via `NoteTreeDecorationProvider`, which returns a `vscode.FileDecoration` using `charts.*` theme colors.
 
+### WYSIWYG Text Editor (`triliumTextEditorProvider.ts` + `virtualDocumentProvider.ts`)
+
+`TriliumTextEditorProvider` implements `CustomTextEditorProvider` and registers for `*.trilium-text` virtual file URIs. It serves a webview containing CKEditor 5 Classic build. The webview communicates with the extension host via `postMessage` — `init` (load content), `update` (content changed in editor), and `getContent` / `returnContent` (save flow). A `pendingWebviewUpdate` flag prevents re-entrant update loops when the extension applies an edit in response to a webview message.
+
+The CSS injects a `--ck-color-*` → `--vscode-*` variable bridge so the editor follows the active VS Code theme automatically, including high-contrast themes.
+
+`VirtualDocumentProvider` implements `TextDocumentContentProvider` for the `trilium-text://` scheme. It holds the current HTML content in memory and serves it to the virtual document when VS Code requests it.
+
 ### Temp File Manager (`tempFileManager.ts`)
 
-Notes are edited as local temp files under `os.tmpdir()/vscode-trilium/`. A `onDidSaveTextDocument` listener in `extension.ts` converts the file back (Markdown→HTML for text notes, Markdown heading hierarchy→MindElixir JSON for mind map notes) and calls `client.putNoteContent`. A `.markdownlintignore` file with `**` is written to the temp directory on startup to suppress markdownlint warnings.
+Used for the **fallback edit paths** only — code notes, Mermaid, canvas, mind map, and the **Open as Markdown** command for text notes. Notes are edited as local temp files under `os.tmpdir()/vscode-trilium/`. A `onDidSaveTextDocument` listener in `extension.ts` converts the file back (Markdown→HTML for text notes via the fallback path, Markdown heading hierarchy→MindElixir JSON for mind map notes) and calls `client.putNoteContent`. A `.markdownlintignore` file with `**` is written to the temp directory on startup to suppress markdownlint warnings.
 
 ### Attributes Panel (`attributesViewProvider.ts`)
 
