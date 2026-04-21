@@ -13,6 +13,19 @@
 - When adding a dependency, check its current version on npm registry — do not hardcode version numbers from memory.
 - Before referencing a `vscode.*` namespace, method, or event, confirm it exists in the target `engines.vscode` version.
 
+### Use Live Documentation, Not Training Data
+**Training-data API knowledge is stale.** Package APIs, compiler options, GitHub Actions inputs, and framework behaviour all change between releases. After resolving the version of any dependency or tool (see Version Lookup Policy below), always fetch the matching upstream documentation before writing code or configuration against it.
+
+| Situation | What to fetch |
+|---|---|
+| Using or upgrading an npm package | Fetch the package README or docs URL from `https://registry.npmjs.org/{package}/latest` → `readme` / `homepage` |
+| TypeScript compiler options | Fetch `https://www.typescriptlang.org/tsconfig` for the resolved TS version |
+| GitHub Actions inputs/outputs | Fetch `https://github.com/{owner}/{repo}/blob/{tag}/action.yml` for the resolved action tag |
+| Node.js built-in APIs | Fetch `https://nodejs.org/docs/latest-v{major}.x/api/{module}.html` for the resolved major |
+| VS Code API | Check `node_modules/@types/vscode/index.d.ts` for the resolved engine version |
+
+Never rely on recalled API shapes for a package you haven't verified at the resolved version. If the docs fetch fails or the API surface is ambiguous, surface the uncertainty to the user before writing code.
+
 ### Always Present a Plan First
 - Before writing or modifying any code, configuration, or file, produce a concise numbered plan describing:
   1. What will be changed and why
@@ -81,6 +94,24 @@ When referencing or verifying information, use these canonical sources:
 | VS Code Built-in Commands | https://code.visualstudio.com/api/references/commands |
 | Trilium Notes API / Docs | https://github.com/zadam/trilium/wiki (or upstream repo) |
 | npm package versions | https://www.npmjs.com (fetch live, do not guess) |
+
+### Version Lookup Policy
+
+**Never use training-data version numbers.** Versions in the model's training data are stale by definition. For every version reference — npm packages, GitHub Actions, Node.js, TypeScript compiler options, VS Code engine ranges — look it up at the authoritative source before writing it.
+
+| What you need | How to get it |
+|---|---|
+| Latest stable version of an npm package | Fetch `https://registry.npmjs.org/{package}/latest` and read the `version` field |
+| Latest version of a GitHub Action | Fetch the action's GitHub releases page (e.g. `https://github.com/{owner}/{repo}/releases/latest`) |
+| Current stable Node.js LTS | Fetch `https://nodejs.org/en/download/` or `https://nodejs.org/dist/index.json` |
+| TypeScript compiler option validity | Fetch `https://www.typescriptlang.org/tsconfig` or check installed `typescript/lib/typescript.d.ts` |
+| VS Code minimum engine version | Check `node_modules/@types/vscode/index.d.ts` — use the lowest version that exposes every API the code uses |
+
+Apply this policy whenever:
+- Adding or upgrading a dependency in `package.json`
+- Writing or updating a GitHub Actions workflow (`uses: action@vX`)
+- Setting `engines.node`, `engines.vscode`, or any `"target"` / `"lib"` in `tsconfig.json`
+- Answering any question that requires knowing the "latest" or "current" version of anything
 
 ---
 
