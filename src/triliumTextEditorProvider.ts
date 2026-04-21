@@ -375,6 +375,7 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
         // Initialize CKEditor
         ClassicEditor
           .create(document.querySelector('#editor-container'), {
+            licenseKey: 'GPL',
             toolbar: {
               items: [
                 'heading', 'fontSize', '|',
