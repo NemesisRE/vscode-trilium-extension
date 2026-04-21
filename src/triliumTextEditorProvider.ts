@@ -181,9 +181,33 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
   private async fetchImageDataUri(relativeUrl: string): Promise<string> {
     const client = this.getClient();
     if (!client) { throw new Error('Not connected'); }
-    const { buffer, contentType } = await client.fetchRaw(relativeUrl);
+
+    // Trilium stores images in two URL patterns, both of which require session auth
+    // when hit directly. Route them through the ETAPI endpoints instead which accept
+    // the ETAPI token and don't have CORS restrictions.
+    //
+    // Pattern 1: api/attachments/{attachmentId}/image/{filename}
+    const attachmentMatch = relativeUrl.match(/api\/attachments\/([A-Za-z0-9_-]+)\/image\//);
+    // Pattern 2: api/images/{noteId}/{filename}  (image-type notes embedded in text)
+    const imageNoteMatch = !attachmentMatch && relativeUrl.match(/api\/images\/([A-Za-z0-9_-]+)\//);
+
+    let buffer: ArrayBuffer;
+    let mime: string;
+
+    if (attachmentMatch) {
+      buffer = await client.getAttachmentContent(attachmentMatch[1]);
+      mime = mimeFromPath(relativeUrl);
+    } else if (imageNoteMatch) {
+      buffer = await client.getNoteContentBuffer(imageNoteMatch[1]);
+      mime = mimeFromPath(relativeUrl);
+    } else {
+      const result = await client.fetchRaw(relativeUrl);
+      buffer = result.buffer;
+      mime = result.contentType.split(';')[0].trim();
+    }
+
     const base64 = Buffer.from(buffer).toString('base64');
-    return `data:${contentType.split(';')[0].trim()};base64,${base64}`;
+    return `data:${mime};base64,${base64}`;
   }
 
   private async sendBreadcrumb(panel: vscode.WebviewPanel, noteId: string): Promise<void> {
@@ -308,7 +332,7 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
       /* Direct CKEditor element overrides — applied after CKEditor injects its own CSS */
       .ck.ck-toolbar, .ck.ck-toolbar_grouping {
         background: var(--vscode-editorWidget-background, #3c3c3c) !important;
-        border-color: var(--vscode-editorWidget-border, #454545) !important;
+        border: none !important;
       }
       .ck.ck-toolbar .ck.ck-toolbar__separator {
         background: var(--vscode-editorWidget-border, #454545) !important;
@@ -643,4 +667,14 @@ function getNonce(): string {
     text += possible.charAt(Math.floor(Math.random() * possible.length));
   }
   return text;
+}
+
+function mimeFromPath(url: string): string {
+  const ext = url.split('?')[0].split('.').pop()?.toLowerCase() ?? '';
+  const map: Record<string, string> = {
+    jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png',
+    gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml',
+    bmp: 'image/bmp', ico: 'image/x-icon', tiff: 'image/tiff', tif: 'image/tiff',
+  };
+  return map[ext] ?? 'image/jpeg';
 }

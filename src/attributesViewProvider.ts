@@ -181,7 +181,7 @@ export class AttributesViewProvider implements vscode.WebviewViewProvider {
     const relations = (note.attributes ?? []).filter((a): a is Attribute => a.type === 'relation');
 
     const deleteBtn = (attr: Attribute) => editable
-      ? `<button class="del-btn" data-id="${escapeHtml(attr.attributeId)}" title="Delete attribute">×</button>`
+      ? `<button class="del-btn" data-id="${escapeHtml(attr.attributeId)}" title="Delete attribute">✕ Delete</button>`
       : '';
 
     const labelRows = labels.length === 0
@@ -398,16 +398,20 @@ document.querySelector('.upload-btn')?.addEventListener('click', () => {
     }
     .del-btn {
       margin-left: auto;
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
       background: none;
-      border: none;
+      border: 1px solid var(--vscode-errorForeground, #f44);
+      border-radius: 2px;
       color: var(--vscode-errorForeground, #f44);
       cursor: pointer;
-      font-size: 1em;
-      padding: 0 2px;
-      line-height: 1;
-      opacity: 0.5;
+      font-size: 0.8em;
+      padding: 3px 8px;
+      white-space: nowrap;
+      line-height: 1.4;
     }
-    .del-btn:hover { opacity: 1; }
+    .del-btn:hover { background: rgba(255,68,68,.12); }
     .empty {
       font-style: italic;
       color: var(--vscode-descriptionForeground);
