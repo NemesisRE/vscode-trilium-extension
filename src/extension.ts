@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as vscode from 'vscode';
-import { EtapiClient } from './etapiClient';
-import { NoteItem, NoteTreeProvider, NoteTreeDecorationProvider } from './noteTreeProvider';
+import { EtapiClient, AppInfo } from './etapiClient';
+import { NoteItem, NoteTreeProvider, NoteTreeDecorationProvider, TYPE_ICON } from './noteTreeProvider';
 import { getServerUrl, getToken, storeToken } from './settings';
 import { TempFileManager } from './tempFileManager';
 import { AttributesViewProvider } from './attributesViewProvider';
@@ -9,6 +9,7 @@ import { TriliumTextEditorProvider } from './triliumTextEditorProvider';
 import { VirtualDocumentProvider, createVirtualDocumentUri } from './virtualDocumentProvider';
 
 type Note = import('./etapiClient').Note;
+type Revision = import('./etapiClient').Revision;
 
 const MIME_EXT_MAP: Record<string, string> = {
   'application/pdf': '.pdf',
@@ -51,6 +52,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.workspace.registerTextDocumentContentProvider('trilium-text', virtualDocProvider),
   );
 
+  // Register in-memory read-only document provider for revision content (trilium-revision://)
+  const revisionContentMap = new Map<string, string>();
+  const revisionDocProvider = new (class implements vscode.TextDocumentContentProvider {
+    provideTextDocumentContent(uri: vscode.Uri): string {
+      return revisionContentMap.get(uri.path) ?? '';
+    }
+  })();
+  context.subscriptions.push(
+    vscode.workspace.registerTextDocumentContentProvider('trilium-revision', revisionDocProvider),
+  );
+
   // Register custom text editor provider for CKEditor webview
   const textEditorProvider = new TriliumTextEditorProvider(
     context,
@@ -73,6 +85,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   output.appendLine('Extension activated (v1.0.0)');
   treeProvider.setLogger((msg) => output.appendLine(`[tree] ${msg}`));
 
+  // Status bar item — shows connection state, click to (re)connect.
+  const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
+  statusBarItem.command = 'trilium.connect';
+  statusBarItem.tooltip = 'Trilium Notes — click to connect';
+  statusBarItem.text = '$(debug-disconnect) Trilium';
+  statusBarItem.show();
+
+  function updateStatusBar(info: AppInfo | undefined): void {
+    if (info) {
+      statusBarItem.text = `$(database) Trilium v${info.appVersion}`;
+      statusBarItem.tooltip = `Connected to ${getServerUrl()} (v${info.appVersion}) — click to reconnect`;
+    } else {
+      statusBarItem.text = '$(debug-disconnect) Trilium';
+      statusBarItem.tooltip = 'Trilium Notes — not connected, click to connect';
+    }
+  }
+
   const treeView = vscode.window.createTreeView('triliumNoteTree', {
     treeDataProvider: treeProvider,
     showCollapseAll: true,
@@ -83,11 +112,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   });
 
   // Attempt to restore a previously stored connection on activation.
-  await tryConnect(context.secrets, treeProvider);
+  const initialInfo = await tryConnect(context.secrets, treeProvider);
+  updateStatusBar(initialInfo);
+  attributesProvider.setClient(treeProvider.getClient());
 
   context.subscriptions.push(
     treeView,
     output,
+    statusBarItem,
     vscode.window.registerWebviewViewProvider(AttributesViewProvider.viewId, attributesProvider),
 
     vscode.commands.registerCommand('trilium.refresh', () => {
@@ -95,7 +127,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
 
     vscode.commands.registerCommand('trilium.connect', async () => {
-      await runConnectWizard(context.secrets, treeProvider);
+      const info = await runConnectWizard(context.secrets, treeProvider);
+      updateStatusBar(info);
+      attributesProvider.setClient(treeProvider.getClient());
     }),
 
     vscode.commands.registerCommand('trilium.createNote', async (item?: NoteItem) => {
@@ -369,6 +403,142 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       },
     }),
 
+    vscode.lm.registerTool<{
+      query: string;
+      ancestorNoteId?: string;
+      limit?: number;
+    }>('trilium_searchNotes', {
+      prepareInvocation(options) {
+        return { invocationMessage: `Searching Trilium for "${options.input.query}"…` };
+      },
+      async invoke(options, _token) {
+        const { query, ancestorNoteId, limit } = options.input;
+        const client = treeProvider.getClient();
+        if (!client) {
+          return new vscode.LanguageModelToolResult([
+            new vscode.LanguageModelTextPart('Error: Trilium is not connected. Ask the user to run "Trilium: Connect to Trilium Server" first.'),
+          ]);
+        }
+        try {
+          const { results } = await client.searchNotes(query, {
+            ancestorNoteId,
+            limit: limit ?? 20,
+          });
+          const items = await Promise.all(
+            results.map(async (n) => {
+              let parentTitle = n.parentNoteIds[0] ?? '';
+              try {
+                const parent = await client.getNote(n.parentNoteIds[0]);
+                parentTitle = parent.title;
+              } catch { /* ignore */ }
+              return { noteId: n.noteId, title: n.title, type: n.type, parentTitle };
+            }),
+          );
+          if (items.length === 0) {
+            return new vscode.LanguageModelToolResult([
+              new vscode.LanguageModelTextPart(`No notes found matching "${query}".`),
+            ]);
+          }
+          const text = items.map(i =>
+            `- noteId: ${i.noteId} | title: "${i.title}" | type: ${i.type} | parent: "${i.parentTitle}"`,
+          ).join('\n');
+          return new vscode.LanguageModelToolResult([
+            new vscode.LanguageModelTextPart(`Found ${items.length} note(s):\n${text}`),
+          ]);
+        } catch (err) {
+          return new vscode.LanguageModelToolResult([
+            new vscode.LanguageModelTextPart(`Error searching notes: ${err}`),
+          ]);
+        }
+      },
+    }),
+
+    vscode.lm.registerTool<{
+      noteId: string;
+    }>('trilium_readNote', {
+      prepareInvocation(options) {
+        return { invocationMessage: `Reading Trilium note "${options.input.noteId}"…` };
+      },
+      async invoke(options, _token) {
+        const { noteId } = options.input;
+        const client = treeProvider.getClient();
+        if (!client) {
+          return new vscode.LanguageModelToolResult([
+            new vscode.LanguageModelTextPart('Error: Trilium is not connected. Ask the user to run "Trilium: Connect to Trilium Server" first.'),
+          ]);
+        }
+        try {
+          const note = await client.getNote(noteId);
+          if (note.isProtected) {
+            return new vscode.LanguageModelToolResult([
+              new vscode.LanguageModelTextPart(`Error: Note "${noteId}" is protected and cannot be read.`),
+            ]);
+          }
+          const raw = await client.getNoteContent(noteId);
+          // Strip all HTML tags to prevent prompt injection from note content.
+          const plain = raw
+            .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+            .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+            .replace(/<[^>]+>/g, ' ')
+            .replace(/&nbsp;/g, ' ')
+            .replace(/&amp;/g, '&')
+            .replace(/&lt;/g, '<')
+            .replace(/&gt;/g, '>')
+            .replace(/&quot;/g, '"')
+            .replace(/&#39;/g, "'")
+            .replace(/\s{2,}/g, ' ')
+            .trim();
+          return new vscode.LanguageModelToolResult([
+            new vscode.LanguageModelTextPart(
+              `Title: ${note.title}\nType: ${note.type}\n\nContent:\n${plain}`,
+            ),
+          ]);
+        } catch (err) {
+          return new vscode.LanguageModelToolResult([
+            new vscode.LanguageModelTextPart(`Error reading note: ${err}`),
+          ]);
+        }
+      },
+    }),
+
+    vscode.lm.registerTool<{
+      noteId: string;
+    }>('trilium_listChildren', {
+      prepareInvocation(options) {
+        return { invocationMessage: `Listing children of Trilium note "${options.input.noteId}"…` };
+      },
+      async invoke(options, _token) {
+        const { noteId } = options.input;
+        const client = treeProvider.getClient();
+        if (!client) {
+          return new vscode.LanguageModelToolResult([
+            new vscode.LanguageModelTextPart('Error: Trilium is not connected. Ask the user to run "Trilium: Connect to Trilium Server" first.'),
+          ]);
+        }
+        try {
+          const note = await client.getNote(noteId);
+          if (note.childNoteIds.length === 0) {
+            return new vscode.LanguageModelToolResult([
+              new vscode.LanguageModelTextPart(`Note "${noteId}" ("${note.title}") has no children.`),
+            ]);
+          }
+          const children = await Promise.all(note.childNoteIds.map(id => client.getNote(id)));
+          const text = children.map(c =>
+            `- noteId: ${c.noteId} | title: "${c.title}" | type: ${c.type}`,
+          ).join('\n');
+          return new vscode.LanguageModelToolResult([
+            new vscode.LanguageModelTextPart(
+              `Children of "${note.title}" (${children.length}):\n${text}`,
+            ),
+          ]);
+        } catch (err) {
+          return new vscode.LanguageModelToolResult([
+            new vscode.LanguageModelTextPart(`Error listing children: ${err}`),
+          ]);
+        }
+      },
+    }),
+
     vscode.commands.registerCommand('trilium.openInBrowser', async (item: NoteItem) => {
       const serverUrl = getServerUrl().replace(/\/$/, '');
       const noteUrl = `${serverUrl}/#${item.path}`;
@@ -601,6 +771,604 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
     }),
 
+    vscode.commands.registerCommand('trilium.searchNotes', async () => {
+      const client = treeProvider.getClient();
+      if (!client) {
+        void vscode.window.showErrorMessage(
+          'Trilium: Not connected. Use "Trilium: Connect to Trilium Server" first.',
+        );
+        return;
+      }
+
+      interface SearchItem extends vscode.QuickPickItem { note: Note; }
+
+      const qp = vscode.window.createQuickPick<SearchItem>();
+      qp.title = 'Search Trilium Notes';
+      qp.placeholder = 'Type to search…';
+      qp.matchOnDescription = true;
+
+      let debounceTimer: ReturnType<typeof setTimeout> | undefined;
+
+      qp.onDidChangeValue((query) => {
+        if (debounceTimer) { clearTimeout(debounceTimer); }
+        if (!query.trim()) { qp.items = []; return; }
+        qp.busy = true;
+        debounceTimer = setTimeout(async () => {
+          try {
+            const { results } = await client.searchNotes(query, { limit: 50 });
+            qp.items = results.map((note) => ({
+              label: `$(${TYPE_ICON[note.type] ?? 'file'}) ${note.title}`,
+              description: note.type,
+              detail: note.parentNoteIds[0],
+              note,
+            }));
+          } catch {
+            qp.items = [];
+          } finally {
+            qp.busy = false;
+          }
+        }, 300);
+      });
+
+      qp.onDidAccept(async () => {
+        const [item] = qp.selectedItems;
+        if (!item) { return; }
+        qp.hide();
+        try {
+          await openNoteInEditor(item.note, client, tempFileManager);
+        } catch (err) {
+          void vscode.window.showErrorMessage(`Trilium: Failed to open note: ${err}`);
+        }
+      });
+
+      qp.onDidHide(() => {
+        if (debounceTimer) { clearTimeout(debounceTimer); }
+        qp.dispose();
+      });
+
+      qp.show();
+    }),
+
+    vscode.commands.registerCommand('trilium.filterTree', async () => {
+      const current = treeProvider.getFilter();
+      const query = await vscode.window.showInputBox({
+        title: 'Filter Notes Tree',
+        prompt: 'Show only notes whose title contains this text (server search)',
+        placeHolder: 'Filter by title…',
+        value: current,
+        ignoreFocusOut: true,
+      });
+      if (query === undefined) { return; } // user cancelled
+      treeProvider.setFilter(query);
+      await vscode.commands.executeCommand('setContext', 'trilium.treeFiltered', query.length > 0);
+    }),
+
+    vscode.commands.registerCommand('trilium.clearTreeFilter', async () => {
+      treeProvider.clearFilter();
+      await vscode.commands.executeCommand('setContext', 'trilium.treeFiltered', false);
+    }),
+
+    vscode.commands.registerCommand('trilium.copyNoteId', async (item: NoteItem) => {
+      await vscode.env.clipboard.writeText(item.note.noteId);
+      vscode.window.setStatusBarMessage(`Trilium: Copied note ID "${item.note.noteId}"`, 3000);
+    }),
+
+    vscode.commands.registerCommand('trilium.copyNoteUrl', async (item: NoteItem) => {
+      const serverUrl = getServerUrl().replace(/\/$/, '');
+      const url = `${serverUrl}/#${item.path}`;
+      await vscode.env.clipboard.writeText(url);
+      vscode.window.setStatusBarMessage(`Trilium: Copied URL for "${item.note.title}"`, 3000);
+    }),
+
+    vscode.commands.registerCommand('trilium.openCalendarNote', async () => {
+      const client = treeProvider.getClient();
+      if (!client) {
+        void vscode.window.showErrorMessage(
+          'Trilium: Not connected. Use "Trilium: Connect to Trilium Server" first.',
+        );
+        return;
+      }
+
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const day = String(now.getDate()).padStart(2, '0');
+      // ISO 8601 week number
+      const startOfYear = new Date(year, 0, 1);
+      const weekNum = Math.ceil(
+        ((now.getTime() - startOfYear.getTime()) / 86400000 + startOfYear.getDay() + 1) / 7,
+      );
+      const weekStr = `${year}-W${String(weekNum).padStart(2, '0')}`;
+
+      interface CalendarOption extends vscode.QuickPickItem { key: string; }
+      const options: CalendarOption[] = [
+        { label: '$(calendar) Today\'s Note', description: `${year}-${month}-${day}`, key: 'day' },
+        { label: '$(calendar-clock) Inbox Note', description: `Respects #inbox label`, key: 'inbox' },
+        { label: '$(list-unordered) This Week\'s Note', description: weekStr, key: 'week' },
+        { label: '$(list-ordered) This Month\'s Note', description: `${year}-${month}`, key: 'month' },
+        { label: '$(calendar-alt) This Year\'s Note', description: String(year), key: 'year' },
+      ];
+
+      const pick = await vscode.window.showQuickPick(options, {
+        title: 'Open Calendar Note',
+        placeHolder: 'Select time period',
+      });
+      if (!pick) { return; }
+
+      try {
+        let note: import('./etapiClient').Note;
+        switch (pick.key) {
+          case 'day':   note = await client.getDayNote(`${year}-${month}-${day}`); break;
+          case 'inbox': note = await client.getInboxNote(`${year}-${month}-${day}`); break;
+          case 'week':  note = await client.getWeekNote(weekStr); break;
+          case 'month': note = await client.getMonthNote(`${year}-${month}`); break;
+          case 'year':  note = await client.getYearNote(String(year)); break;
+          default: return;
+        }
+        await openNoteInEditor(note, client, tempFileManager);
+      } catch (err) {
+        void vscode.window.showErrorMessage(`Trilium: Failed to open calendar note: ${err}`);
+      }
+    }),
+
+    vscode.commands.registerCommand('trilium.openInboxNote', async () => {
+      const client = treeProvider.getClient();
+      if (!client) {
+        void vscode.window.showErrorMessage('Trilium: Not connected.');
+        return;
+      }
+      const now = new Date();
+      const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      try {
+        const note = await client.getInboxNote(date);
+        await openNoteInEditor(note, client, tempFileManager);
+      } catch (err) {
+        void vscode.window.showErrorMessage(`Trilium: Failed to open inbox note: ${err}`);
+      }
+    }),
+
+    vscode.commands.registerCommand('trilium.openWeekNote', async () => {
+      const client = treeProvider.getClient();
+      if (!client) { void vscode.window.showErrorMessage('Trilium: Not connected.'); return; }
+      const now = new Date();
+      const year = now.getFullYear();
+      const startOfYear = new Date(year, 0, 1);
+      const weekNum = Math.ceil(
+        ((now.getTime() - startOfYear.getTime()) / 86400000 + startOfYear.getDay() + 1) / 7,
+      );
+      const week = `${year}-W${String(weekNum).padStart(2, '0')}`;
+      try {
+        const note = await client.getWeekNote(week);
+        await openNoteInEditor(note, client, tempFileManager);
+      } catch (err) {
+        void vscode.window.showErrorMessage(`Trilium: Failed to open week note: ${err}`);
+      }
+    }),
+
+    vscode.commands.registerCommand('trilium.openMonthNote', async () => {
+      const client = treeProvider.getClient();
+      if (!client) { void vscode.window.showErrorMessage('Trilium: Not connected.'); return; }
+      const now = new Date();
+      const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+      try {
+        const note = await client.getMonthNote(month);
+        await openNoteInEditor(note, client, tempFileManager);
+      } catch (err) {
+        void vscode.window.showErrorMessage(`Trilium: Failed to open month note: ${err}`);
+      }
+    }),
+
+    vscode.commands.registerCommand('trilium.openYearNote', async () => {
+      const client = treeProvider.getClient();
+      if (!client) { void vscode.window.showErrorMessage('Trilium: Not connected.'); return; }
+      try {
+        const note = await client.getYearNote(String(new Date().getFullYear()));
+        await openNoteInEditor(note, client, tempFileManager);
+      } catch (err) {
+        void vscode.window.showErrorMessage(`Trilium: Failed to open year note: ${err}`);
+      }
+    }),
+
+    // -----------------------------------------------------------------------
+    // Phase 5a — Note revision history
+    // -----------------------------------------------------------------------
+
+    vscode.commands.registerCommand('trilium.showRevisions', async (item?: NoteItem) => {
+      const target = item ?? treeView.selection[0];
+      if (!target) { return; }
+      const client = treeProvider.getClient();
+      if (!client) {
+        void vscode.window.showErrorMessage('Trilium: Not connected.');
+        return;
+      }
+
+      let revisions: Revision[];
+      try {
+        revisions = await client.getNoteRevisions(target.note.noteId);
+      } catch (err) {
+        void vscode.window.showErrorMessage(`Trilium: Failed to load revisions: ${err}`);
+        return;
+      }
+
+      if (revisions.length === 0) {
+        void vscode.window.showInformationMessage(
+          `"${target.note.title}" has no saved revisions.`,
+        );
+        return;
+      }
+
+      // Most recent first
+      revisions.sort((a, b) => b.utcDateLastEdited.localeCompare(a.utcDateLastEdited));
+
+      interface RevisionItem extends vscode.QuickPickItem { revision: Revision; }
+      const OPEN_BTN: vscode.QuickInputButton = {
+        iconPath: new vscode.ThemeIcon('go-to-file'),
+        tooltip: 'Open in tab',
+      };
+      const DIFF_BTN: vscode.QuickInputButton = {
+        iconPath: new vscode.ThemeIcon('diff'),
+        tooltip: 'Diff against current',
+      };
+
+      const items: RevisionItem[] = revisions.map((r) => ({
+        label: r.title,
+        description: r.dateLastEdited,
+        detail: r.contentLength > 0 ? `${r.contentLength} bytes` : undefined,
+        revision: r,
+        buttons: [OPEN_BTN, DIFF_BTN],
+      }));
+
+      const qp = vscode.window.createQuickPick<RevisionItem>();
+      qp.title = `Revisions — ${target.note.title}`;
+      qp.items = items;
+      qp.placeholder = 'Select revision · $(go-to-file) open · $(diff) diff against current';
+
+      const openRevision = async (r: Revision, diff: boolean) => {
+        qp.busy = true;
+        try {
+          const content = await client.getRevisionContent(r.revisionId);
+          revisionContentMap.set(`/${r.revisionId}`, content);
+          const revUri = vscode.Uri.parse(`trilium-revision:/${r.revisionId}`);
+          if (!diff) {
+            await vscode.window.showTextDocument(revUri, { preview: true });
+          } else {
+            const currentContent = await client.getNoteContent(target.note.noteId);
+            revisionContentMap.set(`/current-${target.note.noteId}`, currentContent);
+            const curUri = vscode.Uri.parse(`trilium-revision:/current-${target.note.noteId}`);
+            await vscode.commands.executeCommand(
+              'vscode.diff', revUri, curUri,
+              `${r.title} (${r.dateLastEdited}) ↔ Current`,
+            );
+          }
+        } catch (err) {
+          void vscode.window.showErrorMessage(`Trilium: Failed to load revision: ${err}`);
+        } finally {
+          qp.busy = false;
+        }
+      };
+
+      qp.onDidTriggerItemButton(async ({ item: picked, button }) => {
+        qp.hide();
+        await openRevision(picked.revision, button === DIFF_BTN);
+      });
+
+      qp.onDidAccept(async () => {
+        const [picked] = qp.selectedItems;
+        if (!picked) { return; }
+        qp.hide();
+        await openRevision(picked.revision, false);
+      });
+
+      qp.onDidHide(() => qp.dispose());
+      qp.show();
+    }),
+
+    // -----------------------------------------------------------------------
+    // Phase 5b — Clone & move notes
+    // -----------------------------------------------------------------------
+
+    vscode.commands.registerCommand('trilium.cloneNote', async (item?: NoteItem) => {
+      const target = item ?? treeView.selection[0];
+      if (!target) { return; }
+      const client = treeProvider.getClient();
+      if (!client) { void vscode.window.showErrorMessage('Trilium: Not connected.'); return; }
+
+      const destination = await pickDestinationNote(client, `Clone "${target.note.title}" to…`);
+      if (!destination) { return; }
+
+      try {
+        await client.createBranch(target.note.noteId, destination.noteId);
+        await client.refreshNoteOrdering(destination.noteId);
+        treeProvider.refresh();
+        void vscode.window.showInformationMessage(
+          `Cloned "${target.note.title}" into "${destination.title}".`,
+        );
+      } catch (err) {
+        void vscode.window.showErrorMessage(`Trilium: Clone failed: ${err}`);
+      }
+    }),
+
+    vscode.commands.registerCommand('trilium.moveNote', async (item?: NoteItem) => {
+      const target = item ?? treeView.selection[0];
+      if (!target) { return; }
+      const client = treeProvider.getClient();
+      if (!client) { void vscode.window.showErrorMessage('Trilium: Not connected.'); return; }
+
+      if (!target.branchId) {
+        void vscode.window.showErrorMessage(
+          `Trilium: Cannot determine the branch for this tree item. Right-click the note in the tree.`,
+        );
+        return;
+      }
+
+      // Block move if this is the note's only location — it would delete the note.
+      if (target.note.parentBranchIds.length <= 1) {
+        void vscode.window.showErrorMessage(
+          `"${target.note.title}" has only one location in the tree. ` +
+          `Moving it would delete the note. Use "Clone Note" instead.`,
+        );
+        return;
+      }
+
+      const destination = await pickDestinationNote(client, `Move "${target.note.title}" to…`);
+      if (!destination) { return; }
+
+      // Determine the old parent noteId from the tree path
+      const pathParts = target.path.split('/');
+      const oldParentNoteId = pathParts.length >= 2 ? pathParts[pathParts.length - 2] : undefined;
+
+      try {
+        await client.createBranch(target.note.noteId, destination.noteId);
+        await client.deleteBranch(target.branchId);
+        await client.refreshNoteOrdering(destination.noteId);
+        if (oldParentNoteId) {
+          await client.refreshNoteOrdering(oldParentNoteId);
+        }
+        treeProvider.refresh();
+        void vscode.window.showInformationMessage(
+          `Moved "${target.note.title}" to "${destination.title}".`,
+        );
+      } catch (err) {
+        void vscode.window.showErrorMessage(`Trilium: Move failed: ${err}`);
+      }
+    }),
+
+    // -----------------------------------------------------------------------
+    // Phase 5d — Export subtree
+    // -----------------------------------------------------------------------
+
+    vscode.commands.registerCommand('trilium.exportSubtree', async (item?: NoteItem) => {
+      const target = item ?? treeView.selection[0];
+      if (!target) { return; }
+      const client = treeProvider.getClient();
+      if (!client) { void vscode.window.showErrorMessage('Trilium: Not connected.'); return; }
+
+      interface FormatOption extends vscode.QuickPickItem { format: 'html' | 'markdown'; }
+      const formatPick = await vscode.window.showQuickPick<FormatOption>([
+        { label: '$(file-zip) HTML ZIP', description: 'Full HTML export with assets', format: 'html' },
+        { label: '$(markdown) Markdown ZIP', description: 'Markdown text export', format: 'markdown' },
+      ], { title: `Export Subtree — ${target.note.title}` });
+      if (!formatPick) { return; }
+
+      const defaultName = `${target.note.title.replace(/[\\/:*?"<>|]/g, '_')}.zip`;
+      const saveUri = await vscode.window.showSaveDialog({
+        defaultUri: vscode.Uri.file(defaultName),
+        filters: { 'ZIP Archive': ['zip'] },
+        saveLabel: 'Export',
+      });
+      if (!saveUri) { return; }
+
+      try {
+        const buffer = await client.exportNoteSubtree(target.note.noteId, formatPick.format);
+        await vscode.workspace.fs.writeFile(saveUri, new Uint8Array(buffer));
+        void vscode.window.showInformationMessage(
+          `Trilium: Exported "${target.note.title}" to ${saveUri.fsPath}`,
+        );
+      } catch (err) {
+        void vscode.window.showErrorMessage(`Trilium: Export failed: ${err}`);
+      }
+    }),
+
+    // -----------------------------------------------------------------------
+    // Phase 5a — Note revision history
+    // -----------------------------------------------------------------------
+
+    vscode.commands.registerCommand('trilium.showRevisions', async (item?: NoteItem) => {
+      const target = item ?? treeView.selection[0];
+      if (!target) { return; }
+      const client = treeProvider.getClient();
+      if (!client) {
+        void vscode.window.showErrorMessage('Trilium: Not connected.');
+        return;
+      }
+
+      let revisions: Revision[];
+      try {
+        revisions = await client.getNoteRevisions(target.note.noteId);
+      } catch (err) {
+        void vscode.window.showErrorMessage(`Trilium: Failed to load revisions: ${err}`);
+        return;
+      }
+
+      if (revisions.length === 0) {
+        void vscode.window.showInformationMessage(
+          `"${target.note.title}" has no saved revisions.`,
+        );
+        return;
+      }
+
+      // Most recent first
+      revisions.sort((a, b) => b.utcDateLastEdited.localeCompare(a.utcDateLastEdited));
+
+      interface RevisionItem extends vscode.QuickPickItem { revision: Revision; }
+      const OPEN_BTN: vscode.QuickInputButton = {
+        iconPath: new vscode.ThemeIcon('go-to-file'),
+        tooltip: 'Open in tab',
+      };
+      const DIFF_BTN: vscode.QuickInputButton = {
+        iconPath: new vscode.ThemeIcon('diff'),
+        tooltip: 'Diff against current',
+      };
+
+      const items: RevisionItem[] = revisions.map((r) => ({
+        label: r.title,
+        description: r.dateLastEdited,
+        detail: r.contentLength > 0 ? `${r.contentLength} bytes` : undefined,
+        revision: r,
+        buttons: [OPEN_BTN, DIFF_BTN],
+      }));
+
+      const qp = vscode.window.createQuickPick<RevisionItem>();
+      qp.title = `Revisions — ${target.note.title}`;
+      qp.items = items;
+      qp.placeholder = 'Select revision · $(go-to-file) open · $(diff) diff against current';
+
+      const openRevision = async (r: Revision, diff: boolean) => {
+        qp.busy = true;
+        try {
+          const content = await client.getRevisionContent(r.revisionId);
+          revisionContentMap.set(`/${r.revisionId}`, content);
+          const revUri = vscode.Uri.parse(`trilium-revision:/${r.revisionId}`);
+          if (!diff) {
+            await vscode.window.showTextDocument(revUri, { preview: true });
+          } else {
+            const currentContent = await client.getNoteContent(target.note.noteId);
+            revisionContentMap.set(`/current-${target.note.noteId}`, currentContent);
+            const curUri = vscode.Uri.parse(`trilium-revision:/current-${target.note.noteId}`);
+            await vscode.commands.executeCommand(
+              'vscode.diff', revUri, curUri,
+              `${r.title} (${r.dateLastEdited}) ↔ Current`,
+            );
+          }
+        } catch (err) {
+          void vscode.window.showErrorMessage(`Trilium: Failed to load revision: ${err}`);
+        } finally {
+          qp.busy = false;
+        }
+      };
+
+      qp.onDidTriggerItemButton(async ({ item: picked, button }) => {
+        qp.hide();
+        await openRevision(picked.revision, button === DIFF_BTN);
+      });
+
+      qp.onDidAccept(async () => {
+        const [picked] = qp.selectedItems;
+        if (!picked) { return; }
+        qp.hide();
+        await openRevision(picked.revision, false);
+      });
+
+      qp.onDidHide(() => qp.dispose());
+      qp.show();
+    }),
+
+    // -----------------------------------------------------------------------
+    // Phase 5b — Clone & move notes
+    // -----------------------------------------------------------------------
+
+    vscode.commands.registerCommand('trilium.cloneNote', async (item?: NoteItem) => {
+      const target = item ?? treeView.selection[0];
+      if (!target) { return; }
+      const client = treeProvider.getClient();
+      if (!client) { void vscode.window.showErrorMessage('Trilium: Not connected.'); return; }
+
+      const destination = await pickDestinationNote(client, `Clone "${target.note.title}" to…`);
+      if (!destination) { return; }
+
+      try {
+        await client.createBranch(target.note.noteId, destination.noteId);
+        await client.refreshNoteOrdering(destination.noteId);
+        treeProvider.refresh();
+        void vscode.window.showInformationMessage(
+          `Cloned "${target.note.title}" into "${destination.title}".`,
+        );
+      } catch (err) {
+        void vscode.window.showErrorMessage(`Trilium: Clone failed: ${err}`);
+      }
+    }),
+
+    vscode.commands.registerCommand('trilium.moveNote', async (item?: NoteItem) => {
+      const target = item ?? treeView.selection[0];
+      if (!target) { return; }
+      const client = treeProvider.getClient();
+      if (!client) { void vscode.window.showErrorMessage('Trilium: Not connected.'); return; }
+
+      if (!target.branchId) {
+        void vscode.window.showErrorMessage(
+          `Trilium: Cannot determine the branch for this tree item. Right-click the note in the tree.`,
+        );
+        return;
+      }
+
+      // Block move if this is the note's only location — it would delete the note.
+      if (target.note.parentBranchIds.length <= 1) {
+        void vscode.window.showErrorMessage(
+          `"${target.note.title}" has only one location in the tree. ` +
+          `Moving it would delete the note. Use "Clone Note" instead.`,
+        );
+        return;
+      }
+
+      const destination = await pickDestinationNote(client, `Move "${target.note.title}" to…`);
+      if (!destination) { return; }
+
+      // Determine the old parent noteId from the tree path
+      const pathParts = target.path.split('/');
+      const oldParentNoteId = pathParts.length >= 2 ? pathParts[pathParts.length - 2] : undefined;
+
+      try {
+        await client.createBranch(target.note.noteId, destination.noteId);
+        await client.deleteBranch(target.branchId);
+        await client.refreshNoteOrdering(destination.noteId);
+        if (oldParentNoteId) {
+          await client.refreshNoteOrdering(oldParentNoteId);
+        }
+        treeProvider.refresh();
+        void vscode.window.showInformationMessage(
+          `Moved "${target.note.title}" to "${destination.title}".`,
+        );
+      } catch (err) {
+        void vscode.window.showErrorMessage(`Trilium: Move failed: ${err}`);
+      }
+    }),
+
+    // -----------------------------------------------------------------------
+    // Phase 5d — Export subtree
+    // -----------------------------------------------------------------------
+
+    vscode.commands.registerCommand('trilium.exportSubtree', async (item?: NoteItem) => {
+      const target = item ?? treeView.selection[0];
+      if (!target) { return; }
+      const client = treeProvider.getClient();
+      if (!client) { void vscode.window.showErrorMessage('Trilium: Not connected.'); return; }
+
+      interface FormatOption extends vscode.QuickPickItem { format: 'html' | 'markdown'; }
+      const formatPick = await vscode.window.showQuickPick<FormatOption>([
+        { label: '$(file-zip) HTML ZIP', description: 'Full HTML export with assets', format: 'html' },
+        { label: '$(markdown) Markdown ZIP', description: 'Markdown text export', format: 'markdown' },
+      ], { title: `Export Subtree — ${target.note.title}` });
+      if (!formatPick) { return; }
+
+      const defaultName = `${target.note.title.replace(/[\\/:*?"<>|]/g, '_')}.zip`;
+      const saveUri = await vscode.window.showSaveDialog({
+        defaultUri: vscode.Uri.file(defaultName),
+        filters: { 'ZIP Archive': ['zip'] },
+        saveLabel: 'Export',
+      });
+      if (!saveUri) { return; }
+
+      try {
+        const buffer = await client.exportNoteSubtree(target.note.noteId, formatPick.format);
+        await vscode.workspace.fs.writeFile(saveUri, new Uint8Array(buffer));
+        void vscode.window.showInformationMessage(
+          `Trilium: Exported "${target.note.title}" to ${saveUri.fsPath}`,
+        );
+      } catch (err) {
+        void vscode.window.showErrorMessage(`Trilium: Export failed: ${err}`);
+      }
+    }),
+
     // Sync note content back to Trilium whenever a tracked temp file is saved.
     vscode.workspace.onDidSaveTextDocument(async (doc) => {
       const noteId = tempFileManager.getNoteIdForPath(doc.fileName);
@@ -640,29 +1408,29 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 async function tryConnect(
   secrets: vscode.SecretStorage,
   treeProvider: NoteTreeProvider,
-): Promise<boolean> {
+): Promise<AppInfo | undefined> {
   const token = await getToken(secrets);
   if (!token) {
-    return false;
+    return undefined;
   }
 
   const serverUrl = getServerUrl();
   const client = new EtapiClient(serverUrl, token);
 
   try {
-    await client.getAppInfo();
+    const info = await client.getAppInfo();
     treeProvider.setClient(client);
-    return true;
+    return info;
   } catch {
     // Credentials stored but server unreachable — user can reconnect manually.
-    return false;
+    return undefined;
   }
 }
 
 async function runConnectWizard(
   secrets: vscode.SecretStorage,
   treeProvider: NoteTreeProvider,
-): Promise<void> {
+): Promise<AppInfo | undefined> {
   const currentUrl = getServerUrl();
 
   const serverUrl = await vscode.window.showInputBox({
@@ -704,15 +1472,98 @@ async function runConnectWizard(
     void vscode.window.showInformationMessage(
       `Trilium: Connected to ${serverUrl} (v${info.appVersion}).`,
     );
+    return info;
   } catch (err) {
     void vscode.window.showErrorMessage(
       `Trilium: Could not connect — check URL and token. ${err}`,
     );
+    return undefined;
   }
 }
 
 export function deactivate(): void {
   // Cleanup is handled via context.subscriptions.
+}
+
+// ---------------------------------------------------------------------------
+// Destination note picker (for clone / move)
+// ---------------------------------------------------------------------------
+
+async function pickDestinationNote(
+  client: EtapiClient,
+  title: string,
+): Promise<Note | undefined> {
+  interface DestItem extends vscode.QuickPickItem { note: Note; }
+  const qp = vscode.window.createQuickPick<DestItem>();
+  qp.title = title;
+  qp.placeholder = 'Type to search for destination note…';
+  qp.matchOnDescription = true;
+  let debounce: ReturnType<typeof setTimeout> | undefined;
+
+  qp.onDidChangeValue((query) => {
+    if (debounce) { clearTimeout(debounce); }
+    if (!query.trim()) { qp.items = []; return; }
+    qp.busy = true;
+    debounce = setTimeout(async () => {
+      try {
+        const { results } = await client.searchNotes(query, { limit: 30 });
+        qp.items = results.map((n) => ({
+          label: `$(${TYPE_ICON[n.type] ?? 'file'}) ${n.title}`,
+          description: n.type,
+          note: n,
+        }));
+      } catch {
+        qp.items = [];
+      } finally {
+        qp.busy = false;
+      }
+    }, 300);
+  });
+
+  return new Promise((resolve) => {
+    qp.onDidAccept(() => {
+      const [picked] = qp.selectedItems;
+      qp.dispose();
+      resolve(picked?.note);
+    });
+    qp.onDidHide(() => {
+      if (debounce) { clearTimeout(debounce); }
+      qp.dispose();
+      resolve(undefined);
+    });
+    qp.show();
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Note editor helper
+// ---------------------------------------------------------------------------
+
+async function openNoteInEditor(
+  note: Note,
+  client: EtapiClient,
+  tempFileManager: TempFileManager,
+): Promise<void> {
+  if (note.isProtected) {
+    void vscode.window.showWarningMessage(
+      `Trilium: Note is protected. Unlock it in Trilium first (Options → Protected Session).`,
+    );
+    return;
+  }
+  if (note.type === 'text') {
+    const uri = createVirtualDocumentUri(note.noteId, note.title);
+    await vscode.commands.executeCommand('vscode.openWith', uri, TriliumTextEditorProvider.viewType);
+    return;
+  }
+  const rawContent = await client.getNoteContent(note.noteId);
+  const filePath = tempFileManager.getTempPath(note);
+  const fileContent = note.type === 'mindMap'
+    ? tempFileManager.mindMapJsonToMarkdown(rawContent)
+    : rawContent;
+  fs.writeFileSync(filePath, fileContent, 'utf8');
+  const doc = await vscode.workspace.openTextDocument(filePath);
+  await vscode.languages.setTextDocumentLanguage(doc, tempFileManager.getLanguageId(note));
+  await vscode.window.showTextDocument(doc, { preview: false });
 }
 
 // ---------------------------------------------------------------------------

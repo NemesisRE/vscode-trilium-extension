@@ -166,6 +166,84 @@
         "title": "Delete Note",
         "icon": "$(trash)",
         "category": "Trilium"
+      },
+      {
+        "command": "trilium.copyNoteId",
+        "title": "Copy Note ID",
+        "category": "Trilium"
+      },
+      {
+        "command": "trilium.copyNoteUrl",
+        "title": "Copy Trilium URL",
+        "category": "Trilium"
+      },
+      {
+        "command": "trilium.openCalendarNote",
+        "title": "Open Calendar Note...",
+        "icon": "$(calendar-clock)",
+        "category": "Trilium"
+      },
+      {
+        "command": "trilium.openInboxNote",
+        "title": "Open Inbox Note",
+        "category": "Trilium"
+      },
+      {
+        "command": "trilium.openWeekNote",
+        "title": "Open This Week's Note",
+        "category": "Trilium"
+      },
+      {
+        "command": "trilium.openMonthNote",
+        "title": "Open This Month's Note",
+        "category": "Trilium"
+      },
+      {
+        "command": "trilium.openYearNote",
+        "title": "Open This Year's Note",
+        "category": "Trilium"
+      },
+      {
+        "command": "trilium.searchNotes",
+        "title": "Search Notes...",
+        "icon": "$(search)",
+        "category": "Trilium"
+      },
+      {
+        "command": "trilium.filterTree",
+        "title": "Filter Tree...",
+        "icon": "$(filter)",
+        "category": "Trilium"
+      },
+      {
+        "command": "trilium.clearTreeFilter",
+        "title": "Clear Tree Filter",
+        "icon": "$(filter-filled)",
+        "category": "Trilium"
+      },
+      {
+        "command": "trilium.showRevisions",
+        "title": "Show Note Revisions...",
+        "icon": "$(history)",
+        "category": "Trilium"
+      },
+      {
+        "command": "trilium.cloneNote",
+        "title": "Clone Note...",
+        "icon": "$(copy)",
+        "category": "Trilium"
+      },
+      {
+        "command": "trilium.moveNote",
+        "title": "Move Note...",
+        "icon": "$(arrow-right)",
+        "category": "Trilium"
+      },
+      {
+        "command": "trilium.exportSubtree",
+        "title": "Export Subtree...",
+        "icon": "$(package)",
+        "category": "Trilium"
       }
     ],
     "submenus": [
@@ -189,6 +267,21 @@
         }
       ],
       "view/title": [
+        {
+          "command": "trilium.searchNotes",
+          "when": "view == triliumNoteTree",
+          "group": "navigation@0"
+        },
+        {
+          "command": "trilium.clearTreeFilter",
+          "when": "view == triliumNoteTree && trilium.treeFiltered",
+          "group": "navigation@1"
+        },
+        {
+          "command": "trilium.filterTree",
+          "when": "view == triliumNoteTree && !trilium.treeFiltered",
+          "group": "navigation@1"
+        },
         {
           "command": "trilium.createNote",
           "when": "view == triliumNoteTree",
@@ -357,6 +450,36 @@
           "command": "trilium.deleteNote",
           "when": "viewItem =~ /^note(Text|Code|File|External)$/",
           "group": "2_delete@1"
+        },
+        {
+          "command": "trilium.copyNoteId",
+          "when": "viewItem =~ /^note(Text|Code|File|External)$/",
+          "group": "9_copy@1"
+        },
+        {
+          "command": "trilium.copyNoteUrl",
+          "when": "viewItem =~ /^note(Text|Code|File|External)$/",
+          "group": "9_copy@2"
+        },
+        {
+          "command": "trilium.showRevisions",
+          "when": "viewItem =~ /^note(Text|Code|File|External)$/",
+          "group": "3_history@1"
+        },
+        {
+          "command": "trilium.cloneNote",
+          "when": "viewItem =~ /^note(Text|Code|File|External)$/",
+          "group": "3_history@2"
+        },
+        {
+          "command": "trilium.moveNote",
+          "when": "viewItem =~ /^note(Text|Code|File|External)$/",
+          "group": "3_history@3"
+        },
+        {
+          "command": "trilium.exportSubtree",
+          "when": "viewItem =~ /^note(Text|Code|File|External)$/",
+          "group": "3_history@4"
         }
       ]
     },
@@ -475,6 +598,62 @@
             }
           }
         }
+      },
+      {
+        "name": "trilium_searchNotes",
+        "displayName": "Search Trilium Notes",
+        "modelDescription": "Searches notes in Trilium by a text query. Returns a list of matching notes with their noteId, title, type, and parent note title. Use this to find relevant notes before reading or linking them.",
+        "tags": ["trilium", "notes", "search"],
+        "inputSchema": {
+          "type": "object",
+          "required": ["query"],
+          "properties": {
+            "query": {
+              "type": "string",
+              "description": "Full-text search query."
+            },
+            "ancestorNoteId": {
+              "type": "string",
+              "description": "Restrict the search to descendants of this note ID. Omit to search all notes."
+            },
+            "limit": {
+              "type": "number",
+              "description": "Maximum number of results to return (default: 20, max: 100)."
+            }
+          }
+        }
+      },
+      {
+        "name": "trilium_readNote",
+        "displayName": "Read Trilium Note Content",
+        "modelDescription": "Reads the content of a specific Trilium note by its noteId. Returns the note title, type, and content as plain text (HTML stripped). Use this to inspect, summarise, or answer questions about a specific note.",
+        "tags": ["trilium", "notes", "read"],
+        "inputSchema": {
+          "type": "object",
+          "required": ["noteId"],
+          "properties": {
+            "noteId": {
+              "type": "string",
+              "description": "The ID of the note to read."
+            }
+          }
+        }
+      },
+      {
+        "name": "trilium_listChildren",
+        "displayName": "List Trilium Note Children",
+        "modelDescription": "Lists the direct child notes of a given Trilium note. Returns an array of noteId, title, and type. Use this to navigate the note tree or find child notes before reading them.",
+        "tags": ["trilium", "notes", "navigate"],
+        "inputSchema": {
+          "type": "object",
+          "required": ["noteId"],
+          "properties": {
+            "noteId": {
+              "type": "string",
+              "description": "The ID of the parent note whose children should be listed. Use 'root' for the top level."
+            }
+          }
+        }
       }
     ],
     "keybindings": [
@@ -491,6 +670,11 @@
           "type": "string",
           "default": "http://localhost:8080",
           "description": "URL of the Trilium Notes server (e.g. http://localhost:8080)"
+        },
+        "trilium.rootNoteId": {
+          "type": "string",
+          "default": "root",
+          "description": "Note ID to use as the root of the Trilium tree view. Defaults to 'root'. Change this to scope the tree to a specific subtree (workspace / hoisting equivalent)."
         },
         "trilium.editor.fontSize": {
           "type": "number",

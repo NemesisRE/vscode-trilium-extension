@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { EtapiClient, Note } from './etapiClient';
+import { getRootNoteId } from './settings';
 
 // ---------------------------------------------------------------------------
 // Icon helpers: BoxIcons (used by Trilium's #iconClass label) → Codicons
@@ -61,7 +62,7 @@ const BOXICON_TO_CODICON: Record<string, string> = {
   'arrow-up': 'arrow-up', 'arrow-down': 'arrow-down',
 };
 
-const TYPE_ICON: Partial<Record<Note['type'], string>> = {
+export const TYPE_ICON: Partial<Record<Note['type'], string>> = {
   text: 'file-text',
   code: 'file-code',
   mermaid: 'type-hierarchy',
@@ -149,6 +150,7 @@ export class NoteItem extends vscode.TreeItem {
   constructor(
     public readonly note: Note,
     public readonly path: string = note.noteId,
+    public readonly branchId: string | undefined = undefined,
   ) {
     super(
       note.title,
@@ -214,6 +216,7 @@ export class NoteTreeProvider implements vscode.TreeDataProvider<NoteItem> {
 
   private client: EtapiClient | undefined;
   private _logger: ((msg: string) => void) | undefined;
+  private filter = '';
 
   constructor(initialClient?: EtapiClient) {
     this.client = initialClient;
@@ -229,7 +232,22 @@ export class NoteTreeProvider implements vscode.TreeDataProvider<NoteItem> {
 
   setClient(client: EtapiClient): void {
     this.client = client;
+    this.filter = '';
     this._onDidChangeTreeData.fire();
+  }
+
+  setFilter(query: string): void {
+    this.filter = query;
+    this._onDidChangeTreeData.fire();
+  }
+
+  clearFilter(): void {
+    this.filter = '';
+    this._onDidChangeTreeData.fire();
+  }
+
+  getFilter(): string {
+    return this.filter;
   }
 
   getClient(): EtapiClient | undefined {
@@ -249,10 +267,27 @@ export class NoteTreeProvider implements vscode.TreeDataProvider<NoteItem> {
       return [];
     }
 
-    const noteId = element?.note.noteId ?? 'root';
+    // Filter mode: show a flat, single-level list of search results.
+    if (this.filter) {
+      if (element !== undefined) { return []; }
+      try {
+        const { results } = await this.client.searchNotes(this.filter, { limit: 100 });
+        return results.map((n) => {
+          const item = new NoteItem(n);
+          item.collapsibleState = vscode.TreeItemCollapsibleState.None;
+          return item;
+        });
+      } catch (err) {
+        vscode.window.showErrorMessage(`Trilium: Tree filter search failed: ${err}`);
+        return [];
+      }
+    }
+
+    const rootNoteId = getRootNoteId();
+    const noteId = element?.note.noteId ?? rootNoteId;
     // parentPath is the fragment path used to build the Trilium browser URL.
     // root-level items: "root/childId"; deeper: "root/a/b/childId"
-    const parentPath = element?.path ?? 'root';
+    const parentPath = element?.path ?? rootNoteId;
 
     try {
       const parent = await this.client.getNote(noteId);
@@ -265,7 +300,7 @@ export class NoteTreeProvider implements vscode.TreeDataProvider<NoteItem> {
         parent.childNoteIds.map((id) => this.client!.getNote(id)),
       );
 
-      const items = children.map((n) => new NoteItem(n, `${parentPath}/${n.noteId}`));
+      const items = children.map((n, i) => new NoteItem(n, `${parentPath}/${n.noteId}`, parent.childBranchIds[i]));
       this.log(`getChildren(${noteId}): ${items.length} items`);
       items.forEach((item) =>
         this.log(`  ${item.note.noteId} "${item.note.title}" type=${item.note.type} contextValue="${item.contextValue}"`),

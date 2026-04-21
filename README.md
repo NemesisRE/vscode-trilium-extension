@@ -91,7 +91,11 @@ Click the **calendar** button in the panel toolbar (or run **Trilium: Open Today
 
 ### Attributes Sidebar
 
-Select any note in the tree to see its **labels** and **relations** in the **Attributes** panel below the note tree. Labels are shown as `#name = value`; relations as `~name → targetId`.
+Select any note in the tree to see its **labels** and **relations** in the **Attributes** panel below the note tree. When connected, attributes are fully editable:
+
+- Label values are displayed as inline text fields — click to edit, press **Enter** or click away to save, press **Escape** to cancel.
+- Each attribute has a **×** delete button.
+- **+ Add Label** and **+ Add Relation** buttons create new attributes.
 
 ---
 
@@ -99,12 +103,25 @@ Select any note in the tree to see its **labels** and **relations** in the **Att
 
 ### GitHub Copilot Chat (automatic)
 
-The extension registers two **Language Model Tools** that Copilot Chat discovers automatically. No setup required — just ask Copilot while the extension is connected:
+The extension registers **five Language Model Tools** that Copilot Chat discovers automatically. No setup required — just ask Copilot while the extension is connected:
 
 > *"Create a Trilium note called 'Meeting Notes' with today's agenda."*
 > *"Add a project documentation tree to Trilium with an overview page, a Mermaid architecture diagram, and three API reference pages."*
+> *"Search my Trilium notes for anything about Kubernetes."*
+> *"What does my 'Project Overview' note say?"*
+> *"List the children of the root note."*
 
-Copilot will invoke the `trilium_createNote` or `trilium_importNotes` tool directly and confirm before making changes.
+Copilot will invoke the appropriate tool directly and confirm before making changes.
+
+#### Available tools
+
+| Tool | Description |
+| --- | --- |
+| `trilium_createNote` | Create a single note (text, code, mermaid, canvas). |
+| `trilium_importNotes` | Recursively create an entire note hierarchy from a JSON spec. |
+| `trilium_searchNotes` | Full-text search — returns noteId, title, type, and parent for each match. |
+| `trilium_readNote` | Read a note's content by noteId (HTML stripped to plain text). |
+| `trilium_listChildren` | List the direct children of any note by noteId. |
 
 #### Content format guidelines
 
@@ -217,6 +234,7 @@ All settings are under the `trilium` namespace and can be changed in **Settings*
 | Setting | Type | Default | Description |
 | --- | --- | --- | --- |
 | `trilium.serverUrl` | `string` | `http://localhost:8080` | URL of your Trilium Notes server. |
+| `trilium.rootNoteId` | `string` | `root` | Root note ID for the tree view. Change to scope the tree to a subtree. |
 | `trilium.editor.fontSize` | `number` (8–32) | `14` | Font size in pixels for the CKEditor content area. |
 | `trilium.editor.spellcheck` | `boolean` | `false` | Enable the browser's built-in spellcheck in the CKEditor content area. |
 
@@ -245,6 +263,16 @@ All commands are available via the Command Palette (`Ctrl+Shift+P`) under the **
 | `Trilium: Rename Note` | Rename the selected note (also **F2**). |
 | `Trilium: Delete Note` | Delete the selected note (confirmation required). |
 | `Trilium: Open Today's Journal Note` | Open the Trilium journal entry for today (toolbar button). |
+| `Trilium: Open Calendar Note…` | QuickPick to open today's, inbox, this week's, this month's, or this year's note. |
+| `Trilium: Open Inbox Note` | Open the Trilium inbox note for today. |
+| `Trilium: Open This Week's Note` | Open the calendar note for the current ISO week. |
+| `Trilium: Open This Month's Note` | Open the calendar note for the current month. |
+| `Trilium: Open This Year's Note` | Open the calendar note for the current year. |
+| `Trilium: Search Notes…` | Live full-text search with debounced QuickPick — opens selected note. |
+| `Trilium: Filter Tree…` | Filter the note tree by keyword (server search, flat results). |
+| `Trilium: Clear Tree Filter` | Reset the tree to its normal hierarchical view. |
+| `Trilium: Copy Note ID` | Copy the selected note's ID to the clipboard (right-click). |
+| `Trilium: Copy Trilium URL` | Copy the selected note's full Trilium URL to the clipboard (right-click). |
 | `Trilium: Open in Browser` | Open the note in VS Code's Simple Browser. |
 | `Trilium: Open in External Browser` | Open the note in the system browser. |
 | `Trilium: Download File` | Download a file/image note to disk. |
@@ -254,7 +282,6 @@ All commands are available via the Command Palette (`Ctrl+Shift+P`) under the **
 ## Known Limitations
 
 - **Protected notes** are not supported — ETAPI requires the note to be unlocked first. Attempting to open a protected note shows a warning; unlock it in Trilium first (**Options → Protected Session**).
-- **Attributes are read-only** — labels and relations are visible in the Attributes sidebar but cannot be edited from within VS Code yet.
 - **Canvas notes** are opened as raw JSON. Install the [Excalidraw VS Code extension](https://marketplace.visualstudio.com/items?itemName=pomdtr.excalidraw-editor) for a visual editor.
 - **Mind map notes** are converted to/from a Markdown heading hierarchy. MindElixir node properties (colours, styles, layout direction) are not preserved on round-trip.
 - **Trilium-specific CKEditor plugins** (internal links, note embedding, cut-to-note, footnotes, admonitions, KaTeX math, Mermaid inline, date/time insertion) are not available — these live in Trilium's own `@triliumnext/ckeditor5` fork which is not published to npm.
