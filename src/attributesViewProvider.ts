@@ -199,10 +199,25 @@ export class AttributesViewProvider implements vscode.WebviewViewProvider {
       ? `${escapeHtml(note.type)} · ${escapeHtml(note.mime)}`
       : escapeHtml(note.type);
 
-    const addButtons = editable ? `
-<div class="add-row">
-  <button class="add-btn" id="addLabel">+ Add Label</button>
-  <button class="add-btn" id="addRelation">+ Add Relation</button>
+    const addLabelButton = editable ? `
+<button class="add-btn" id="addLabel">+ Add Label</button>
+<div class="add-form" id="addLabelForm">
+  <input id="labelName" placeholder="Name" spellcheck="false">
+  <input id="labelValue" placeholder="Value (leave blank for flag)" spellcheck="false">
+  <div class="add-form-row">
+    <button class="confirm-btn" id="addLabelConfirm">Add</button>
+    <button class="cancel-btn" id="addLabelCancel">Cancel</button>
+  </div>
+</div>` : '';
+    const addRelationButton = editable ? `
+<button class="add-btn" id="addRelation">+ Add Relation</button>
+<div class="add-form" id="addRelationForm">
+  <input id="relationName" placeholder="Name" spellcheck="false">
+  <input id="relationValue" placeholder="Target note ID" spellcheck="false">
+  <div class="add-form-row">
+    <button class="confirm-btn" id="addRelationConfirm">Add</button>
+    <button class="cancel-btn" id="addRelationCancel">Cancel</button>
+  </div>
 </div>` : '';
 
     // Nonce for inline script CSP
@@ -234,33 +249,69 @@ document.querySelectorAll('.del-btn').forEach(btn => {
   });
 });
 
-// Add label
-document.getElementById('addLabel')?.addEventListener('click', () => {
-  const name = prompt('Label name:');
-  if (!name || !name.trim()) return;
-  const value = prompt('Label value (leave blank for flag-style):') ?? '';
-  vscode.postMessage({ type: 'addAttribute', attrType: 'label', name: name.trim(), value });
+// Add label / relation — inline forms
+function showAddForm(type) {
+  const btn = document.getElementById(type === 'label' ? 'addLabel' : 'addRelation');
+  const form = document.getElementById(type === 'label' ? 'addLabelForm' : 'addRelationForm');
+  if (!form) return;
+  form.classList.add('visible');
+  if (btn) btn.style.display = 'none';
+  const nameInput = document.getElementById(type === 'label' ? 'labelName' : 'relationName');
+  if (nameInput) nameInput.focus();
+}
+function hideAddForm(type) {
+  const btn = document.getElementById(type === 'label' ? 'addLabel' : 'addRelation');
+  const form = document.getElementById(type === 'label' ? 'addLabelForm' : 'addRelationForm');
+  if (form) { form.classList.remove('visible'); }
+  if (btn) btn.style.display = '';
+  const nameId = type === 'label' ? 'labelName' : 'relationName';
+  const valId  = type === 'label' ? 'labelValue' : 'relationValue';
+  const n = document.getElementById(nameId); if (n) n.value = '';
+  const v = document.getElementById(valId);  if (v) v.value = '';
+}
+function submitAddForm(type) {
+  const nameId = type === 'label' ? 'labelName' : 'relationName';
+  const valId  = type === 'label' ? 'labelValue' : 'relationValue';
+  const name  = (document.getElementById(nameId)?.value ?? '').trim();
+  const value = (document.getElementById(valId)?.value  ?? '').trim();
+  if (!name) { document.getElementById(nameId)?.focus(); return; }
+  vscode.postMessage({ type: 'addAttribute', attrType: type, name, value });
+  hideAddForm(type);
+}
+
+// Wire add-label / add-relation buttons via addEventListener (onclick attrs blocked by CSP nonce)
+document.getElementById('addLabel')?.addEventListener('click', () => showAddForm('label'));
+document.getElementById('addLabelConfirm')?.addEventListener('click', () => submitAddForm('label'));
+document.getElementById('addLabelCancel')?.addEventListener('click', () => hideAddForm('label'));
+document.getElementById('addRelation')?.addEventListener('click', () => showAddForm('relation'));
+document.getElementById('addRelationConfirm')?.addEventListener('click', () => submitAddForm('relation'));
+document.getElementById('addRelationCancel')?.addEventListener('click', () => hideAddForm('relation'));
+
+// Allow Enter / Escape inside the form inputs
+['labelName','labelValue','relationName','relationValue'].forEach(id => {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.addEventListener('keydown', e => {
+    const t = id.startsWith('label') ? 'label' : 'relation';
+    if (e.key === 'Enter')  { e.preventDefault(); submitAddForm(t); }
+    if (e.key === 'Escape') { e.preventDefault(); hideAddForm(t); }
+  });
 });
 
-// Add relation
-document.getElementById('addRelation')?.addEventListener('click', () => {
-  const name = prompt('Relation name:');
-  if (!name || !name.trim()) return;
-  const value = prompt('Target note ID:') ?? '';
-  vscode.postMessage({ type: 'addAttribute', attrType: 'relation', name: name.trim(), value });
+// Attachment buttons (confirm() is also blocked in webviews — skip the guard)
+document.querySelectorAll('.att-dl').forEach(btn => {
+  btn.addEventListener('click', () => {
+    vscode.postMessage({ type: 'downloadAttachment', attachmentId: btn.dataset.attId, title: btn.dataset.attTitle, mime: btn.dataset.attMime });
+  });
 });
-
-// Attachment actions
-function downloadAttachment(btn) {
-  vscode.postMessage({ type: 'downloadAttachment', attachmentId: btn.dataset.attId, title: btn.dataset.attTitle, mime: btn.dataset.attMime });
-}
-function deleteAttachment(btn) {
-  if (!confirm('Delete attachment "' + btn.dataset.attId + '"?')) return;
-  vscode.postMessage({ type: 'deleteAttachment', attachmentId: btn.dataset.attId });
-}
-function uploadAttachment() {
+document.querySelectorAll('.att-del').forEach(btn => {
+  btn.addEventListener('click', () => {
+    vscode.postMessage({ type: 'deleteAttachment', attachmentId: btn.dataset.attId });
+  });
+});
+document.querySelector('.upload-btn')?.addEventListener('click', () => {
   vscode.postMessage({ type: 'uploadAttachment' });
-}
+});
 </script>` : '';
 
     return `<!DOCTYPE html>
@@ -345,13 +396,10 @@ function uploadAttachment() {
       font-size: 0.85em;
       margin: 2px 0;
     }
-    .add-row {
-      display: flex;
-      gap: 6px;
-      margin-top: 12px;
-    }
     .add-btn {
-      flex: 1;
+      display: block;
+      width: 100%;
+      margin-top: 6px;
       background: var(--vscode-button-secondaryBackground, var(--vscode-button-background));
       color: var(--vscode-button-secondaryForeground, var(--vscode-button-foreground));
       border: none;
@@ -362,6 +410,48 @@ function uploadAttachment() {
       cursor: pointer;
     }
     .add-btn:hover { filter: brightness(1.15); }
+    .add-form {
+      display: none;
+      flex-direction: column;
+      gap: 4px;
+      margin-top: 6px;
+    }
+    .add-form.visible { display: flex; }
+    .add-form input {
+      background: var(--vscode-input-background);
+      color: var(--vscode-input-foreground);
+      border: 1px solid var(--vscode-input-border, transparent);
+      border-radius: 2px;
+      padding: 3px 6px;
+      font-family: inherit;
+      font-size: 0.85em;
+    }
+    .add-form input:focus { outline: none; border-color: var(--vscode-focusBorder); }
+    .add-form-row {
+      display: flex;
+      gap: 4px;
+    }
+    .add-form-row .confirm-btn {
+      background: var(--vscode-button-background);
+      color: var(--vscode-button-foreground);
+      border: none;
+      border-radius: 2px;
+      padding: 3px 10px;
+      font-family: inherit;
+      font-size: 0.85em;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .add-form-row .confirm-btn:hover { filter: brightness(1.1); }
+    .add-form-row .cancel-btn {
+      background: none;
+      border: none;
+      color: var(--vscode-descriptionForeground);
+      cursor: pointer;
+      font-size: 0.85em;
+      padding: 3px 6px;
+    }
+    .add-form-row .cancel-btn:hover { color: var(--vscode-foreground); }
     .attachment-list { margin: 0; padding: 0; list-style: none; }
     .att-item {
       display: flex;
@@ -415,9 +505,10 @@ function uploadAttachment() {
   <hr>
   <h3>Labels</h3>
   ${labelRows}
+  ${addLabelButton}
   <h3>Relations</h3>
   ${relationRows}
-  ${addButtons}
+  ${addRelationButton}
   <hr>
   <h3>Attachments</h3>
   ${this._buildAttachmentsHtml(attachments, attachmentsLoaded, editable)}
@@ -449,14 +540,12 @@ function uploadAttachment() {
           <button class="att-dl" title="Download"
             data-att-id="${escapeHtml(a.attachmentId)}"
             data-att-title="${escapeHtml(a.title)}"
-            data-att-mime="${escapeHtml(a.mime)}"
-            onclick="downloadAttachment(this)">⬇</button>
+            data-att-mime="${escapeHtml(a.mime)}">⬇</button>
           ${editable ? `<button class="att-del" title="Delete"
-            data-att-id="${escapeHtml(a.attachmentId)}"
-            onclick="deleteAttachment(this)">×</button>` : ''}
+            data-att-id="${escapeHtml(a.attachmentId)}">×</button>` : ''}
         </li>`).join('')}</ul>`;
     const uploadBtn = editable
-      ? `<button class="upload-btn" onclick="uploadAttachment()">＋ Upload file…</button>`
+      ? `<button class="upload-btn">＋ Upload file…</button>`
       : '';
     return rows + uploadBtn;
   }
