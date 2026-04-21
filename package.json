@@ -699,7 +699,7 @@
     "build:prod": "node esbuild.mjs --production",
     "watch": "node esbuild.mjs --watch",
     "compile": "tsc --noEmit",
-    "compile:tests": "tsc",
+    "compile:tests": "tsc -p tsconfig.test.json",
     "test:unit": "npm run compile:tests && mocha",
     "test:integration": "npm run build && npm run compile:tests && vscode-test",
     "test": "npm run test:unit",
