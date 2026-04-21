@@ -44,13 +44,10 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
     webviewPanel.title = tabTitle;
 
     // Set initial HTML
-    const client = this.getClient();
     webviewPanel.webview.html = this.getHtmlForWebview(
       webviewPanel.webview,
       getEditorFontSize(),
       getEditorSpellcheck(),
-      client?.getServerUrl() ?? '',
-      client?.getToken() ?? '',
     );
 
     // True while we are applying a CKEditor-originated edit to the document.
@@ -96,6 +93,15 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
           void document.save();
           break;
 
+        case 'fetchImage': {
+          const { id, url } = message as { type: string; id: string; url: string };
+          void this.fetchImageDataUri(url).then(dataUri => {
+            void webviewPanel.webview.postMessage({ type: 'imageFetchResult', id, dataUri });
+          }).catch(() => {
+            void webviewPanel.webview.postMessage({ type: 'imageFetchResult', id, error: 'fetch failed' });
+          });
+          break;
+        }
         case 'error':
           void vscode.window.showErrorMessage(`Trilium Editor: ${message.message}`);
           break;
@@ -172,6 +178,14 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
     }
   }
 
+  private async fetchImageDataUri(relativeUrl: string): Promise<string> {
+    const client = this.getClient();
+    if (!client) { throw new Error('Not connected'); }
+    const { buffer, contentType } = await client.fetchRaw(relativeUrl);
+    const base64 = Buffer.from(buffer).toString('base64');
+    return `data:${contentType.split(';')[0].trim()};base64,${base64}`;
+  }
+
   private async sendBreadcrumb(panel: vscode.WebviewPanel, noteId: string): Promise<void> {
     const client = this.getClient();
     if (!client) { return; }
@@ -198,7 +212,7 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
   /**
    * Generate HTML for the webview with CKEditor 5.
    */
-  private getHtmlForWebview(webview: vscode.Webview, fontSize: number, spellcheck: boolean, serverUrl = '', token = ''): string {
+  private getHtmlForWebview(webview: vscode.Webview, fontSize: number, spellcheck: boolean): string {
     // Load CKEditor from out/ckeditor (copied during build)
     const ckeditorUri = webview.asWebviewUri(
       vscode.Uri.joinPath(
@@ -223,7 +237,6 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
       script-src 'nonce-${nonce}';
       font-src ${webview.cspSource};
       img-src * data: blob:;
-      ${serverUrl ? `connect-src ${serverUrl};` : ''}
     ">
     <title>Trilium Text Editor</title>
     <style nonce="${nonce}">
@@ -300,14 +313,29 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
       .ck.ck-toolbar .ck.ck-toolbar__separator {
         background: var(--vscode-editorWidget-border, #454545) !important;
       }
-      .ck.ck-editor__top { border-color: var(--vscode-editorWidget-border, #454545) !important; }
+      .ck.ck-editor__top { border: none !important; }
+      .ck.ck-editor {
+        flex: 1 !important;
+        min-height: 0 !important;
+        display: flex !important;
+        flex-direction: column !important;
+      }
+      .ck.ck-editor__main {
+        flex: 1 !important;
+        min-height: 0 !important;
+        display: flex !important;
+        flex-direction: column !important;
+      }
       .ck.ck-editor__main>.ck-editor__editable {
         background: var(--vscode-editor-background, #1e1e1e) !important;
         color: var(--vscode-editor-foreground, #d4d4d4) !important;
-        border-color: var(--vscode-editorWidget-border, #454545) !important;
+        border: none !important;
+        flex: 1 !important;
+        min-height: 0 !important;
+        overflow-y: auto !important;
       }
       .ck.ck-editor__editable.ck-focused {
-        border-color: var(--vscode-focusBorder, #007acc) !important;
+        border: none !important;
         box-shadow: none !important;
         outline: none !important;
       }
@@ -384,10 +412,6 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
         display: flex;
         flex-direction: column;
       }
-      .ck-editor__editable {
-        flex: 1;
-        overflow-y: auto;
-      }
       /* Match Trilium's content styles */
       .ck-content {
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -444,10 +468,9 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
     <script nonce="${nonce}">
       (function() {
         const vscode = acquireVsCodeApi();
-        const TRILIUM_SERVER = ${JSON.stringify(serverUrl)};
-        const TRILIUM_TOKEN  = ${JSON.stringify(token)};
         let editor;
         let isUpdatingFromExtension = false;
+        const pendingImageFetches = new Map();
 
         // Initialize CKEditor
         ClassicEditor
@@ -579,24 +602,27 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
               if (el) { el.textContent = message.path; }
               break;
             }
+            case 'imageFetchResult': {
+              const img = pendingImageFetches.get(message.id);
+              pendingImageFetches.delete(message.id);
+              if (img && message.dataUri) { img.src = message.dataUri; }
+              break;
+            }
           }
         });
 
-        // Rewrite Trilium-relative image URLs so images display inside the webview.
-        // Images are fetched via the ETAPI token; only the display src is changed —
-        // editor.getData() still returns the original relative URLs, so saving is safe.
+        // Proxy image fetches through the extension host to avoid CORS restrictions.
+        // Only the DOM img.src property is updated — editor.getData() returns the
+        // original relative URL, so saving back to Trilium is unaffected.
         function rewriteTriliumImages() {
-          if (!TRILIUM_SERVER || !TRILIUM_TOKEN) { return; }
           document.querySelectorAll('.ck-content img').forEach(img => {
             const src = img.getAttribute('src') ?? '';
             if (!src || img.dataset.triliumFixed) { return; }
             if (src.startsWith('api/') || src.startsWith('/api/')) {
               img.dataset.triliumFixed = '1';
-              const url = TRILIUM_SERVER + (src.startsWith('/') ? src : '/' + src);
-              fetch(url, { headers: { Authorization: TRILIUM_TOKEN } })
-                .then(r => r.blob())
-                .then(blob => { img.src = URL.createObjectURL(blob); })
-                .catch(() => { /* leave broken-image icon */ });
+              const id = Math.random().toString(36).slice(2);
+              pendingImageFetches.set(id, img);
+              vscode.postMessage({ type: 'fetchImage', id, url: src });
             }
           });
         }

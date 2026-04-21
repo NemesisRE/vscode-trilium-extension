@@ -490,16 +490,28 @@ document.querySelector('.upload-btn')?.addEventListener('click', () => {
       white-space: nowrap;
     }
     .att-dl, .att-open, .att-del {
-      background: none;
-      border: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      background: var(--vscode-button-secondaryBackground, rgba(90,93,94,.25));
+      color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+      border: 1px solid var(--vscode-button-border, transparent);
+      border-radius: 2px;
       cursor: pointer;
-      padding: 0 2px;
-      line-height: 1;
-      opacity: 0.6;
-      font-size: 1em;
+      padding: 3px 8px;
+      font-size: 0.8em;
+      white-space: nowrap;
+      line-height: 1.4;
     }
-    .att-dl:hover, .att-open:hover, .att-del:hover { opacity: 1; }
-    .att-del { color: var(--vscode-errorForeground, #f44); }
+    .att-dl:hover, .att-open:hover {
+      background: var(--vscode-button-secondaryHoverBackground, rgba(90,93,94,.45));
+    }
+    .att-del {
+      background: none;
+      border-color: var(--vscode-errorForeground, #f44);
+      color: var(--vscode-errorForeground, #f44);
+    }
+    .att-del:hover { background: rgba(255,68,68,.12); }
     .upload-btn {
       display: block;
       width: 100%;
@@ -558,13 +570,13 @@ document.querySelector('.upload-btn')?.addEventListener('click', () => {
           <button class="att-dl" title="Download"
             data-att-id="${escapeHtml(a.attachmentId)}"
             data-att-title="${escapeHtml(a.title)}"
-            data-att-mime="${escapeHtml(a.mime)}">⬇</button>
+            data-att-mime="${escapeHtml(a.mime)}">⬇ Download</button>
           <button class="att-open" title="Open in VS Code"
             data-att-id="${escapeHtml(a.attachmentId)}"
             data-att-title="${escapeHtml(a.title)}"
-            data-att-mime="${escapeHtml(a.mime)}">↗</button>
+            data-att-mime="${escapeHtml(a.mime)}">↗ Open</button>
           ${editable ? `<button class="att-del" title="Delete"
-            data-att-id="${escapeHtml(a.attachmentId)}">×</button>` : ''}
+            data-att-id="${escapeHtml(a.attachmentId)}">✕ Delete</button>` : ''}
         </li>`).join('')}</ul>`;
     const uploadBtn = editable
       ? `<button class="upload-btn">＋ Upload file…</button>`
