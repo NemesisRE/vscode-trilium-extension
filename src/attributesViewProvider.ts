@@ -1,3 +1,5 @@
+import * as os from 'os';
+import * as path from 'path';
 import * as vscode from 'vscode';
 import { EtapiClient, Note, Attribute, Attachment } from './etapiClient';
 
@@ -27,6 +29,7 @@ type WebviewMessage =
   | { type: 'deleteAttribute'; attributeId: string }
   | { type: 'addAttribute'; attrType: 'label' | 'relation'; name: string; value: string }
   | { type: 'downloadAttachment'; attachmentId: string; title: string; mime: string }
+  | { type: 'openAttachment'; attachmentId: string; title: string; mime: string }
   | { type: 'deleteAttachment'; attachmentId: string }
   | { type: 'uploadAttachment' };
 
@@ -84,6 +87,16 @@ export class AttributesViewProvider implements vscode.WebviewViewProvider {
                 `Trilium: Downloaded "${msg.title}" to ${saveUri.fsPath}`,
               );
             }
+            break;
+          }
+          case 'openAttachment': {
+            const buf = await this._client.getAttachmentContent(msg.attachmentId);
+            const safeName = msg.title.replace(/[^a-zA-Z0-9._-]/g, '_') || `attachment-${msg.attachmentId}`;
+            const tmpDir = path.join(os.tmpdir(), 'trilium-attachments', msg.attachmentId);
+            await vscode.workspace.fs.createDirectory(vscode.Uri.file(tmpDir));
+            const tmpFile = vscode.Uri.file(path.join(tmpDir, safeName));
+            await vscode.workspace.fs.writeFile(tmpFile, new Uint8Array(buf));
+            await vscode.commands.executeCommand('vscode.open', tmpFile);
             break;
           }
           case 'deleteAttachment': {
@@ -304,6 +317,11 @@ document.querySelectorAll('.att-dl').forEach(btn => {
     vscode.postMessage({ type: 'downloadAttachment', attachmentId: btn.dataset.attId, title: btn.dataset.attTitle, mime: btn.dataset.attMime });
   });
 });
+document.querySelectorAll('.att-open').forEach(btn => {
+  btn.addEventListener('click', () => {
+    vscode.postMessage({ type: 'openAttachment', attachmentId: btn.dataset.attId, title: btn.dataset.attTitle, mime: btn.dataset.attMime });
+  });
+});
 document.querySelectorAll('.att-del').forEach(btn => {
   btn.addEventListener('click', () => {
     vscode.postMessage({ type: 'deleteAttachment', attachmentId: btn.dataset.attId });
@@ -471,7 +489,7 @@ document.querySelector('.upload-btn')?.addEventListener('click', () => {
       color: var(--vscode-descriptionForeground);
       white-space: nowrap;
     }
-    .att-dl, .att-del {
+    .att-dl, .att-open, .att-del {
       background: none;
       border: none;
       cursor: pointer;
@@ -480,7 +498,7 @@ document.querySelector('.upload-btn')?.addEventListener('click', () => {
       opacity: 0.6;
       font-size: 1em;
     }
-    .att-dl:hover, .att-del:hover { opacity: 1; }
+    .att-dl:hover, .att-open:hover, .att-del:hover { opacity: 1; }
     .att-del { color: var(--vscode-errorForeground, #f44); }
     .upload-btn {
       display: block;
@@ -541,6 +559,10 @@ document.querySelector('.upload-btn')?.addEventListener('click', () => {
             data-att-id="${escapeHtml(a.attachmentId)}"
             data-att-title="${escapeHtml(a.title)}"
             data-att-mime="${escapeHtml(a.mime)}">⬇</button>
+          <button class="att-open" title="Open in VS Code"
+            data-att-id="${escapeHtml(a.attachmentId)}"
+            data-att-title="${escapeHtml(a.title)}"
+            data-att-mime="${escapeHtml(a.mime)}">↗</button>
           ${editable ? `<button class="att-del" title="Delete"
             data-att-id="${escapeHtml(a.attachmentId)}">×</button>` : ''}
         </li>`).join('')}</ul>`;

@@ -119,6 +119,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const initialInfo = await tryConnect(context.secrets, treeProvider);
   updateStatusBar(initialInfo);
   updateTreeDescription(initialInfo);
+  void vscode.commands.executeCommand('setContext', 'trilium.connected', !!initialInfo);
   attributesProvider.setClient(treeProvider.getClient());
 
   context.subscriptions.push(
@@ -135,6 +136,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const info = await runConnectWizard(context.secrets, treeProvider);
       updateStatusBar(info);
       updateTreeDescription(info);
+      void vscode.commands.executeCommand('setContext', 'trilium.connected', !!info);
+      attributesProvider.setClient(treeProvider.getClient());
+    }),
+
+    vscode.commands.registerCommand('trilium.reconnect', async () => {
+      const info = await runConnectWizard(context.secrets, treeProvider);
+      updateStatusBar(info);
+      updateTreeDescription(info);
+      void vscode.commands.executeCommand('setContext', 'trilium.connected', !!info);
       attributesProvider.setClient(treeProvider.getClient());
     }),
 

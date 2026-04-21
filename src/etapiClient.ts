@@ -118,6 +118,9 @@ export class EtapiClient {
     private readonly token: string,
   ) {}
 
+  getServerUrl(): string { return this.serverUrl; }
+  getToken(): string { return this.token; }
+
   private baseUrl(): string {
     return `${this.serverUrl.replace(/\/$/, '')}/etapi`;
   }

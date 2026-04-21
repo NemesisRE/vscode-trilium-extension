@@ -69,6 +69,12 @@
         "category": "Trilium"
       },
       {
+        "command": "trilium.reconnect",
+        "title": "Reconnect to Trilium Server",
+        "icon": "$(database)",
+        "category": "Trilium"
+      },
+      {
         "command": "trilium.openNote",
         "title": "Open Note",
         "icon": "$(edit)",
@@ -305,7 +311,12 @@
         },
         {
           "command": "trilium.connect",
-          "when": "view == triliumNoteTree",
+          "when": "view == triliumNoteTree && !trilium.connected",
+          "group": "navigation"
+        },
+        {
+          "command": "trilium.reconnect",
+          "when": "view == triliumNoteTree && trilium.connected",
           "group": "navigation"
         }
       ],
