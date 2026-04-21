@@ -6,6 +6,7 @@
     "lib": ["ES2022", "DOM"],
     "types": ["node", "mocha"],
     "outDir": "out",
+    "noEmit": true,
     "sourceMap": true,
     "strict": true,
     "skipLibCheck": true,
