@@ -39,11 +39,18 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
       ],
     };
 
+    // Show note title in the editor tab
+    const tabTitle = new URLSearchParams(document.uri.query).get('title') ?? 'Trilium Note';
+    webviewPanel.title = tabTitle;
+
     // Set initial HTML
+    const client = this.getClient();
     webviewPanel.webview.html = this.getHtmlForWebview(
       webviewPanel.webview,
       getEditorFontSize(),
       getEditorSpellcheck(),
+      client?.getServerUrl() ?? '',
+      client?.getToken() ?? '',
     );
 
     // True while we are applying a CKEditor-originated edit to the document.
@@ -191,7 +198,7 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
   /**
    * Generate HTML for the webview with CKEditor 5.
    */
-  private getHtmlForWebview(webview: vscode.Webview, fontSize: number, spellcheck: boolean): string {
+  private getHtmlForWebview(webview: vscode.Webview, fontSize: number, spellcheck: boolean, serverUrl = '', token = ''): string {
     // Load CKEditor from out/ckeditor (copied during build)
     const ckeditorUri = webview.asWebviewUri(
       vscode.Uri.joinPath(
@@ -215,6 +222,8 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
       style-src ${webview.cspSource} 'unsafe-inline';
       script-src 'nonce-${nonce}';
       font-src ${webview.cspSource};
+      img-src * data: blob:;
+      ${serverUrl ? `connect-src ${serverUrl};` : ''}
     ">
     <title>Trilium Text Editor</title>
     <style nonce="${nonce}">
@@ -281,6 +290,72 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
         --ck-color-link-default:             var(--vscode-textLink-foreground, #006ab1);
         --ck-color-image-caption-background: var(--vscode-editorWidget-background, #f3f3f3);
         --ck-color-image-caption-text:       var(--vscode-editor-foreground, #000);
+      }
+
+      /* Direct CKEditor element overrides — applied after CKEditor injects its own CSS */
+      .ck.ck-toolbar, .ck.ck-toolbar_grouping {
+        background: var(--vscode-editorWidget-background, #3c3c3c) !important;
+        border-color: var(--vscode-editorWidget-border, #454545) !important;
+      }
+      .ck.ck-toolbar .ck.ck-toolbar__separator {
+        background: var(--vscode-editorWidget-border, #454545) !important;
+      }
+      .ck.ck-editor__top { border-color: var(--vscode-editorWidget-border, #454545) !important; }
+      .ck.ck-editor__main>.ck-editor__editable {
+        background: var(--vscode-editor-background, #1e1e1e) !important;
+        color: var(--vscode-editor-foreground, #d4d4d4) !important;
+        border-color: var(--vscode-editorWidget-border, #454545) !important;
+      }
+      .ck.ck-editor__editable.ck-focused {
+        border-color: var(--vscode-focusBorder, #007acc) !important;
+        box-shadow: none !important;
+        outline: none !important;
+      }
+      .ck.ck-button { color: var(--vscode-editor-foreground, #cccccc) !important; }
+      .ck.ck-button:not(.ck-disabled):not(.ck-on):hover {
+        background: var(--vscode-toolbar-hoverBackground, rgba(90,93,94,.31)) !important;
+      }
+      .ck.ck-button.ck-on {
+        background: var(--vscode-inputOption-activeBackground, #007acc) !important;
+        color: var(--vscode-inputOption-activeForeground, #fff) !important;
+      }
+      .ck.ck-dropdown__panel, .ck.ck-balloon-panel {
+        background: var(--vscode-editorWidget-background, #3c3c3c) !important;
+        border-color: var(--vscode-editorWidget-border, #454545) !important;
+        box-shadow: 0 2px 8px var(--vscode-widget-shadow, rgba(0,0,0,.36)) !important;
+      }
+      .ck.ck-list { background: var(--vscode-editorWidget-background, #3c3c3c) !important; }
+      .ck.ck-list__item>.ck-button { color: var(--vscode-editor-foreground, #cccccc) !important; }
+      .ck.ck-list__item>.ck-button:hover {
+        background: var(--vscode-list-hoverBackground, rgba(90,93,94,.31)) !important;
+      }
+      .ck.ck-list__item>.ck-button.ck-on {
+        background: var(--vscode-list-activeSelectionBackground, #094771) !important;
+        color: var(--vscode-list-activeSelectionForeground, #fff) !important;
+      }
+      .ck.ck-input {
+        background: var(--vscode-input-background, #3c3c3c) !important;
+        color: var(--vscode-input-foreground, #cccccc) !important;
+        border-color: var(--vscode-input-border, transparent) !important;
+      }
+      .ck .ck-label, .ck.ck-labeled-field-view__label {
+        color: var(--vscode-foreground, #cccccc) !important;
+        background: var(--vscode-editorWidget-background, #3c3c3c) !important;
+      }
+      .ck.ck-tooltip .ck-tooltip__text {
+        background: var(--vscode-editorHoverWidget-background, #252526) !important;
+        color: var(--vscode-editorHoverWidget-foreground, #cccccc) !important;
+        border-color: var(--vscode-editorHoverWidget-border, #454545) !important;
+      }
+      /* Remove "Powered by CKEditor" badge */
+      .ck.ck-powered-by { display: none !important; }
+      /* Fix hardcoded table colors */
+      .ck-content table td, .ck-content table th {
+        border: 1px solid var(--vscode-editorWidget-border, rgba(128,128,128,.4)) !important;
+      }
+      .ck-content table th {
+        background: var(--vscode-editorWidget-background, rgba(128,128,128,.1)) !important;
+        color: var(--vscode-editor-foreground) !important;
       }
 
       body {
@@ -369,6 +444,8 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
     <script nonce="${nonce}">
       (function() {
         const vscode = acquireVsCodeApi();
+        const TRILIUM_SERVER = ${JSON.stringify(serverUrl)};
+        const TRILIUM_TOKEN  = ${JSON.stringify(token)};
         let editor;
         let isUpdatingFromExtension = false;
 
@@ -504,6 +581,28 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
             }
           }
         });
+
+        // Rewrite Trilium-relative image URLs so images display inside the webview.
+        // Images are fetched via the ETAPI token; only the display src is changed —
+        // editor.getData() still returns the original relative URLs, so saving is safe.
+        function rewriteTriliumImages() {
+          if (!TRILIUM_SERVER || !TRILIUM_TOKEN) { return; }
+          document.querySelectorAll('.ck-content img').forEach(img => {
+            const src = img.getAttribute('src') ?? '';
+            if (!src || img.dataset.triliumFixed) { return; }
+            if (src.startsWith('api/') || src.startsWith('/api/')) {
+              img.dataset.triliumFixed = '1';
+              const url = TRILIUM_SERVER + (src.startsWith('/') ? src : '/' + src);
+              fetch(url, { headers: { Authorization: TRILIUM_TOKEN } })
+                .then(r => r.blob())
+                .then(blob => { img.src = URL.createObjectURL(blob); })
+                .catch(() => { /* leave broken-image icon */ });
+            }
+          });
+        }
+        new MutationObserver(rewriteTriliumImages)
+          .observe(document.body, { childList: true, subtree: true });
+
       })();
     </script>
 </body>
