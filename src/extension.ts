@@ -970,7 +970,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
 
     // -----------------------------------------------------------------------
-    // Phase 5a — Note revision history
+    // Revision history
     // -----------------------------------------------------------------------
 
     vscode.commands.registerCommand('trilium.showRevisions', async (item?: NoteItem) => {
@@ -1064,7 +1064,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
 
     // -----------------------------------------------------------------------
-    // Phase 5b — Clone & move notes
+    // Clone & move notes
     // -----------------------------------------------------------------------
 
     vscode.commands.registerCommand('trilium.cloneNote', async (item?: NoteItem) => {
@@ -1134,207 +1134,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
 
     // -----------------------------------------------------------------------
-    // Phase 5d — Export subtree
-    // -----------------------------------------------------------------------
-
-    vscode.commands.registerCommand('trilium.exportSubtree', async (item?: NoteItem) => {
-      const target = item ?? treeView.selection[0];
-      if (!target) { return; }
-      const client = treeProvider.getClient();
-      if (!client) { void vscode.window.showErrorMessage('Trilium: Not connected.'); return; }
-
-      interface FormatOption extends vscode.QuickPickItem { format: 'html' | 'markdown'; }
-      const formatPick = await vscode.window.showQuickPick<FormatOption>([
-        { label: '$(file-zip) HTML ZIP', description: 'Full HTML export with assets', format: 'html' },
-        { label: '$(markdown) Markdown ZIP', description: 'Markdown text export', format: 'markdown' },
-      ], { title: `Export Subtree — ${target.note.title}` });
-      if (!formatPick) { return; }
-
-      const defaultName = `${target.note.title.replace(/[\\/:*?"<>|]/g, '_')}.zip`;
-      const saveUri = await vscode.window.showSaveDialog({
-        defaultUri: vscode.Uri.file(defaultName),
-        filters: { 'ZIP Archive': ['zip'] },
-        saveLabel: 'Export',
-      });
-      if (!saveUri) { return; }
-
-      try {
-        const buffer = await client.exportNoteSubtree(target.note.noteId, formatPick.format);
-        await vscode.workspace.fs.writeFile(saveUri, new Uint8Array(buffer));
-        void vscode.window.showInformationMessage(
-          `Trilium: Exported "${target.note.title}" to ${saveUri.fsPath}`,
-        );
-      } catch (err) {
-        void vscode.window.showErrorMessage(`Trilium: Export failed: ${err}`);
-      }
-    }),
-
-    // -----------------------------------------------------------------------
-    // Phase 5a — Note revision history
-    // -----------------------------------------------------------------------
-
-    vscode.commands.registerCommand('trilium.showRevisions', async (item?: NoteItem) => {
-      const target = item ?? treeView.selection[0];
-      if (!target) { return; }
-      const client = treeProvider.getClient();
-      if (!client) {
-        void vscode.window.showErrorMessage('Trilium: Not connected.');
-        return;
-      }
-
-      let revisions: Revision[];
-      try {
-        revisions = await client.getNoteRevisions(target.note.noteId);
-      } catch (err) {
-        void vscode.window.showErrorMessage(`Trilium: Failed to load revisions: ${err}`);
-        return;
-      }
-
-      if (revisions.length === 0) {
-        void vscode.window.showInformationMessage(
-          `"${target.note.title}" has no saved revisions.`,
-        );
-        return;
-      }
-
-      // Most recent first
-      revisions.sort((a, b) => b.utcDateLastEdited.localeCompare(a.utcDateLastEdited));
-
-      interface RevisionItem extends vscode.QuickPickItem { revision: Revision; }
-      const OPEN_BTN: vscode.QuickInputButton = {
-        iconPath: new vscode.ThemeIcon('go-to-file'),
-        tooltip: 'Open in tab',
-      };
-      const DIFF_BTN: vscode.QuickInputButton = {
-        iconPath: new vscode.ThemeIcon('diff'),
-        tooltip: 'Diff against current',
-      };
-
-      const items: RevisionItem[] = revisions.map((r) => ({
-        label: r.title,
-        description: r.dateLastEdited,
-        detail: r.contentLength > 0 ? `${r.contentLength} bytes` : undefined,
-        revision: r,
-        buttons: [OPEN_BTN, DIFF_BTN],
-      }));
-
-      const qp = vscode.window.createQuickPick<RevisionItem>();
-      qp.title = `Revisions — ${target.note.title}`;
-      qp.items = items;
-      qp.placeholder = 'Select revision · $(go-to-file) open · $(diff) diff against current';
-
-      const openRevision = async (r: Revision, diff: boolean) => {
-        qp.busy = true;
-        try {
-          const content = await client.getRevisionContent(r.revisionId);
-          revisionContentMap.set(`/${r.revisionId}`, content);
-          const revUri = vscode.Uri.parse(`trilium-revision:/${r.revisionId}`);
-          if (!diff) {
-            await vscode.window.showTextDocument(revUri, { preview: true });
-          } else {
-            const currentContent = await client.getNoteContent(target.note.noteId);
-            revisionContentMap.set(`/current-${target.note.noteId}`, currentContent);
-            const curUri = vscode.Uri.parse(`trilium-revision:/current-${target.note.noteId}`);
-            await vscode.commands.executeCommand(
-              'vscode.diff', revUri, curUri,
-              `${r.title} (${r.dateLastEdited}) ↔ Current`,
-            );
-          }
-        } catch (err) {
-          void vscode.window.showErrorMessage(`Trilium: Failed to load revision: ${err}`);
-        } finally {
-          qp.busy = false;
-        }
-      };
-
-      qp.onDidTriggerItemButton(async ({ item: picked, button }) => {
-        qp.hide();
-        await openRevision(picked.revision, button === DIFF_BTN);
-      });
-
-      qp.onDidAccept(async () => {
-        const [picked] = qp.selectedItems;
-        if (!picked) { return; }
-        qp.hide();
-        await openRevision(picked.revision, false);
-      });
-
-      qp.onDidHide(() => qp.dispose());
-      qp.show();
-    }),
-
-    // -----------------------------------------------------------------------
-    // Phase 5b — Clone & move notes
-    // -----------------------------------------------------------------------
-
-    vscode.commands.registerCommand('trilium.cloneNote', async (item?: NoteItem) => {
-      const target = item ?? treeView.selection[0];
-      if (!target) { return; }
-      const client = treeProvider.getClient();
-      if (!client) { void vscode.window.showErrorMessage('Trilium: Not connected.'); return; }
-
-      const destination = await pickDestinationNote(client, `Clone "${target.note.title}" to…`);
-      if (!destination) { return; }
-
-      try {
-        await client.createBranch(target.note.noteId, destination.noteId);
-        await client.refreshNoteOrdering(destination.noteId);
-        treeProvider.refresh();
-        void vscode.window.showInformationMessage(
-          `Cloned "${target.note.title}" into "${destination.title}".`,
-        );
-      } catch (err) {
-        void vscode.window.showErrorMessage(`Trilium: Clone failed: ${err}`);
-      }
-    }),
-
-    vscode.commands.registerCommand('trilium.moveNote', async (item?: NoteItem) => {
-      const target = item ?? treeView.selection[0];
-      if (!target) { return; }
-      const client = treeProvider.getClient();
-      if (!client) { void vscode.window.showErrorMessage('Trilium: Not connected.'); return; }
-
-      if (!target.branchId) {
-        void vscode.window.showErrorMessage(
-          `Trilium: Cannot determine the branch for this tree item. Right-click the note in the tree.`,
-        );
-        return;
-      }
-
-      // Block move if this is the note's only location — it would delete the note.
-      if (target.note.parentBranchIds.length <= 1) {
-        void vscode.window.showErrorMessage(
-          `"${target.note.title}" has only one location in the tree. ` +
-          `Moving it would delete the note. Use "Clone Note" instead.`,
-        );
-        return;
-      }
-
-      const destination = await pickDestinationNote(client, `Move "${target.note.title}" to…`);
-      if (!destination) { return; }
-
-      // Determine the old parent noteId from the tree path
-      const pathParts = target.path.split('/');
-      const oldParentNoteId = pathParts.length >= 2 ? pathParts[pathParts.length - 2] : undefined;
-
-      try {
-        await client.createBranch(target.note.noteId, destination.noteId);
-        await client.deleteBranch(target.branchId);
-        await client.refreshNoteOrdering(destination.noteId);
-        if (oldParentNoteId) {
-          await client.refreshNoteOrdering(oldParentNoteId);
-        }
-        treeProvider.refresh();
-        void vscode.window.showInformationMessage(
-          `Moved "${target.note.title}" to "${destination.title}".`,
-        );
-      } catch (err) {
-        void vscode.window.showErrorMessage(`Trilium: Move failed: ${err}`);
-      }
-    }),
-
-    // -----------------------------------------------------------------------
-    // Phase 5d — Export subtree
+    // Export subtree
     // -----------------------------------------------------------------------
 
     vscode.commands.registerCommand('trilium.exportSubtree', async (item?: NoteItem) => {
@@ -1627,6 +1427,15 @@ async function createNoteOfType(
     treeProvider.refresh();
 
     const newNote = result.note;
+
+    // Text notes: open with CKEditor (same path as openNote / openTodayNote).
+    if (newNote.type === 'text') {
+      const uri = createVirtualDocumentUri(newNote.noteId, newNote.title);
+      await vscode.commands.executeCommand('vscode.openWith', uri, TriliumTextEditorProvider.viewType);
+      return;
+    }
+
+    // Other note types: use temp file approach.
     const filePath = tempFileManager.getTempPath(newNote);
     fs.writeFileSync(filePath, defaultContent, 'utf8');
     const doc = await vscode.workspace.openTextDocument(filePath);

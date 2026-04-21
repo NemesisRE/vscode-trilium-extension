@@ -43,6 +43,8 @@ Browse, search, and edit your [Trilium Notes](https://github.com/zadam/trilium) 
 - **Canvas notes** — opened as `.excalidraw` JSON. Rendered visually if the [Excalidraw](https://marketplace.visualstudio.com/items?itemName=pomdtr.excalidraw-editor) extension is installed.
 - **Mind Map notes** — the MindElixir JSON is converted to a Markdown heading hierarchy and opened as `.md`. Changes are converted back to MindElixir JSON and saved to Trilium on file save. Install the [Markdown MindMap](https://marketplace.visualstudio.com/items?itemName=MindElixir.mark-elixir) extension to render the file as a visual mind map.
 
+A **breadcrumb bar** above the CKEditor content area shows the full parent path of the open note (e.g. `Root › Projects › My Project`), updated automatically when the note loads.
+
 ### Theme Integration
 
 The CKEditor webview automatically follows the active VS Code theme (light, dark, or high-contrast) — no manual configuration required. All editor colours are mapped from VS Code's CSS variables to CKEditor's CSS variables at runtime.
@@ -89,13 +91,35 @@ Right-click any note and choose **Delete Note**. A confirmation dialog is shown 
 
 Click the **calendar** button in the panel toolbar (or run **Trilium: Open Today's Journal Note** from the Command Palette) to open the Trilium journal entry for today. Trilium creates the note automatically if it does not exist yet.
 
-### Attributes Sidebar
+### Attributes & Attachments Sidebar
 
-Select any note in the tree to see its **labels** and **relations** in the **Attributes** panel below the note tree. When connected, attributes are fully editable:
+Select any note in the tree to see its **labels**, **relations**, and **attachments** in the **Attributes** panel below the note tree. When connected, everything is fully editable:
 
 - Label values are displayed as inline text fields — click to edit, press **Enter** or click away to save, press **Escape** to cancel.
 - Each attribute has a **×** delete button.
 - **+ Add Label** and **+ Add Relation** buttons create new attributes.
+- The **Attachments** section lists all file attachments on the note, with their name and size.
+  - Click **⬇** to download an attachment to disk via a save dialog.
+  - Click **×** to permanently delete an attachment (no confirmation).
+  - Click **＋ Upload file…** to upload any local file as a new attachment (binary files are base64-encoded automatically).
+
+### Revision History
+
+Right-click any note and choose **Show Note Revisions…** to see all saved revisions, most recent first. For each revision you can:
+- Click the **(→)** button or press Enter to open the revision in a read-only tab.
+- Click the **(⊟)** button to open a diff view comparing the revision against the current note content.
+
+### Clone & Move Notes
+
+Right-click any note in the tree for these placement commands:
+- **Clone Note…** — places the note in a second location in the tree (Trilium's linked-note model). A live-search picker lets you choose the destination parent.
+- **Move Note…** — moves the note to a new parent by creating the new branch and deleting the old one. Moving is blocked if the note has only one location (which would effectively delete it); use Clone in that case.
+
+### Export Subtree
+
+Right-click any note and choose **Export Subtree…** to export the note and all its descendants as a ZIP archive. Two formats are available:
+- **HTML ZIP** — full HTML export with embedded assets.
+- **Markdown ZIP** — plain-text Markdown export.
 
 ---
 
@@ -276,6 +300,10 @@ All commands are available via the Command Palette (`Ctrl+Shift+P`) under the **
 | `Trilium: Open in Browser` | Open the note in VS Code's Simple Browser. |
 | `Trilium: Open in External Browser` | Open the note in the system browser. |
 | `Trilium: Download File` | Download a file/image note to disk. |
+| `Trilium: Show Note Revisions…` | Show saved revision history for a note — open read-only or diff against current. |
+| `Trilium: Clone Note…` | Clone a note to a second location (live-search destination picker). |
+| `Trilium: Move Note…` | Move a note to a new parent (blocked if it's the only location). |
+| `Trilium: Export Subtree…` | Export a note and all its descendants as an HTML or Markdown ZIP. |
 
 ---
 
@@ -285,7 +313,7 @@ All commands are available via the Command Palette (`Ctrl+Shift+P`) under the **
 - **Canvas notes** are opened as raw JSON. Install the [Excalidraw VS Code extension](https://marketplace.visualstudio.com/items?itemName=pomdtr.excalidraw-editor) for a visual editor.
 - **Mind map notes** are converted to/from a Markdown heading hierarchy. MindElixir node properties (colours, styles, layout direction) are not preserved on round-trip.
 - **Trilium-specific CKEditor plugins** (internal links, note embedding, cut-to-note, footnotes, admonitions, KaTeX math, Mermaid inline, date/time insertion) are not available — these live in Trilium's own `@triliumnext/ckeditor5` fork which is not published to npm.
-- **Image upload** in the WYSIWYG editor requires a server-side upload handler; images cannot be uploaded to Trilium directly from the editor toolbar in the current version.
+- **Image upload** in the WYSIWYG editor requires a server-side upload handler; images cannot be uploaded to Trilium directly from the editor toolbar in the current version. Use the Attachments section in the sidebar to attach images as note attachments instead.
 - ALT+click to open externally is not supported due to VS Code tree API limitations; use the right-click **Open in External Browser** menu item instead.
 - Desktop only — web extensions and Codespaces are not supported.
 
