@@ -121,6 +121,21 @@ export class EtapiClient {
   getServerUrl(): string { return this.serverUrl; }
   getToken(): string { return this.token; }
 
+  /** Fetch any URL relative to the server root with auth headers (no ETAPI prefix). */
+  async fetchRaw(relativeUrl: string): Promise<{ buffer: ArrayBuffer; contentType: string }> {
+    const url = `${this.serverUrl.replace(/\/$/, '')}/${relativeUrl.replace(/^\//, '')}`;
+    const response = await fetch(url, { headers: this.authHeaders() });
+    if (!response.ok) {
+      throw new EtapiError(
+        `GET ${relativeUrl} failed with status ${response.status}`,
+        response.status,
+      );
+    }
+    const buffer = await response.arrayBuffer();
+    const contentType = response.headers.get('content-type') ?? 'application/octet-stream';
+    return { buffer, contentType };
+  }
+
   private baseUrl(): string {
     return `${this.serverUrl.replace(/\/$/, '')}/etapi`;
   }
