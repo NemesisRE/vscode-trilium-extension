@@ -237,13 +237,22 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
    * Generate HTML for the webview with CKEditor 5.
    */
   private getHtmlForWebview(webview: vscode.Webview, fontSize: number, spellcheck: boolean): string {
-    // Load CKEditor from out/ckeditor (copied during build)
+    // Load CKEditor from out/ckeditor (CSS and JS are bundled separately by esbuild)
     const ckeditorUri = webview.asWebviewUri(
       vscode.Uri.joinPath(
         this.context.extensionUri,
         'out',
         'ckeditor',
         'ckeditor.js',
+      ),
+    );
+    
+    const ckeditorCssUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(
+        this.context.extensionUri,
+        'out',
+        'ckeditor',
+        'ckeditor.css',
       ),
     );
 
@@ -259,9 +268,9 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
       default-src 'none';
       style-src ${webview.cspSource} 'unsafe-inline' https://cdn.jsdelivr.net;
       script-src 'nonce-${nonce}' https://cdn.jsdelivr.net;
-      font-src ${webview.cspSource} https://cdn.jsdelivr.net;
+      font-src ${webview.cspSource} https://cdn.jsdelivr.net data:;
       img-src * data: blob:;
-      connect-src https://cdn.jsdelivr.net;
+      connect-src ${webview.cspSource} https://cdn.jsdelivr.net;
     ">
     <title>Trilium Text Editor</title>
     <style nonce="${nonce}">
@@ -458,12 +467,6 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
         font-family: var(--vscode-editor-font-family, monospace);
         font-size: 0.9em;
       }
-      .ck-content pre {
-        background: var(--vscode-textCodeBlock-background, rgba(0,0,0,.06));
-        border-radius: 4px;
-        padding: 12px 16px;
-        overflow-x: auto;
-      }
       .ck-content blockquote {
         border-left: 3px solid var(--vscode-editorWidget-border, #c8c8c8);
         margin: 0;
@@ -484,14 +487,172 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
         background-color: #f2f2f2;
         font-weight: bold;
       }
+      
+      /* Admonition type-specific colors (uses aside.admonition.TYPE) */
+      .ck-content aside.admonition {
+        border-left: 4px solid;
+        padding: 12px 16px;
+        margin: 16px 0;
+        border-radius: 4px;
+      }
+      .ck-content aside.admonition.note {
+        border-left-color: #0969da;
+        background-color: rgba(9, 105, 218, 0.1);
+      }
+      .ck-content aside.admonition.tip {
+        border-left-color: #1a7f37;
+        background-color: rgba(26, 127, 55, 0.1);
+      }
+      .ck-content aside.admonition.important {
+        border-left-color: #8250df;
+        background-color: rgba(130, 80, 223, 0.1);
+      }
+      .ck-content aside.admonition.caution {
+        border-left-color: #d29922;
+        background-color: rgba(210, 153, 34, 0.1);
+      }
+      .ck-content aside.admonition.warning {
+        border-left-color: #cf222e;
+        background-color: rgba(207, 34, 46, 0.1);
+      }
+      
+      /* Dropdown preview colors for admonition types */
+      .ck-tn-admonition-note .ck-button__label::before {
+        content: "● ";
+        color: #0969da;
+        font-weight: bold;
+        margin-right: 4px;
+      }
+      .ck-tn-admonition-tip .ck-button__label::before {
+        content: "● ";
+        color: #1a7f37;
+        font-weight: bold;
+        margin-right: 4px;
+      }
+      .ck-tn-admonition-important .ck-button__label::before {
+        content: "● ";
+        color: #8250df;
+        font-weight: bold;
+        margin-right: 4px;
+      }
+      .ck-tn-admonition-caution .ck-button__label::before {
+        content: "● ";
+        color: #d29922;
+        font-weight: bold;
+        margin-right: 4px;
+      }
+      .ck-tn-admonition-warning .ck-button__label::before {
+        content: "● ";
+        color: #cf222e;
+        font-weight: bold;
+        margin-right: 4px;
+      }
+      
+      /* Background colors for admonition dropdown items */
+      .ck-tn-admonition-note {
+        background-color: rgba(9, 105, 218, 0.08) !important;
+      }
+      .ck-tn-admonition-note:hover {
+        background-color: rgba(9, 105, 218, 0.15) !important;
+      }
+      .ck-tn-admonition-tip {
+        background-color: rgba(26, 127, 55, 0.08) !important;
+      }
+      .ck-tn-admonition-tip:hover {
+        background-color: rgba(26, 127, 55, 0.15) !important;
+      }
+      .ck-tn-admonition-important {
+        background-color: rgba(130, 80, 223, 0.08) !important;
+      }
+      .ck-tn-admonition-important:hover {
+        background-color: rgba(130, 80, 223, 0.15) !important;
+      }
+      .ck-tn-admonition-caution {
+        background-color: rgba(210, 153, 34, 0.08) !important;
+      }
+      .ck-tn-admonition-caution:hover {
+        background-color: rgba(210, 153, 34, 0.15) !important;
+      }
+      .ck-tn-admonition-warning {
+        background-color: rgba(207, 34, 46, 0.08) !important;
+      }
+      .ck-tn-admonition-warning:hover {
+        background-color: rgba(207, 34, 46, 0.15) !important;
+      }
+      
+      /* Code block styling to match VS Code theme. CKEditor does not support
+         live syntax highlighting while editing, so keep the editing view clear
+         and show the selected language instead. */
+      .ck-content pre {
+        position: relative;
+        background-color: var(--vscode-textCodeBlock-background, #f5f5f5);
+        border: 1px solid var(--vscode-editorWidget-border, #c8c8c8);
+        border-radius: 4px;
+        padding: 28px 12px 12px;
+        overflow-x: auto;
+        font-family: var(--vscode-editor-font-family, 'Consolas', 'Courier New', monospace);
+        font-size: var(--vscode-editor-font-size, 13px);
+        line-height: 1.6;
+      }
+      .ck-content pre::before {
+        content: 'Code';
+        position: absolute;
+        top: 6px;
+        right: 10px;
+        font-size: 11px;
+        line-height: 1;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--vscode-descriptionForeground, #6a737d);
+        background: var(--vscode-editor-background, #fff);
+        border: 1px solid var(--vscode-editorWidget-border, #c8c8c8);
+        border-radius: 999px;
+        padding: 3px 8px;
+      }
+      .ck-content pre:has(code.language-javascript)::before { content: 'JavaScript'; }
+      .ck-content pre:has(code.language-typescript)::before { content: 'TypeScript'; }
+      .ck-content pre:has(code.language-python)::before { content: 'Python'; }
+      .ck-content pre:has(code.language-java)::before { content: 'Java'; }
+      .ck-content pre:has(code.language-csharp)::before { content: 'C#'; }
+      .ck-content pre:has(code.language-cpp)::before { content: 'C++'; }
+      .ck-content pre:has(code.language-c)::before { content: 'C'; }
+      .ck-content pre:has(code.language-php)::before { content: 'PHP'; }
+      .ck-content pre:has(code.language-ruby)::before { content: 'Ruby'; }
+      .ck-content pre:has(code.language-go)::before { content: 'Go'; }
+      .ck-content pre:has(code.language-rust)::before { content: 'Rust'; }
+      .ck-content pre:has(code.language-swift)::before { content: 'Swift'; }
+      .ck-content pre:has(code.language-kotlin)::before { content: 'Kotlin'; }
+      .ck-content pre:has(code.language-html)::before { content: 'HTML'; }
+      .ck-content pre:has(code.language-xml)::before { content: 'XML'; }
+      .ck-content pre:has(code.language-css)::before { content: 'CSS'; }
+      .ck-content pre:has(code.language-scss)::before { content: 'SCSS'; }
+      .ck-content pre:has(code.language-sql)::before { content: 'SQL'; }
+      .ck-content pre:has(code.language-bash)::before { content: 'Bash'; }
+      .ck-content pre:has(code.language-shell)::before { content: 'Shell'; }
+      .ck-content pre:has(code.language-powershell)::before { content: 'PowerShell'; }
+      .ck-content pre:has(code.language-json)::before { content: 'JSON'; }
+      .ck-content pre:has(code.language-yaml)::before { content: 'YAML'; }
+      .ck-content pre:has(code.language-markdown)::before { content: 'Markdown'; }
+      .ck-content pre:has(code.language-diff)::before { content: 'Diff'; }
+      .ck-content pre:has(code.language-plaintext)::before { content: 'Plain text'; }
+      .ck-content pre code {
+        background: transparent;
+        padding: 0;
+        color: var(--vscode-editor-foreground, #000);
+        font-family: inherit;
+      }
     </style>
+    
+    <!-- Load CKEditor CSS (bundled by esbuild) -->
+    <link rel="stylesheet" href="${ckeditorCssUri}">
 </head>
 <body>
     <div id="breadcrumb"></div>
     <div id="editor-container"></div>
     
-    <script nonce="${nonce}" src="${ckeditorUri}"></script>
-    <script nonce="${nonce}">
+    <script type="module" nonce="${nonce}">
+      import { TriliumEditor } from '${ckeditorUri}';
+      
       (function() {
         const vscode = acquireVsCodeApi();
         let editor;
@@ -499,7 +660,6 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
         const pendingImageFetches = new Map();
 
         // Initialize TriliumEditor (custom CKEditor build with Trilium plugins)
-        const { TriliumEditor } = window.TriliumEditorModule;
         TriliumEditor
           .create(document.querySelector('#editor-container'), {
             licenseKey: 'GPL',
@@ -535,7 +695,7 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
                 'horizontalLine',
                 '|',
                 'math',
-                'insertMermaid',
+                'mermaid',
                 'admonition',
                 'footnote',
                 '|',
@@ -608,6 +768,38 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
                 const mermaid = await import('https://cdn.jsdelivr.net/npm/mermaid@11.14.0/dist/mermaid.esm.min.mjs');
                 return mermaid.default;
               },
+            },
+            // Code block configuration. CKEditor exposes language classes but
+            // does not support live syntax highlighting in the editing view.
+            codeBlock: {
+              languages: [
+                { language: 'plaintext', label: 'Plain text' },
+                { language: 'javascript', label: 'JavaScript' },
+                { language: 'typescript', label: 'TypeScript' },
+                { language: 'python', label: 'Python' },
+                { language: 'java', label: 'Java' },
+                { language: 'csharp', label: 'C#' },
+                { language: 'cpp', label: 'C++' },
+                { language: 'c', label: 'C' },
+                { language: 'php', label: 'PHP' },
+                { language: 'ruby', label: 'Ruby' },
+                { language: 'go', label: 'Go' },
+                { language: 'rust', label: 'Rust' },
+                { language: 'swift', label: 'Swift' },
+                { language: 'kotlin', label: 'Kotlin' },
+                { language: 'html', label: 'HTML' },
+                { language: 'xml', label: 'XML' },
+                { language: 'css', label: 'CSS' },
+                { language: 'scss', label: 'SCSS' },
+                { language: 'sql', label: 'SQL' },
+                { language: 'bash', label: 'Bash' },
+                { language: 'shell', label: 'Shell' },
+                { language: 'powershell', label: 'PowerShell' },
+                { language: 'json', label: 'JSON' },
+                { language: 'yaml', label: 'YAML' },
+                { language: 'markdown', label: 'Markdown' },
+                { language: 'diff', label: 'Diff' },
+              ],
             },
           })
           .then(newEditor => {

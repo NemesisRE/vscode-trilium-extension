@@ -129,6 +129,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.window.registerWebviewViewProvider(AttributesViewProvider.viewId, attributesProvider),
 
     vscode.commands.registerCommand('trilium.refresh', () => {
+      virtualDocProvider.clearAllCache();
       treeProvider.refresh();
     }),
 
@@ -138,6 +139,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       updateTreeDescription(info);
       void vscode.commands.executeCommand('setContext', 'trilium.connected', !!info);
       attributesProvider.setClient(treeProvider.getClient());
+      virtualDocProvider.clearAllCache();
     }),
 
     vscode.commands.registerCommand('trilium.reconnect', async () => {
@@ -146,6 +148,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       updateTreeDescription(info);
       void vscode.commands.executeCommand('setContext', 'trilium.connected', !!info);
       attributesProvider.setClient(treeProvider.getClient());
+      virtualDocProvider.clearAllCache();
     }),
 
     vscode.commands.registerCommand('trilium.createNote', async (item?: NoteItem) => {

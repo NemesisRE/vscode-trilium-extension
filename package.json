@@ -734,15 +734,16 @@
     "@vscode/test-cli": "^0.0.12",
     "@vscode/test-electron": "^2.5.2",
     "@vscode/vsce": "^3.9.1",
+    "ckeditor5": "^48.0.0",
     "esbuild": "^0.28.0",
     "mocha": "^11.7.5",
     "tar": "^7.4.3",
     "typescript": "^6.0.3"
   },
   "dependencies": {
-    "ckeditor5": "^48.0.0",
     "katex": "^0.16.45",
     "marked": "^18.0.2",
+    "mathlive": "^0.109.1",
     "mermaid": "^11.14.0",
     "turndown": "^7.2.4"
   }
