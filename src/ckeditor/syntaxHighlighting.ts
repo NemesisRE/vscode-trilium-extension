@@ -10,7 +10,7 @@ const HIGHLIGHT_MAX_BLOCK_CHILDREN = 500;
 let markerCounter = 0;
 
 export class SyntaxHighlighting extends Plugin {
-  public override init(): void {
+  public init(): void {
     this.initTextEditor(this.editor);
     this.initLanguageDowncast();
   }
