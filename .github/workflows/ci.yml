@@ -26,6 +26,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Cache Trilium CKEditor plugins
+        uses: actions/cache@v4
+        with:
+          path: vendor/
+          key: trilium-plugins-${{ hashFiles('scripts/download-trilium-plugins.mjs') }}
+          restore-keys: |
+            trilium-plugins-
+
       - name: Type check
         run: npm run compile
 
@@ -59,6 +67,14 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Cache Trilium CKEditor plugins
+        uses: actions/cache@v4
+        with:
+          path: vendor/
+          key: trilium-plugins-${{ hashFiles('scripts/download-trilium-plugins.mjs') }}
+          restore-keys: |
+            trilium-plugins-
 
       - name: Update package.json version to match release tag
         run: |
