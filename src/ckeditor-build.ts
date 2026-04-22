@@ -78,6 +78,7 @@ import { Kbd } from '../vendor/ckeditor5-keyboard-marker/src/index.ts';
 import { Math } from '../vendor/ckeditor5-math/src/index.ts';
 // @ts-ignore
 import { Mermaid } from '../vendor/ckeditor5-mermaid/src/index.ts';
+import { SyntaxHighlighting } from './ckeditor/syntaxHighlighting';
 
 // Import all CSS - esbuild will bundle it
 import 'ckeditor5/ckeditor5.css';
@@ -131,6 +132,7 @@ export class TriliumEditor extends ClassicEditor {
     // Block elements
     BlockQuote,
     CodeBlock,
+    SyntaxHighlighting,
     HorizontalLine,
     
     // Tables

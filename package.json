@@ -741,6 +741,7 @@
     "typescript": "^6.0.3"
   },
   "dependencies": {
+    "highlight.js": "^11.11.1",
     "katex": "^0.16.45",
     "marked": "^18.0.2",
     "mathlive": "^0.109.1",

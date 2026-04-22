@@ -273,6 +273,8 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
       connect-src ${webview.cspSource} https://cdn.jsdelivr.net;
     ">
     <title>Trilium Text Editor</title>
+    <!-- Load CKEditor CSS (bundled by esbuild) -->
+    <link rel="stylesheet" href="${ckeditorCssUri}">
     <style nonce="${nonce}">
       /*
        * Map VS Code theme tokens → CKEditor CSS variables so the editor
@@ -580,9 +582,8 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
         background-color: rgba(207, 34, 46, 0.15) !important;
       }
       
-      /* Code block styling to match VS Code theme. CKEditor does not support
-         live syntax highlighting while editing, so keep the editing view clear
-         and show the selected language instead. */
+      /* Code block styling to match VS Code theme, including Trilium-style
+         marker-based syntax highlighting in the editing view. */
       .ck-content pre {
         position: relative;
         background-color: var(--vscode-textCodeBlock-background, #f5f5f5);
@@ -594,8 +595,11 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
         font-size: var(--vscode-editor-font-size, 13px);
         line-height: 1.6;
       }
+      .ck.ck-editor__editable pre[data-language]:after {
+        content: none;
+      }
       .ck-content pre::before {
-        content: 'Code';
+        content: attr(data-language);
         position: absolute;
         top: 6px;
         right: 10px;
@@ -609,42 +613,69 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
         border-radius: 999px;
         padding: 3px 8px;
       }
-      .ck-content pre:has(code.language-javascript)::before { content: 'JavaScript'; }
-      .ck-content pre:has(code.language-typescript)::before { content: 'TypeScript'; }
-      .ck-content pre:has(code.language-python)::before { content: 'Python'; }
-      .ck-content pre:has(code.language-java)::before { content: 'Java'; }
-      .ck-content pre:has(code.language-csharp)::before { content: 'C#'; }
-      .ck-content pre:has(code.language-cpp)::before { content: 'C++'; }
-      .ck-content pre:has(code.language-c)::before { content: 'C'; }
-      .ck-content pre:has(code.language-php)::before { content: 'PHP'; }
-      .ck-content pre:has(code.language-ruby)::before { content: 'Ruby'; }
-      .ck-content pre:has(code.language-go)::before { content: 'Go'; }
-      .ck-content pre:has(code.language-rust)::before { content: 'Rust'; }
-      .ck-content pre:has(code.language-swift)::before { content: 'Swift'; }
-      .ck-content pre:has(code.language-kotlin)::before { content: 'Kotlin'; }
-      .ck-content pre:has(code.language-html)::before { content: 'HTML'; }
-      .ck-content pre:has(code.language-xml)::before { content: 'XML'; }
-      .ck-content pre:has(code.language-css)::before { content: 'CSS'; }
-      .ck-content pre:has(code.language-scss)::before { content: 'SCSS'; }
-      .ck-content pre:has(code.language-sql)::before { content: 'SQL'; }
-      .ck-content pre:has(code.language-bash)::before { content: 'Bash'; }
-      .ck-content pre:has(code.language-shell)::before { content: 'Shell'; }
-      .ck-content pre:has(code.language-powershell)::before { content: 'PowerShell'; }
-      .ck-content pre:has(code.language-json)::before { content: 'JSON'; }
-      .ck-content pre:has(code.language-yaml)::before { content: 'YAML'; }
-      .ck-content pre:has(code.language-markdown)::before { content: 'Markdown'; }
-      .ck-content pre:has(code.language-diff)::before { content: 'Diff'; }
-      .ck-content pre:has(code.language-plaintext)::before { content: 'Plain text'; }
+      .ck-content pre:not([data-language])::before {
+        content: 'Code';
+      }
       .ck-content pre code {
         background: transparent;
         padding: 0;
         color: var(--vscode-editor-foreground, #000);
         font-family: inherit;
       }
+      .ck-content .hljs-comment,
+      .ck-content .hljs-quote {
+        color: var(--vscode-editorCodeLens-foreground, #6a9955) !important;
+      }
+      .ck-content .hljs-keyword,
+      .ck-content .hljs-selector-tag,
+      .ck-content .hljs-literal,
+      .ck-content .hljs-section,
+      .ck-content .hljs-link {
+        color: var(--vscode-symbolIcon-keywordForeground, #569cd6) !important;
+      }
+      .ck-content .hljs-string,
+      .ck-content .hljs-regexp,
+      .ck-content .hljs-addition,
+      .ck-content .hljs-attribute,
+      .ck-content .hljs-template-tag,
+      .ck-content .hljs-template-variable {
+        color: var(--vscode-debugTokenExpression-string, #ce9178) !important;
+      }
+      .ck-content .hljs-number,
+      .ck-content .hljs-symbol,
+      .ck-content .hljs-bullet,
+      .ck-content .hljs-variable,
+      .ck-content .hljs-built_in,
+      .ck-content .hljs-type {
+        color: var(--vscode-debugTokenExpression-number, #b5cea8) !important;
+      }
+      .ck-content .hljs-title,
+      .ck-content .hljs-title.class_,
+      .ck-content .hljs-title.function_,
+      .ck-content .hljs-function {
+        color: var(--vscode-symbolIcon-functionForeground, #dcdcaa) !important;
+      }
+      .ck-content .hljs-property,
+      .ck-content .hljs-attr,
+      .ck-content .hljs-selector-id,
+      .ck-content .hljs-selector-class {
+        color: var(--vscode-symbolIcon-propertyForeground, #9cdcfe) !important;
+      }
+      .ck-content .hljs-meta,
+      .ck-content .hljs-meta .hljs-keyword,
+      .ck-content .hljs-doctag {
+        color: var(--vscode-symbolIcon-operatorForeground, #c586c0) !important;
+      }
+      .ck-content .hljs-deletion {
+        color: var(--vscode-diffEditor-removedTextForeground, #f14c4c) !important;
+      }
+      .ck-content .hljs-emphasis {
+        font-style: italic;
+      }
+      .ck-content .hljs-strong {
+        font-weight: 700;
+      }
     </style>
-    
-    <!-- Load CKEditor CSS (bundled by esbuild) -->
-    <link rel="stylesheet" href="${ckeditorCssUri}">
 </head>
 <body>
     <div id="breadcrumb"></div>
@@ -658,6 +689,164 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
         let editor;
         let isUpdatingFromExtension = false;
         const pendingImageFetches = new Map();
+
+        const triliumToLocalLanguageMap = {
+          'text-plain': 'plaintext',
+          'text-javascript': 'javascript',
+          'application-javascript': 'javascript',
+          'text-x-javascript': 'javascript',
+          'application-x-javascript': 'javascript',
+          'application-typescript': 'typescript',
+          'text-typescript': 'typescript',
+          'text-x-typescript': 'typescript',
+          'text-x-python': 'python',
+          'text-x-java': 'java',
+          'text-x-csharp': 'csharp',
+          'application-x-csharp': 'csharp',
+          'text-x-c++src': 'cpp',
+          'text-x-csrc': 'c',
+          'application-x-httpd-php': 'php',
+          'text-x-php': 'php',
+          'text-x-ruby': 'ruby',
+          'text-x-go': 'go',
+          'text-x-rust': 'rust',
+          'text-x-rustsrc': 'rust',
+          'text-x-swift': 'swift',
+          'text-x-kotlin': 'kotlin',
+          'text-html': 'html',
+          'application-xml': 'xml',
+          'text-xml': 'xml',
+          'text-css': 'css',
+          'text-x-scss': 'scss',
+          'text-x-sql': 'sql',
+          'text-x-sh': 'bash',
+          'text-x-shell': 'shell',
+          'application-x-powershell': 'powershell',
+          'application-json': 'json',
+          'text-x-json': 'json',
+          'application-x-yaml': 'yaml',
+          'text-x-yaml': 'yaml',
+          'text-markdown': 'markdown',
+          'text-x-markdown': 'markdown',
+          'text-x-diff': 'diff',
+        };
+
+        const localToTriliumLanguageMap = {
+          plaintext: 'text-plain',
+          javascript: 'application-javascript',
+          typescript: 'application-typescript',
+          python: 'text-x-python',
+          java: 'text-x-java',
+          csharp: 'text-x-csharp',
+          cpp: 'text-x-c++src',
+          c: 'text-x-csrc',
+          php: 'application-x-httpd-php',
+          ruby: 'text-x-ruby',
+          go: 'text-x-go',
+          rust: 'text-x-rustsrc',
+          swift: 'text-x-swift',
+          kotlin: 'text-x-kotlin',
+          html: 'text-html',
+          xml: 'text-xml',
+          css: 'text-css',
+          scss: 'text-x-scss',
+          sql: 'text-x-sql',
+          bash: 'text-x-sh',
+          shell: 'text-x-shell',
+          powershell: 'application-x-powershell',
+          json: 'application-json',
+          yaml: 'application-x-yaml',
+          markdown: 'text-x-markdown',
+          diff: 'text-x-diff',
+        };
+
+        function normalizeIncomingCodeBlockLanguages(html) {
+          if (!html || typeof html !== 'string') {
+            return html;
+          }
+
+          const fallbackFromMimeLikeTag = (tag) => {
+            const canonical = (tag || '').toLowerCase().replace(/-env-.+$/, '');
+
+            if (canonical.includes('javascript')) return 'javascript';
+            if (canonical.includes('typescript')) return 'typescript';
+            if (canonical.includes('python')) return 'python';
+            if (canonical.includes('java')) return 'java';
+            if (canonical.includes('csharp') || canonical.includes('c-sharp')) return 'csharp';
+            if (canonical.includes('c++') || canonical.includes('cpp')) return 'cpp';
+            if (canonical.includes('csrc') || canonical === 'text-x-c') return 'c';
+            if (canonical.includes('php')) return 'php';
+            if (canonical.includes('ruby')) return 'ruby';
+            if (canonical.includes('go')) return 'go';
+            if (canonical.includes('rust')) return 'rust';
+            if (canonical.includes('swift')) return 'swift';
+            if (canonical.includes('kotlin')) return 'kotlin';
+            if (canonical.includes('html')) return 'html';
+            if (canonical.includes('xml')) return 'xml';
+            if (canonical.includes('css') && !canonical.includes('scss')) return 'css';
+            if (canonical.includes('scss')) return 'scss';
+            if (canonical.includes('sql')) return 'sql';
+            if (canonical.includes('powershell')) return 'powershell';
+            if (canonical.includes('shell')) return 'shell';
+            if (canonical.includes('sh')) return 'bash';
+            if (canonical.includes('json')) return 'json';
+            if (canonical.includes('yaml') || canonical.includes('yml')) return 'yaml';
+            if (canonical.includes('markdown')) return 'markdown';
+            if (canonical.includes('diff')) return 'diff';
+            if (canonical.includes('plain')) return 'plaintext';
+
+            return null;
+          };
+
+          const doc = new DOMParser().parseFromString(html, 'text/html');
+          for (const code of doc.querySelectorAll('pre code[class]')) {
+            const classes = Array.from(code.classList);
+            const langClass = classes.find(cls => cls.startsWith('language-'));
+            if (!langClass) {
+              continue;
+            }
+
+            const tag = langClass.slice('language-'.length).toLowerCase();
+            const canonicalTag = tag.replace(/-env-.+$/, '');
+            const mapped = triliumToLocalLanguageMap[tag]
+              || triliumToLocalLanguageMap[canonicalTag]
+              || fallbackFromMimeLikeTag(tag);
+            if (!mapped) {
+              continue;
+            }
+
+            code.classList.remove(langClass);
+            code.classList.add('language-' + mapped);
+          }
+
+          return doc.body.innerHTML;
+        }
+
+        function normalizeOutgoingCodeBlockLanguages(html) {
+          if (!html || typeof html !== 'string') {
+            return html;
+          }
+
+          const doc = new DOMParser().parseFromString(html, 'text/html');
+          for (const code of doc.querySelectorAll('pre code[class]')) {
+            const classes = Array.from(code.classList);
+            const langClass = classes.find(cls => cls.startsWith('language-'));
+            if (!langClass) {
+              continue;
+            }
+
+            const languageTag = langClass.slice('language-'.length).toLowerCase();
+            const mapped = localToTriliumLanguageMap[languageTag];
+            if (!mapped) {
+              continue;
+            }
+
+            code.classList.remove(langClass);
+            code.classList.add('language-' + mapped);
+          }
+
+          return doc.body.innerHTML;
+        }
 
         // Initialize TriliumEditor (custom CKEditor build with Trilium plugins)
         TriliumEditor
@@ -769,8 +958,8 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
                 return mermaid.default;
               },
             },
-            // Code block configuration. CKEditor exposes language classes but
-            // does not support live syntax highlighting in the editing view.
+            // Code block configuration. The custom syntax-highlighting plugin
+            // maps these language names to highlight.js in the editing view.
             codeBlock: {
               languages: [
                 { language: 'plaintext', label: 'Plain text' },
@@ -819,7 +1008,7 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
               if (isUpdatingFromExtension) {
                 return;
               }
-              const content = editor.getData();
+              const content = normalizeOutgoingCodeBlockLanguages(editor.getData());
               vscode.postMessage({
                 type: 'contentChanged',
                 content: content
@@ -853,7 +1042,7 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
             case 'update':
               if (editor) {
                 isUpdatingFromExtension = true;
-                editor.setData(message.content || '');
+                editor.setData(normalizeIncomingCodeBlockLanguages(message.content || ''));
                 isUpdatingFromExtension = false;
               }
               break;
