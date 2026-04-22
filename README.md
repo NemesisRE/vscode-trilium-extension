@@ -1,6 +1,6 @@
 # Trilium Notes for VS Code
 
-[![License: GPL-2.0](https://img.shields.io/badge/license-GPL--2.0-blue.svg)](LICENSE)
+[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 [![VS Code Engine](https://img.shields.io/badge/VS%20Code-%5E1.116.0-007ACC?logo=visualstudiocode&logoColor=white)](https://code.visualstudio.com)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
 [![CI](https://github.com/NemesisRE/vscode-trilium-extension/actions/workflows/ci.yml/badge.svg)](https://github.com/NemesisRE/vscode-trilium-extension/actions/workflows/ci.yml)
@@ -8,7 +8,7 @@
 [![GitHub Downloads](https://img.shields.io/github/downloads/NemesisRE/vscode-trilium-extension/total?style=flat&logo=github&label=downloads)](https://github.com/NemesisRE/vscode-trilium-extension/releases)
 [![GitHub Stars](https://img.shields.io/github/stars/NemesisRE/vscode-trilium-extension?style=flat&logo=github)](https://github.com/NemesisRE/vscode-trilium-extension/stargazers)
 
-Browse, search, and edit your [Trilium Notes](https://github.com/zadam/trilium) directly inside VS Code using the [ETAPI REST API](https://triliumnotes.org/api).
+Browse, search, and edit your [Trilium Notes](https://github.com/TriliumNext/trilium-notes) directly inside VS Code using the [ETAPI REST API](https://triliumnotes.org/api).
 
 ---
 
@@ -29,13 +29,18 @@ Browse, search, and edit your [Trilium Notes](https://github.com/zadam/trilium) 
 
 ### Open & Edit Notes
 
-- **Text notes** — opened in a full **CKEditor 5 WYSIWYG** editor embedded in a VS Code webview. The editor operates directly on Trilium's native HTML — no Markdown conversion. Native VS Code undo/redo and `Ctrl+S` save are fully supported. The editor toolbar includes:
+- **Text notes** — opened in a full **CKEditor 5 WYSIWYG** editor embedded in a VS Code webview. The editor operates directly on Trilium's native HTML — no Markdown conversion. Native VS Code undo/redo and `Ctrl+S` save are fully supported. The editor includes Trilium's custom CKEditor plugins and toolbar:
   - Headings (H2–H6), font size
   - Bold, italic, underline, strikethrough, superscript, subscript
   - Font colour, background colour, remove formatting
   - Bulleted list, numbered list, to-do list (with list style options, start index, reversed)
   - Block quote, table (with column/row controls, cell properties, table properties, caption)
   - Inline code, code block
+  - **Math equations** (KaTeX) — insert inline or block LaTeX formulas
+  - **Mermaid diagrams** — insert inline flowcharts, sequence diagrams, and more
+  - **Admonitions** (callouts) — styled note/tip/warning/danger blocks
+  - **Footnotes** — inline references with automatic footnote numbering
+  - **Keyboard markers** — visual `<kbd>` tags for keyboard shortcuts
   - Insert menu: link, bookmark, image upload, media embed, special characters, horizontal line, page break
   - Text alignment (left, centre, right, justify), indent / outdent
   - Find & replace
@@ -317,13 +322,30 @@ All commands are available via the Command Palette (`Ctrl+Shift+P`) under the **
 - **Protected notes** are not supported — ETAPI requires the note to be unlocked first. Attempting to open a protected note shows a warning; unlock it in Trilium first (**Options → Protected Session**).
 - **Canvas notes** are opened as raw JSON. Install the [Excalidraw VS Code extension](https://marketplace.visualstudio.com/items?itemName=pomdtr.excalidraw-editor) for a visual editor.
 - **Mind map notes** are converted to/from a Markdown heading hierarchy. MindElixir node properties (colours, styles, layout direction) are not preserved on round-trip.
-- **Trilium-specific CKEditor plugins** (internal links, note embedding, cut-to-note, footnotes, admonitions, KaTeX math, Mermaid inline, date/time insertion) are not available — these live in Trilium's own `@triliumnext/ckeditor5` fork which is not published to npm.
 - **Image upload** in the WYSIWYG editor requires a server-side upload handler; images cannot be uploaded to Trilium directly from the editor toolbar in the current version. Use the Attachments section in the sidebar to attach images as note attachments instead.
 - ALT+click to open externally is not supported due to VS Code tree API limitations; use the right-click **Open in External Browser** menu item instead.
 - Desktop only — web extensions and Codespaces are not supported.
 
 ---
 
+## Credits
+
+The extension icon (`media/trilium.svg`) is the original Trilium Notes logo, taken from the [Trilium Notes](https://github.com/TriliumNext/trilium-notes) project by the [TriliumNext](https://github.com/TriliumNext) organization, used under the [GNU Affero General Public License v3.0](https://github.com/TriliumNext/trilium-notes/blob/master/LICENSE).
+
+**CKEditor plugins** — The extension incorporates five custom CKEditor 5 plugins from the Trilium Notes project, downloaded and vendored during the build process:
+
+- **Math** — KaTeX LaTeX formula rendering
+- **Mermaid** — inline diagram syntax support  
+- **Admonitions** — styled callout blocks
+- **Footnotes** — inline reference management
+- **Keyboard Marker** — visual `<kbd>` tags
+
+These plugins are sourced from [TriliumNext/Trilium](https://github.com/TriliumNext/Trilium) and are licensed under AGPL-3.0.
+
+---
+
 ## License
 
-GNU General Public License v2.0 — see [LICENSE](LICENSE) for the full text.
+GNU Affero General Public License v3.0 or later — see [LICENSE](LICENSE) for the full text.
+
+This extension incorporates source code from [Trilium Notes](https://github.com/TriliumNext/Trilium), which is licensed under AGPL-3.0. Accordingly, this extension is also distributed under AGPL-3.0-or-later.

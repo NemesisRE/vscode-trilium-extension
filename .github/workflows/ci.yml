@@ -67,6 +67,9 @@ jobs:
         env:
           GITHUB_REF_NAME: ${{ github.ref_name }}
 
+      - name: Build extension bundle
+        run: npm run build:prod
+
       - name: Package VSIX
         run: npx @vscode/vsce package --no-dependencies
 

@@ -5,8 +5,32 @@ import * as path from 'path';
 const production = process.argv.includes('--production');
 const watch = process.argv.includes('--watch');
 
+/**
+ * Plugin to handle SVG imports with ?raw suffix.
+ * Trilium plugins use Vite's ?raw syntax to import SVG as strings.
+ */
+const svgRawPlugin = {
+  name: 'svg-raw',
+  setup(build) {
+    build.onResolve({ filter: /\.svg\?raw$/ }, args => {
+      return {
+        path: path.resolve(args.resolveDir, args.path.replace('?raw', '')),
+        namespace: 'svg-raw',
+      };
+    });
+
+    build.onLoad({ filter: /.*/, namespace: 'svg-raw' }, async args => {
+      const svg = await fs.promises.readFile(args.path, 'utf8');
+      return {
+        contents: `export default ${JSON.stringify(svg)}`,
+        loader: 'js',
+      };
+    });
+  },
+};
+
 /** @type {import('esbuild').BuildOptions} */
-const buildOptions = {
+const extensionBuildOptions = {
   entryPoints: ['src/extension.ts'],
   bundle: true,
   outfile: 'out/extension.js',
@@ -19,45 +43,59 @@ const buildOptions = {
   logLevel: 'info',
 };
 
+/** @type {import('esbuild').BuildOptions} */
+const ckeditorBuildOptions = {
+  entryPoints: ['src/ckeditor-build.ts'],
+  bundle: true,
+  outfile: 'out/ckeditor/ckeditor.js',
+  format: 'iife',
+  platform: 'browser',
+  sourcemap: !production,
+  minify: production,
+  target: ['es2020'],
+  logLevel: 'info',
+  loader: {
+    '.svg': 'text',
+    '.css': 'css',
+  },
+  plugins: [svgRawPlugin],
+  // Mark mathlive CSS as external - it's an optional dependency that
+  // the math plugin can work without
+  external: ['mathlive/fonts.css', 'mathlive/static.css'],
+};
+
 /**
- * Copy CKEditor assets to out/ckeditor/ for bundling.
- * This ensures CKEditor is available when the extension is packaged.
+ * Build both the extension and CKEditor.
  */
-function copyCKEditorAssets() {
-  const sourceDir = path.join('node_modules', '@ckeditor', 'ckeditor5-build-classic', 'build');
-  const targetDir = path.join('out', 'ckeditor');
+async function buildAll() {
+  console.log('[esbuild] Building extension...');
+  await esbuild.build(extensionBuildOptions);
+  
+  console.log('[esbuild] Building CKEditor...');
+  await esbuild.build(ckeditorBuildOptions);
+  
+  console.log('[esbuild] Build complete!');
+}
 
-  if (!fs.existsSync(sourceDir)) {
-    console.warn('[esbuild] Warning: CKEditor not found in node_modules. Run npm install first.');
-    return;
-  }
-
-  // Create target directory
-  fs.mkdirSync(targetDir, { recursive: true });
-
-  // Copy all files from CKEditor build directory
-  const files = fs.readdirSync(sourceDir);
-  for (const file of files) {
-    const sourcePath = path.join(sourceDir, file);
-    const targetPath = path.join(targetDir, file);
-    
-    if (fs.statSync(sourcePath).isFile()) {
-      fs.copyFileSync(sourcePath, targetPath);
-      console.log(`[esbuild] Copied ${file} to ${targetDir}`);
-    }
-  }
+/**
+ * Watch mode for development.
+ */
+async function watchAll() {
+  console.log('[esbuild] Starting watch mode...');
+  
+  const extensionCtx = await esbuild.context(extensionBuildOptions);
+  const ckeditorCtx = await esbuild.context(ckeditorBuildOptions);
+  
+  await Promise.all([
+    extensionCtx.watch(),
+    ckeditorCtx.watch(),
+  ]);
+  
+  console.log('[esbuild] Watching for changes...');
 }
 
 if (watch) {
-  const ctx = await esbuild.context(buildOptions);
-  await ctx.watch();
-  console.log('[esbuild] watching for changes...');
-  
-  // Copy CKEditor assets on initial watch
-  copyCKEditorAssets();
+  await watchAll();
 } else {
-  await esbuild.build(buildOptions);
-  
-  // Copy CKEditor assets after build
-  copyCKEditorAssets();
+  await buildAll();
 }

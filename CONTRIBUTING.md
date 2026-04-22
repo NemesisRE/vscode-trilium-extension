@@ -26,8 +26,9 @@ Press **F5** in VS Code to launch the Extension Development Host with the extens
 | Command | Description |
 | --- | --- |
 | `npm run compile` | Type-check with `tsc --noEmit` (no output files) |
-| `npm run build` | Bundle extension with esbuild (development, with sourcemaps) |
-| `npm run build:prod` | Bundle extension with esbuild (production, minified) |
+| `npm run prebuild` | Download Trilium CKEditor plugins to `vendor/` (runs automatically before build) |
+| `npm run build` | Run prebuild, then bundle extension with esbuild (development, with sourcemaps) |
+| `npm run build:prod` | Run prebuild, then bundle extension with esbuild (production, minified) |
 | `npm run watch` | Rebuild on every file save |
 | `npm test` | Compile tests + run all unit tests with Mocha |
 | `npm run package` | Package the extension into a `.vsix` file |
@@ -46,6 +47,18 @@ src/
   triliumTextEditorProvider.ts  CustomTextEditorProvider serving the CKEditor 5 WYSIWYG webview for text notes
   virtualDocumentProvider.ts   TextDocumentContentProvider backing the trilium-text:// URI scheme used by the WYSIWYG editor
   attributesViewProvider.ts  WebviewViewProvider rendering the Attributes sidebar panel
+  ckeditor-build.ts       Custom CKEditor 5 build with Trilium plugins
+  types/vendor.d.ts       TypeScript declarations for vendored modules and SVG imports
+
+vendor/                   Trilium CKEditor plugins (downloaded during prebuild, gitignored)
+  admonition/
+  footnotes/
+  keyboard-marker/
+  math/
+  mermaid/
+
+scripts/
+  download-trilium-plugins.mjs  Fetches Trilium plugin source from GitHub during prebuild
 
 test/
   helpers/
@@ -62,6 +75,52 @@ test/
   ISSUE_TEMPLATE/         Bug report and feature request templates
   copilot-instructions.md  Copilot agent rules for this repo
 ```
+
+---
+
+## Trilium CKEditor Plugins
+
+The extension uses five custom CKEditor 5 plugins from Trilium Notes:
+
+| Plugin | Purpose |
+| --- | --- |
+| **admonition** | Styled callout blocks (note, tip, warning, danger) |
+| **footnotes** | Inline reference management with auto-numbering |
+| **keyboard-marker** | Visual `<kbd>` tags for keyboard shortcuts |
+| **math** | KaTeX LaTeX formula rendering (inline and block) |
+| **mermaid** | Inline diagram syntax (flowcharts, sequence diagrams, etc.) |
+
+### Plugin Download
+
+Plugins are **not checked into Git**. They are downloaded from the [TriliumNext/Trilium](https://github.com/TriliumNext/Trilium) repository during the build process via the `prebuild` script.
+
+**How it works:**
+
+1. `npm run prebuild` invokes `scripts/download-trilium-plugins.mjs`
+2. The script downloads the latest `main` branch tarball from `https://github.com/TriliumNext/Trilium/archive/main.tar.gz`
+3. It extracts only the five plugin directories from `src/public/app/widgets/type_widgets/text/ckeditor_plugins/`
+4. Plugins are written to `vendor/{plugin}/` (e.g., `vendor/admonition/`, `vendor/math/`)
+5. The `vendor/` directory is gitignored
+
+**To update plugins:**
+
+```bash
+# Remove existing vendor directory
+rm -r vendor
+
+# Re-run prebuild to download latest
+npm run prebuild
+```
+
+The `prebuild` script runs automatically before every `build`, `build:prod`, and `vscode:prepublish`, ensuring plugins are always present during development and packaging.
+
+### Plugin Source
+
+- **Repository:** [TriliumNext/Trilium](https://github.com/TriliumNext/Trilium)
+- **Path:** `src/public/app/widgets/type_widgets/text/ckeditor_plugins/`
+- **License:** AGPL-3.0 (same as Trilium)
+
+The vendored plugins are compiled into the CKEditor build (`out/ckeditor-build.js`) via `src/ckeditor-build.ts`.
 
 ---
 
