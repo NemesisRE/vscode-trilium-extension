@@ -26,9 +26,9 @@ Press **F5** in VS Code to launch the Extension Development Host with the extens
 | Command | Description |
 | --- | --- |
 | `npm run compile` | Type-check with `tsc --noEmit` (no output files) |
-| `npm run prebuild` | Download Trilium CKEditor plugins to `vendor/` (runs automatically before build) |
-| `npm run build` | Run prebuild, then bundle extension with esbuild (development, with sourcemaps) |
-| `npm run build:prod` | Run prebuild, then bundle extension with esbuild (production, minified) |
+| `npm run prebuild` | Download Trilium CKEditor plugins to `vendor/` |
+| `npm run build` | Bundle extension with esbuild (development, with sourcemaps). **Note:** npm automatically runs `prebuild` first. |
+| `npm run build:prod` | Bundle extension with esbuild (production, minified). **Note:** npm automatically runs `prebuild` first. |
 | `npm run watch` | Rebuild on every file save |
 | `npm test` | Compile tests + run all unit tests with Mocha |
 | `npm run package` | Package the extension into a `.vsix` file |
@@ -96,11 +96,12 @@ Plugins are **not checked into Git**. They are downloaded from the [TriliumNext/
 
 **How it works:**
 
-1. `npm run prebuild` invokes `scripts/download-trilium-plugins.mjs`
-2. The script downloads the latest `main` branch tarball from `https://github.com/TriliumNext/Trilium/archive/main.tar.gz`
-3. It extracts only the five plugin directories from `src/public/app/widgets/type_widgets/text/ckeditor_plugins/`
-4. Plugins are written to `vendor/{plugin}/` (e.g., `vendor/admonition/`, `vendor/math/`)
-5. The `vendor/` directory is gitignored
+1. The `prebuild` script invokes `scripts/download-trilium-plugins.mjs`
+2. npm automatically runs `prebuild` before the `build` and `build:prod` scripts (due to the `pre` prefix naming convention)
+3. The script downloads the latest `main` branch tarball from `https://github.com/TriliumNext/Trilium/archive/main.tar.gz`
+4. It extracts only the five plugin directories from `src/public/app/widgets/type_widgets/text/ckeditor_plugins/`
+5. Plugins are written to `vendor/{plugin}/` (e.g., `vendor/admonition/`, `vendor/math/`)
+6. The `vendor/` directory is gitignored
 
 **To update plugins:**
 
@@ -112,7 +113,7 @@ rm -r vendor
 npm run prebuild
 ```
 
-The `prebuild` script runs automatically before every `build`, `build:prod`, and `vscode:prepublish`, ensuring plugins are always present during development and packaging.
+The `prebuild` script runs automatically before every `build` and `build:prod` command. For `vscode:prepublish` (used by `vsce package`), it's called explicitly since vsce doesn't trigger npm's automatic pre-hooks.
 
 ### Plugin Source
 

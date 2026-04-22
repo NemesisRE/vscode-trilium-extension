@@ -714,8 +714,8 @@
   "scripts": {
     "prebuild": "node scripts/download-trilium-plugins.mjs",
     "vscode:prepublish": "npm run prebuild && node esbuild.mjs --production",
-    "build": "npm run prebuild && node esbuild.mjs",
-    "build:prod": "npm run prebuild && node esbuild.mjs --production",
+    "build": "node esbuild.mjs",
+    "build:prod": "node esbuild.mjs --production",
     "watch": "node esbuild.mjs --watch",
     "compile": "tsc --noEmit",
     "compile:tests": "tsc -p tsconfig.test.json",
