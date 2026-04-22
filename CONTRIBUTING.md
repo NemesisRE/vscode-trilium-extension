@@ -28,7 +28,7 @@ Press **F5** in VS Code to launch the Extension Development Host with the extens
 | `npm run compile` | Type-check with `tsc --noEmit` (no output files) |
 | `npm run prebuild` | Download Trilium CKEditor plugins to `vendor/` |
 | `npm run build` | Bundle extension with esbuild (development, with sourcemaps). **Note:** npm automatically runs `prebuild` first. |
-| `npm run build:prod` | Bundle extension with esbuild (production, minified). **Note:** npm automatically runs `prebuild` first. |
+| `npm run build:prod` | Bundle extension with esbuild (production, minified). Runs `prebuild` first. |
 | `npm run watch` | Rebuild on every file save |
 | `npm test` | Compile tests + run all unit tests with Mocha |
 | `npm run package` | Package the extension into a `.vsix` file |
@@ -97,11 +97,12 @@ Plugins are **not checked into Git**. They are downloaded from the [TriliumNext/
 **How it works:**
 
 1. The `prebuild` script invokes `scripts/download-trilium-plugins.mjs`
-2. npm automatically runs `prebuild` before the `build` and `build:prod` scripts (due to the `pre` prefix naming convention)
-3. The script downloads the latest `main` branch tarball from `https://github.com/TriliumNext/Trilium/archive/main.tar.gz`
-4. It extracts only the five plugin directories from `src/public/app/widgets/type_widgets/text/ckeditor_plugins/`
-5. Plugins are written to `vendor/{plugin}/` (e.g., `vendor/admonition/`, `vendor/math/`)
-6. The `vendor/` directory is gitignored
+2. npm automatically runs `prebuild` before the `build` script (due to the `pre` prefix naming convention)
+3. For `build:prod` and `vscode:prepublish`, `prebuild` is called explicitly (npm's auto-hook doesn't work for script names with colons)
+4. The script downloads the latest `main` branch tarball from `https://github.com/TriliumNext/Trilium/archive/main.tar.gz`
+5. It extracts only the five plugin directories from `src/public/app/widgets/type_widgets/text/ckeditor_plugins/`
+6. Plugins are written to `vendor/{plugin}/` (e.g., `vendor/admonition/`, `vendor/math/`)
+7. The `vendor/` directory is gitignored
 
 **To update plugins:**
 
@@ -113,7 +114,15 @@ rm -r vendor
 npm run prebuild
 ```
 
-The `prebuild` script runs automatically before every `build` and `build:prod` command. For `vscode:prepublish` (used by `vsce package`), it's called explicitly since vsce doesn't trigger npm's automatic pre-hooks.
+The `prebuild` script ensures plugins are always downloaded before building, whether in development or CI.
+
+**CI Caching:**
+
+The GitHub Actions workflow caches the `vendor/` directory to avoid re-downloading plugins on every CI run. The cache key is based on the hash of `scripts/download-trilium-plugins.mjs`, so:
+
+- If the download script changes, the cache is invalidated and plugins are re-downloaded
+- Otherwise, the cached plugins are reused across workflow runs
+- To force a fresh download, update the download script or manually clear the cache via GitHub's UI
 
 ### Plugin Source
 
