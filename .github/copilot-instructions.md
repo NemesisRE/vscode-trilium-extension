@@ -92,7 +92,7 @@ When referencing or verifying information, use these canonical sources:
 | VS Code API type definitions | `node_modules/@types/vscode/index.d.ts` |
 | VS Code Contribution Points | https://code.visualstudio.com/api/references/contribution-points |
 | VS Code Built-in Commands | https://code.visualstudio.com/api/references/commands |
-| Trilium Notes API / Docs | https://github.com/zadam/trilium/wiki (or upstream repo) |
+| Trilium Notes API / Docs | https://github.com/TriliumNext/trilium-notes/wiki (or upstream repo) |
 | npm package versions | https://www.npmjs.com (fetch live, do not guess) |
 
 ### Version Lookup Policy

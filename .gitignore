@@ -4,6 +4,9 @@ node_modules/
 # Build output
 out/
 
+# Vendored Trilium plugins (downloaded during build)
+vendor/
+
 # Packaged extension
 *.vsix
 

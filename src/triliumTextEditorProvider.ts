@@ -257,10 +257,11 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Content-Security-Policy" content="
       default-src 'none';
-      style-src ${webview.cspSource} 'unsafe-inline';
-      script-src 'nonce-${nonce}';
-      font-src ${webview.cspSource};
+      style-src ${webview.cspSource} 'unsafe-inline' https://cdn.jsdelivr.net;
+      script-src 'nonce-${nonce}' https://cdn.jsdelivr.net;
+      font-src ${webview.cspSource} https://cdn.jsdelivr.net;
       img-src * data: blob:;
+      connect-src https://cdn.jsdelivr.net;
     ">
     <title>Trilium Text Editor</title>
     <style nonce="${nonce}">
@@ -497,34 +498,55 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
         let isUpdatingFromExtension = false;
         const pendingImageFetches = new Map();
 
-        // Initialize CKEditor
-        ClassicEditor
+        // Initialize TriliumEditor (custom CKEditor build with Trilium plugins)
+        TriliumEditor
           .create(document.querySelector('#editor-container'), {
             licenseKey: 'GPL',
+            // Override toolbar to match Trilium's layout more closely
             toolbar: {
               items: [
-                'heading', 'fontSize', '|',
-                'bold', 'italic',
-                { label: 'Text formatting', icon: 'text', items: [
-                  'underline', 'strikethrough', '|',
-                  'superscript', 'subscript'
-                ]},
+                'heading',
                 '|',
-                'fontColor', 'fontBackgroundColor', 'removeFormat', '|',
-                'bulletedList', 'numberedList', 'todoList', '|',
-                'blockQuote', 'insertTable', '|',
-                'code', 'codeBlock', '|',
-                { label: 'Insert', icon: 'plus', items: [
-                  'link', 'bookmark', '|',
-                  'imageUpload', 'mediaEmbed', '|',
-                  'specialCharacters', 'horizontalLine', 'pageBreak'
-                ]},
+                'bold',
+                'italic',
+                'underline',
+                'strikethrough',
                 '|',
-                'alignment', 'outdent', 'indent', '|',
-                'findAndReplace', '|',
-                'undo', 'redo'
+                'fontSize',
+                'fontFamily',
+                'fontColor',
+                'fontBackgroundColor',
+                '|',
+                'alignment',
+                'outdent',
+                'indent',
+                '|',
+                'bulletedList',
+                'numberedList',
+                'todoList',
+                '|',
+                'link',
+                'insertImage',
+                'insertTable',
+                'mediaEmbed',
+                'blockQuote',
+                'codeBlock',
+                'horizontalLine',
+                '|',
+                'math',
+                'insertMermaid',
+                'admonition',
+                'footnote',
+                '|',
+                'specialCharacters',
+                'highlight',
+                '|',
+                'undo',
+                'redo',
+                '|',
+                'findAndReplace',
               ],
-              shouldNotGroupWhenFull: false
+              shouldNotGroupWhenFull: true
             },
             heading: {
               options: [
@@ -565,7 +587,27 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
             },
             link: {
               defaultProtocol: 'https://'
-            }
+            },
+            // Math plugin: lazy-load KaTeX library
+            math: {
+              engine: 'katex',
+              lazyLoad: async () => {
+                // Dynamically import KaTeX when math plugin is first used
+                const katex = await import('https://cdn.jsdelivr.net/npm/katex@0.16.45/dist/katex.mjs');
+                return katex;
+              },
+              outputType: 'span',
+              forceOutputType: false,
+              enablePreview: true,
+            },
+            // Mermaid plugin: lazy-load Mermaid library
+            mermaid: {
+              lazyLoad: async () => {
+                // Dynamically import Mermaid when first used
+                const mermaid = await import('https://cdn.jsdelivr.net/npm/mermaid@11.14.0/dist/mermaid.esm.min.mjs');
+                return mermaid.default;
+              },
+            },
           })
           .then(newEditor => {
             editor = newEditor;

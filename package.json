@@ -4,7 +4,7 @@
   "description": "Browse and edit Trilium Notes directly in VS Code via ETAPI",
   "version": "1.0.0",
   "publisher": "NemesisRE",
-  "license": "GPL-2.0-only",
+  "license": "AGPL-3.0-or-later",
   "repository": {
     "type": "git",
     "url": "https://github.com/NemesisRE/vscode-trilium-extension"
@@ -605,10 +605,16 @@
         "name": "trilium_searchNotes",
         "displayName": "Search Trilium Notes",
         "modelDescription": "Searches notes in Trilium by a text query. Returns a list of matching notes with their noteId, title, type, and parent note title. Use this to find relevant notes before reading or linking them.",
-        "tags": ["trilium", "notes", "search"],
+        "tags": [
+          "trilium",
+          "notes",
+          "search"
+        ],
         "inputSchema": {
           "type": "object",
-          "required": ["query"],
+          "required": [
+            "query"
+          ],
           "properties": {
             "query": {
               "type": "string",
@@ -629,10 +635,16 @@
         "name": "trilium_readNote",
         "displayName": "Read Trilium Note Content",
         "modelDescription": "Reads the content of a specific Trilium note by its noteId. Returns the note title, type, and content as plain text (HTML stripped). Use this to inspect, summarise, or answer questions about a specific note.",
-        "tags": ["trilium", "notes", "read"],
+        "tags": [
+          "trilium",
+          "notes",
+          "read"
+        ],
         "inputSchema": {
           "type": "object",
-          "required": ["noteId"],
+          "required": [
+            "noteId"
+          ],
           "properties": {
             "noteId": {
               "type": "string",
@@ -645,10 +657,16 @@
         "name": "trilium_listChildren",
         "displayName": "List Trilium Note Children",
         "modelDescription": "Lists the direct child notes of a given Trilium note. Returns an array of noteId, title, and type. Use this to navigate the note tree or find child notes before reading them.",
-        "tags": ["trilium", "notes", "navigate"],
+        "tags": [
+          "trilium",
+          "notes",
+          "navigate"
+        ],
         "inputSchema": {
           "type": "object",
-          "required": ["noteId"],
+          "required": [
+            "noteId"
+          ],
           "properties": {
             "noteId": {
               "type": "string",
@@ -694,9 +712,10 @@
     }
   },
   "scripts": {
-    "vscode:prepublish": "node esbuild.mjs --production",
-    "build": "node esbuild.mjs",
-    "build:prod": "node esbuild.mjs --production",
+    "prebuild": "node scripts/download-trilium-plugins.mjs",
+    "vscode:prepublish": "npm run prebuild && node esbuild.mjs --production",
+    "build": "npm run prebuild && node esbuild.mjs",
+    "build:prod": "npm run prebuild && node esbuild.mjs --production",
     "watch": "node esbuild.mjs --watch",
     "compile": "tsc --noEmit",
     "compile:tests": "tsc -p tsconfig.test.json",
@@ -717,11 +736,14 @@
     "@vscode/vsce": "^3.9.1",
     "esbuild": "^0.28.0",
     "mocha": "^11.7.5",
+    "tar": "^7.4.3",
     "typescript": "^6.0.3"
   },
   "dependencies": {
-    "@ckeditor/ckeditor5-build-classic": "^44.3.0",
+    "ckeditor5": "^48.0.0",
+    "katex": "^0.16.45",
     "marked": "^18.0.2",
+    "mermaid": "^11.14.0",
     "turndown": "^7.2.4"
   }
 }
