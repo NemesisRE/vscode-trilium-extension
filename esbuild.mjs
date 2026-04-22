@@ -49,6 +49,7 @@ const ckeditorBuildOptions = {
   bundle: true,
   outfile: 'out/ckeditor/ckeditor.js',
   format: 'iife',
+  globalName: 'TriliumEditorModule',
   platform: 'browser',
   sourcemap: !production,
   minify: production,

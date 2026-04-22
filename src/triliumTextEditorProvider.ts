@@ -499,6 +499,7 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
         const pendingImageFetches = new Map();
 
         // Initialize TriliumEditor (custom CKEditor build with Trilium plugins)
+        const { TriliumEditor } = window.TriliumEditorModule;
         TriliumEditor
           .create(document.querySelector('#editor-container'), {
             licenseKey: 'GPL',
