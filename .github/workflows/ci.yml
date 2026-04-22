@@ -34,6 +34,9 @@ jobs:
           restore-keys: |
             trilium-plugins-
 
+      - name: Patch Trilium plugins
+        run: node scripts/patch-trilium-plugins.mjs
+
       - name: Type check
         run: npm run compile
 
@@ -75,6 +78,9 @@ jobs:
           key: trilium-plugins-${{ hashFiles('scripts/download-trilium-plugins.mjs') }}
           restore-keys: |
             trilium-plugins-
+
+      - name: Patch Trilium plugins
+        run: node scripts/patch-trilium-plugins.mjs
 
       - name: Update package.json version to match release tag
         run: |

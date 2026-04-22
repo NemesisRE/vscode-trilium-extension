@@ -78,9 +78,16 @@ import { Kbd } from '../vendor/ckeditor5-keyboard-marker/src/index.ts';
 import { Math } from '../vendor/ckeditor5-math/src/index.ts';
 // @ts-ignore
 import { Mermaid } from '../vendor/ckeditor5-mermaid/src/index.ts';
+import { SyntaxHighlighting } from './ckeditor/syntaxHighlighting';
 
-// Import CKEditor styles
+// Import all CSS - esbuild will bundle it
 import 'ckeditor5/ckeditor5.css';
+import '../vendor/ckeditor5-admonition/theme/blockquote.css';
+import '../vendor/ckeditor5-footnotes/theme/footnote.css';
+import '../vendor/ckeditor5-math/theme/mathform.css';
+import '../vendor/ckeditor5-mermaid/theme/mermaid.css';
+import 'mathlive/fonts.css';
+import 'mathlive/static.css';
 
 /**
  * TriliumEditor - Custom CKEditor 5 build with Trilium plugins.
@@ -125,6 +132,7 @@ export class TriliumEditor extends ClassicEditor {
     // Block elements
     BlockQuote,
     CodeBlock,
+    SyntaxHighlighting,
     HorizontalLine,
     
     // Tables
@@ -204,7 +212,7 @@ export class TriliumEditor extends ClassicEditor {
         'horizontalLine',
         '|',
         'math',
-        'insertMermaid',
+        'mermaid',
         'admonition',
         'footnote',
         '|',
@@ -236,6 +244,36 @@ export class TriliumEditor extends ClassicEditor {
         'mergeTableCells',
         'tableCellProperties',
         'tableProperties',
+      ],
+    },
+    codeBlock: {
+      languages: [
+        { language: 'plaintext', label: 'Plain text' },
+        { language: 'javascript', label: 'JavaScript' },
+        { language: 'typescript', label: 'TypeScript' },
+        { language: 'python', label: 'Python' },
+        { language: 'java', label: 'Java' },
+        { language: 'csharp', label: 'C#' },
+        { language: 'cpp', label: 'C++' },
+        { language: 'c', label: 'C' },
+        { language: 'php', label: 'PHP' },
+        { language: 'ruby', label: 'Ruby' },
+        { language: 'go', label: 'Go' },
+        { language: 'rust', label: 'Rust' },
+        { language: 'swift', label: 'Swift' },
+        { language: 'kotlin', label: 'Kotlin' },
+        { language: 'html', label: 'HTML' },
+        { language: 'xml', label: 'XML' },
+        { language: 'css', label: 'CSS' },
+        { language: 'scss', label: 'SCSS' },
+        { language: 'sql', label: 'SQL' },
+        { language: 'bash', label: 'Bash' },
+        { language: 'shell', label: 'Shell' },
+        { language: 'powershell', label: 'PowerShell' },
+        { language: 'json', label: 'JSON' },
+        { language: 'yaml', label: 'YAML' },
+        { language: 'markdown', label: 'Markdown' },
+        { language: 'diff', label: 'Diff' },
       ],
     },
   };

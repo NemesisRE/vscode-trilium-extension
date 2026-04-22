@@ -48,8 +48,7 @@ const ckeditorBuildOptions = {
   entryPoints: ['src/ckeditor-build.ts'],
   bundle: true,
   outfile: 'out/ckeditor/ckeditor.js',
-  format: 'iife',
-  globalName: 'TriliumEditorModule',
+  format: 'esm',
   platform: 'browser',
   sourcemap: !production,
   minify: production,
@@ -57,16 +56,18 @@ const ckeditorBuildOptions = {
   logLevel: 'info',
   loader: {
     '.svg': 'text',
-    '.css': 'css',
+    '.css': 'css',  // Bundle CSS files
+    '.woff': 'dataurl',
+    '.woff2': 'dataurl',
+    '.ttf': 'dataurl',
+    '.eot': 'dataurl',
   },
   plugins: [svgRawPlugin],
-  // Mark mathlive CSS as external - it's an optional dependency that
-  // the math plugin can work without
-  external: ['mathlive/fonts.css', 'mathlive/static.css'],
+  treeShaking: true,
 };
 
 /**
- * Build both the extension and CKEditor.
+ * Build both extension and CKEditor.
  */
 async function buildAll() {
   console.log('[esbuild] Building extension...');
