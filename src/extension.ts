@@ -241,10 +241,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           return;
         }
 
-        // Text notes: open with CKEditor custom editor
+        // Text notes: open with CKEditor custom editor on file-backed temp
+        // docs to get native dirty/close behavior.
         if (note.type === 'text') {
-          const uri = createVirtualDocumentUri(note.noteId, note.title);
-          await vscode.commands.executeCommand('vscode.openWith', uri, TriliumTextEditorProvider.viewType);
+          const rawContent = await client.getNoteContent(note.noteId);
+          const filePath = tempFileManager.getTextEditorTempPath(note);
+          fs.writeFileSync(filePath, rawContent, 'utf8');
+          const uri = vscode.Uri.file(filePath);
+          TriliumTextEditorProvider.setDocumentMetadata(uri, {
+            noteId: note.noteId,
+            title: note.title,
+          });
+          await vscode.commands.executeCommand(
+            'vscode.openWith',
+            uri,
+            TriliumTextEditorProvider.viewType,
+          );
           return;
         }
 
@@ -658,6 +670,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         await client.deleteNote(target.note.noteId);
         // Close any editor that has this note's temp file open.
         const removedPath = tempFileManager.removeTempFile(target.note.noteId);
+        tempFileManager.removeTextEditorTempFile(target.note.noteId);
         if (removedPath) {
           const fileUri = vscode.Uri.file(removedPath);
           for (const group of vscode.window.tabGroups.all) {
@@ -700,10 +713,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
 
       try {
-        // Text notes: open with CKEditor custom editor (WYSIWYG, no conversion)
+        // Text notes: open with CKEditor custom editor on a file-backed temp
+        // document so VS Code provides native dirty/close warning behavior.
         if (note.type === 'text') {
-          const uri = createVirtualDocumentUri(note.noteId, note.title);
-          await vscode.commands.executeCommand('vscode.openWith', uri, TriliumTextEditorProvider.viewType);
+          const rawContent = await client.getNoteContent(note.noteId);
+          const filePath = tempFileManager.getTextEditorTempPath(note);
+          fs.writeFileSync(filePath, rawContent, 'utf8');
+          const uri = vscode.Uri.file(filePath);
+          TriliumTextEditorProvider.setDocumentMetadata(uri, {
+            noteId: note.noteId,
+            title: note.title,
+          });
+          await vscode.commands.executeCommand(
+            'vscode.openWith',
+            uri,
+            TriliumTextEditorProvider.viewType,
+          );
           return;
         }
 
@@ -1190,6 +1215,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     // Sync note content back to Trilium whenever a tracked temp file is saved.
     vscode.workspace.onDidSaveTextDocument(async (doc) => {
+      if (tempFileManager.isTextEditorTempPath(doc.fileName)) {
+        return;
+      }
       const noteId = tempFileManager.getNoteIdForPath(doc.fileName);
       if (!noteId) {
         return;
@@ -1217,6 +1245,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       } catch (err) {
         void vscode.window.showErrorMessage(`Trilium: Failed to save note: ${err}`);
       }
+    }),
+
+    // Cleanup temporary and virtual documents when their tabs are closed.
+    vscode.workspace.onDidCloseTextDocument((doc) => {
+      if (doc.uri.scheme === 'trilium-text') {
+        virtualDocProvider.clearCache(doc.uri);
+        return;
+      }
+
+      if (doc.uri.scheme !== 'file') {
+        return;
+      }
+
+      if (tempFileManager.isManagedTempPath(doc.fileName)) {
+        tempFileManager.removeTempFileByPath(doc.fileName);
+      }
+      TriliumTextEditorProvider.clearDocumentMetadata(doc.uri);
     }),
 
     vscode.window.registerFileDecorationProvider(new NoteTreeDecorationProvider()),
@@ -1370,7 +1415,14 @@ async function openNoteInEditor(
     return;
   }
   if (note.type === 'text') {
-    const uri = createVirtualDocumentUri(note.noteId, note.title);
+    const rawContent = await client.getNoteContent(note.noteId);
+    const filePath = tempFileManager.getTextEditorTempPath(note);
+    fs.writeFileSync(filePath, rawContent, 'utf8');
+    const uri = vscode.Uri.file(filePath);
+    TriliumTextEditorProvider.setDocumentMetadata(uri, {
+      noteId: note.noteId,
+      title: note.title,
+    });
     await vscode.commands.executeCommand('vscode.openWith', uri, TriliumTextEditorProvider.viewType);
     return;
   }
@@ -1449,7 +1501,13 @@ async function createNoteOfType(
 
     // Text notes: open with CKEditor (same path as openNote / openTodayNote).
     if (newNote.type === 'text') {
-      const uri = createVirtualDocumentUri(newNote.noteId, newNote.title);
+      const filePath = tempFileManager.getTextEditorTempPath(newNote);
+      fs.writeFileSync(filePath, defaultContent, 'utf8');
+      const uri = vscode.Uri.file(filePath);
+      TriliumTextEditorProvider.setDocumentMetadata(uri, {
+        noteId: newNote.noteId,
+        title: newNote.title,
+      });
       await vscode.commands.executeCommand('vscode.openWith', uri, TriliumTextEditorProvider.viewType);
       return;
     }

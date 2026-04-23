@@ -23,6 +23,8 @@ If you already use Trilium every day, this gives you a smoother flow without swi
 
 - The ETAPI token is stored securely in VS Code's `SecretStorage` and is not written to your settings files.
 - Text notes open in the built-in CKEditor webview, while code and other note types open in the most appropriate editor available.
+- When upstream and local content diverge, save shows conflict options (`Compare`, `Keep Ours`, `Use Theirs`) before any overwrite.
+- Unresolved conflicts keep the tab dirty, so VS Code close warnings still protect unsaved work.
 
 ## First-Time Troubleshooting
 

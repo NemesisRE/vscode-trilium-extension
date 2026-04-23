@@ -2,6 +2,14 @@
 
 This roadmap is a working list of improvements and ideas, not a strict milestone commitment.
 
+## Recently Completed
+
+- Text-note CKEditor tabs now use native unsaved-close protection semantics.
+- Save flow for text notes is now server-first, so unresolved upstream conflicts do not silently clear dirty state.
+- Conflict resolution for text notes now includes **Compare**, **Keep Ours**, and **Use Theirs**.
+- Conflict diff now uses read-only **Theirs** and editable **Ours** with HTML pretty-printing for readable line-by-line comparison.
+- Closing tabs now cleans up managed virtual/temp note documents more reliably.
+
 ## Editor Polish
 
 - Fix CKEditor dropdown button hover colors for insert actions such as code block and footnote.
@@ -10,7 +18,6 @@ This roadmap is a working list of improvements and ideas, not a strict milestone
 - Add a `highlight.js` theme setting and apply the selected theme in the editor.
 - Make unchecked checkboxes more visible in dark themes.
 - Improve embedded PDF handling so notes show at least the file name, plus open and download actions.
-- Show unsaved changes on note tabs like native VS Code editors.
 
 ## Note Opening and Navigation
 
@@ -39,7 +46,7 @@ This roadmap is a working list of improvements and ideas, not a strict milestone
 
 ## Reliability and UX
 
-- Improve dirty-state tracking across all editable note types.
+- Extend native-style dirty-state and conflict handling consistency from text notes to all editable note types.
 - Refresh open editors more predictably when notes are renamed, moved, or modified externally.
 - Add clearer fallback behavior when a note type cannot be rendered natively.
 - Improve error messages around attachments and binary note handling.
@@ -50,4 +57,3 @@ This roadmap is a working list of improvements and ideas, not a strict milestone
 - Add a lightweight recent notes or pinned notes view.
 - Add note preview on hover in the tree.
 - Add optional auto-refresh for externally changed notes.
-- Add better conflict handling when a note is edited in both VS Code and Trilium.
