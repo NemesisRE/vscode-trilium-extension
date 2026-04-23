@@ -92,7 +92,7 @@ The extension uses five custom CKEditor 5 plugins from Trilium Notes:
 
 ### Plugin Download
 
-Plugins are **not checked into Git**. They are downloaded from the [TriliumNext/Trilium](https://github.com/TriliumNext/Trilium) repository during the build process via the `prebuild` script.
+Plugins are **not checked into Git**. They are downloaded from the [Trilium source repository](https://github.com/TriliumNext/Trilium) during the build process via the `prebuild` script.
 
 **How it works:**
 
@@ -126,7 +126,7 @@ The GitHub Actions workflow caches the `vendor/` directory to avoid re-downloadi
 
 ### Plugin Source
 
-- **Repository:** [TriliumNext/Trilium](https://github.com/TriliumNext/Trilium)
+- **Repository:** [Trilium source repository](https://github.com/TriliumNext/Trilium)
 - **Path:** `src/public/app/widgets/type_widgets/text/ckeditor_plugins/`
 - **License:** AGPL-3.0 (same as Trilium)
 
