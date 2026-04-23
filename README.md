@@ -61,11 +61,37 @@ If you want a fast setup, you can be connected in about a minute.
 
 ## Screenshot Gallery
 
-![Note tree](media/screenshots/01-note-tree.png)
-![WYSIWYG editor](media/screenshots/02-wysiwyg-editor.png)
-![Attributes sidebar](media/screenshots/03-attributes-sidebar.png)
-![Search QuickPick](media/screenshots/04-search-quickpick.png)
-![Revisions and diff](media/screenshots/05-revisions-and-diff.png)
+<!-- markdownlint-disable MD033 -->
+<table>
+  <tr>
+    <td align="center" valign="top" style="border: none;">
+      <a href="media/screenshots/01-note-tree.png"><img src="media/screenshots/01-note-tree.png" width="280" height="240" alt="Note tree" /></a><br />
+      <sub><strong>Note tree:</strong> Browse notes with type icons and visual cues.</sub>
+    </td>
+    <td align="center" valign="top" style="border: none;">
+      <a href="media/screenshots/02-wysiwyg-editor.png"><img src="media/screenshots/02-wysiwyg-editor.png" width="280" height="240" alt="WYSIWYG editor" /></a><br />
+      <sub><strong>WYSIWYG editor:</strong> Edit Trilium text notes with rich formatting.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" valign="top" style="border: none;">
+      <a href="media/screenshots/03-attributes-sidebar.png"><img src="media/screenshots/03-attributes-sidebar.png" width="280" height="240" alt="Attributes sidebar" /></a><br />
+      <sub><strong>Attributes sidebar:</strong> Edit labels, relations, and attachments inline.</sub>
+    </td>
+    <td align="center" valign="top" style="border: none;">
+      <a href="media/screenshots/04-search-quickpick.png"><img src="media/screenshots/04-search-quickpick.png" width="280" height="240" alt="Search QuickPick" /></a><br />
+      <sub><strong>Search:</strong> Jump to notes quickly with live results.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" valign="top" style="border: none;">
+      <a href="media/screenshots/05-revisions-and-diff.png"><img src="media/screenshots/05-revisions-and-diff.png" width="280" height="240" alt="Revisions and diff" /></a><br />
+      <sub><strong>Revisions and diff:</strong> Open previous revisions and compare changes safely.</sub>
+    </td>
+    <td align="center" valign="top" style="border: none;"></td>
+  </tr>
+</table>
+<!-- markdownlint-enable MD033 -->
 
 ## Requirements
 
