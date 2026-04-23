@@ -84,7 +84,7 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
     // back to the webview and creating an infinite update loop.
     let pendingWebviewUpdate = false;
     // Tracks the latest async edit coming from CKEditor so Save can wait for it.
-    let pendingDocumentUpdate: Promise<unknown> = Promise.resolve();
+    let pendingDocumentUpdate: PromiseLike<unknown> = Promise.resolve();
     // Avoid duplicate ETAPI sync when we trigger document.save() after a successful push.
     let suppressNextDidSaveSync = false;
 
