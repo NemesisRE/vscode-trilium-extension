@@ -69,14 +69,14 @@ If you want a fast setup, you can be connected in about a minute.
       <sub><strong>Note tree:</strong> Browse notes with type icons and visual cues.</sub>
     </td>
     <td align="center" valign="bottom" style="border: none;">
-      <a href="media/screenshots/02-wysiwyg-editor.png"><img src="media/screenshots/02-wysiwyg-editor.png" width="280" height="240" alt="WYSIWYG editor" /></a><br />
-      <sub><strong>WYSIWYG editor:</strong> Edit Trilium text notes with rich formatting.</sub>
+      <a href="media/screenshots/03-attributes-sidebar.png"><img src="media/screenshots/03-attributes-sidebar.png" width="280" height="240" alt="Attributes sidebar" /></a><br />
+      <sub><strong>Attributes sidebar:</strong> Edit labels, relations, and attachments inline.</sub>
     </td>
   </tr>
   <tr>
     <td align="center" valign="bottom" style="border: none;">
-      <a href="media/screenshots/03-attributes-sidebar.png"><img src="media/screenshots/03-attributes-sidebar.png" width="280" height="240" alt="Attributes sidebar" /></a><br />
-      <sub><strong>Attributes sidebar:</strong> Edit labels, relations, and attachments inline.</sub>
+      <a href="media/screenshots/02-wysiwyg-editor.png"><img src="media/screenshots/02-wysiwyg-editor.png" width="280" height="240" alt="WYSIWYG editor" /></a><br />
+      <sub><strong>WYSIWYG editor:</strong> Edit Trilium text notes with rich formatting.</sub>
     </td>
     <td align="center" valign="bottom" style="border: none;">
       <a href="media/screenshots/04-search-quickpick.png"><img src="media/screenshots/04-search-quickpick.png" width="280" height="240" alt="Search QuickPick" /></a><br />
