@@ -78,6 +78,9 @@ export class TempFileManager {
   private readonly noteIdByPath = new Map<string, string>();
   private readonly pathByNoteId = new Map<string, string>();
   private readonly noteTypeByNoteId = new Map<string, string>();
+  private readonly htmlTempPaths = new Set<string>();
+  private readonly textEditorPathByNoteId = new Map<string, string>();
+  private readonly textEditorNoteIdByPath = new Map<string, string>();
 
   constructor() {
     this.tempDir = path.join(os.tmpdir(), 'vscode-trilium');
@@ -156,7 +159,87 @@ export class TempFileManager {
    */
   getHtmlTempPath(note: Note): string {
     const safeName = note.title.replace(/[^a-zA-Z0-9_\-.]/g, '_').slice(0, 40);
-    return path.join(this.tempDir, `${safeName}-${note.noteId}-raw.html`);
+    const filePath = path.join(this.tempDir, `${safeName}-${note.noteId}-raw.html`);
+    this.htmlTempPaths.add(this.normalize(filePath));
+    return filePath;
+  }
+
+  /**
+   * Returns a dedicated temp file path for the CKEditor custom text editor.
+   * These files are tracked for cleanup but intentionally excluded from the
+   * Markdown round-trip save pipeline.
+   */
+  getTextEditorTempPath(note: Note): string {
+    const existing = this.textEditorPathByNoteId.get(note.noteId);
+    if (existing) {
+      return existing;
+    }
+    const safeName = note.title.replace(/[^a-zA-Z0-9_\-.]/g, '_').slice(0, 40);
+    const filePath = path.join(this.tempDir, `${safeName}-${note.noteId}-editor.html`);
+    const normalized = this.normalize(filePath);
+    this.textEditorPathByNoteId.set(note.noteId, filePath);
+    this.textEditorNoteIdByPath.set(normalized, note.noteId);
+    return filePath;
+  }
+
+  isTextEditorTempPath(filePath: string): boolean {
+    return this.textEditorNoteIdByPath.has(this.normalize(filePath));
+  }
+
+  removeTextEditorTempFile(noteId: string): string | undefined {
+    const filePath = this.textEditorPathByNoteId.get(noteId);
+    if (!filePath) {
+      return undefined;
+    }
+    try {
+      fs.unlinkSync(filePath);
+    } catch {
+      // best-effort
+    }
+    const normalized = this.normalize(filePath);
+    this.textEditorPathByNoteId.delete(noteId);
+    this.textEditorNoteIdByPath.delete(normalized);
+    return filePath;
+  }
+
+  /** Returns true when a path is managed by this temp manager. */
+  isManagedTempPath(filePath: string): boolean {
+    const normalized = this.normalize(filePath);
+    return this.noteIdByPath.has(normalized)
+      || this.htmlTempPaths.has(normalized)
+      || this.textEditorNoteIdByPath.has(normalized);
+  }
+
+  /**
+   * Remove a managed temp file by path (tracked note files and raw HTML files).
+   * Returns true if the path belonged to this manager.
+   */
+  removeTempFileByPath(filePath: string): boolean {
+    const normalized = this.normalize(filePath);
+
+    const noteId = this.noteIdByPath.get(normalized);
+    if (noteId) {
+      this.removeTempFile(noteId);
+      return true;
+    }
+
+    if (this.htmlTempPaths.has(normalized)) {
+      try {
+        fs.unlinkSync(filePath);
+      } catch {
+        // best-effort
+      }
+      this.htmlTempPaths.delete(normalized);
+      return true;
+    }
+
+    const textEditorNoteId = this.textEditorNoteIdByPath.get(normalized);
+    if (textEditorNoteId) {
+      this.removeTextEditorTempFile(textEditorNoteId);
+      return true;
+    }
+
+    return false;
   }
 
   /**
@@ -261,6 +344,20 @@ export class TempFileManager {
         // best-effort cleanup
       }
     }
+    for (const filePath of this.htmlTempPaths) {
+      try {
+        fs.unlinkSync(filePath);
+      } catch {
+        // best-effort cleanup
+      }
+    }
+    for (const filePath of this.textEditorPathByNoteId.values()) {
+      try {
+        fs.unlinkSync(filePath);
+      } catch {
+        // best-effort cleanup
+      }
+    }
     try {
       fs.rmdirSync(this.tempDir);
     } catch {
@@ -269,5 +366,8 @@ export class TempFileManager {
     this.noteIdByPath.clear();
     this.pathByNoteId.clear();
     this.noteTypeByNoteId.clear();
+    this.htmlTempPaths.clear();
+    this.textEditorPathByNoteId.clear();
+    this.textEditorNoteIdByPath.clear();
   }
 }

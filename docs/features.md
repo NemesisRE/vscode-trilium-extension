@@ -25,6 +25,19 @@
 
 A breadcrumb bar above the CKEditor content area shows the full parent path of the open note and updates automatically when the note loads.
 
+## Save Safety and Conflict Resolution
+
+- Text-note saves use a server-first flow: on `Ctrl+S`, the extension attempts to sync to Trilium before clearing local dirty state.
+- If upstream content changed, the editor shows a conflict dialog with three options:
+  - **Compare** opens a side-by-side diff.
+  - **Keep Ours** keeps your local content and pushes it on save.
+  - **Use Theirs** replaces local content with the server version.
+- The diff view is practical for merging:
+  - **Theirs** (left) is read-only.
+  - **Ours** (right) is your actual editable document.
+- Both sides are HTML-formatted for readable line-by-line comparison.
+- If a conflict remains unresolved, the tab stays dirty so VS Code still warns on close.
+
 ## Theme Integration
 
 The CKEditor webview follows the active VS Code theme automatically. Editor colors are mapped from VS Code CSS variables to CKEditor variables at runtime.

@@ -16,11 +16,35 @@ import { getEditorFontSize, getEditorSpellcheck } from './settings';
  */
 export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvider {
   public static readonly viewType = 'trilium.textEditor';
+  private static readonly docMetaByUri = new Map<string, { noteId: string; title: string }>();
+  private readonly syncedContentByUri = new Map<string, string>();
+  private readonly conflictTheirsByPath = new Map<string, string>();
+
+  public static setDocumentMetadata(uri: vscode.Uri, meta: { noteId: string; title: string }): void {
+    TriliumTextEditorProvider.docMetaByUri.set(uri.toString(), meta);
+  }
+
+  public static clearDocumentMetadata(uri: vscode.Uri): void {
+    TriliumTextEditorProvider.docMetaByUri.delete(uri.toString());
+  }
 
   constructor(
     private readonly context: vscode.ExtensionContext,
     private readonly getClient: () => EtapiClient | undefined,
-  ) {}
+  ) {
+    const conflictProvider: vscode.TextDocumentContentProvider = {
+      provideTextDocumentContent: (uri) => this.conflictTheirsByPath.get(uri.path) ?? '',
+    };
+
+    this.context.subscriptions.push(
+      vscode.workspace.registerTextDocumentContentProvider('trilium-theirs', conflictProvider),
+      vscode.workspace.onDidCloseTextDocument((doc) => {
+        if (doc.uri.scheme === 'trilium-theirs') {
+          this.conflictTheirsByPath.delete(doc.uri.path);
+        }
+      }),
+    );
+  }
 
   /**
    * Called when VS Code needs to create a custom editor for a document.
@@ -39,9 +63,14 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
       ],
     };
 
-    // Show note title in the editor tab
-    const tabTitle = new URLSearchParams(document.uri.query).get('title') ?? 'Trilium Note';
+    // Resolve metadata from URI query (virtual docs) or pre-registered file metadata.
+    const query = new URLSearchParams(document.uri.query);
+    const docMeta = TriliumTextEditorProvider.docMetaByUri.get(document.uri.toString());
+    const noteId = query.get('noteId') ?? docMeta?.noteId ?? '';
+    const tabTitle = query.get('title') ?? docMeta?.title ?? 'Trilium Note';
     webviewPanel.title = tabTitle;
+    const documentKey = document.uri.toString();
+    this.syncedContentByUri.set(documentKey, document.getText());
 
     // Set initial HTML
     webviewPanel.webview.html = this.getHtmlForWebview(
@@ -54,10 +83,14 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
     // Prevents the onDidChangeTextDocument listener from echoing the change
     // back to the webview and creating an infinite update loop.
     let pendingWebviewUpdate = false;
+    // Tracks the latest async edit coming from CKEditor so Save can wait for it.
+    let pendingDocumentUpdate: Promise<unknown> = Promise.resolve();
+    // Avoid duplicate ETAPI sync when we trigger document.save() after a successful push.
+    let suppressNextDidSaveSync = false;
 
     // Extract the note ID from the virtual document URI so the breadcrumb can
     // walk the parent chain once the webview is ready.
-    const noteIdForBreadcrumb = new URLSearchParams(document.uri.query).get('noteId') ?? '';
+    const noteIdForBreadcrumb = noteId;
 
     // Send initial content once webview is ready
     const sendContent = () => {
@@ -81,7 +114,7 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
         case 'contentChanged':
           // CKEditor content changed - update the document
           pendingWebviewUpdate = true;
-          void this.updateTextDocument(document, message.content).then(() => {
+          pendingDocumentUpdate = this.updateTextDocument(document, message.content).then(() => {
             pendingWebviewUpdate = false;
           }, () => {
             pendingWebviewUpdate = false;
@@ -89,8 +122,23 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
           break;
 
         case 'save':
-          // User pressed Ctrl+S in webview - trigger document save
-          void document.save();
+          // User pressed Ctrl+S in webview.
+          // 1) Wait for any pending CKEditor edit to be applied.
+          // 2) Sync to Trilium first. If conflict is unresolved, keep document dirty.
+          // 3) Only after successful server sync, save the local working copy.
+          void (async () => {
+            try {
+              await pendingDocumentUpdate;
+            } catch {
+              // updateTextDocument already surfaced errors via failed save path.
+            }
+
+            const pushed = await this.saveToTrilium(document, tabTitle);
+            if (pushed) {
+              suppressNextDidSaveSync = true;
+              await document.save();
+            }
+          })();
           break;
 
         case 'fetchImage': {
@@ -125,7 +173,11 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
     // Handle document save - sync to Trilium
     const saveListener = vscode.workspace.onDidSaveTextDocument(async (savedDoc) => {
       if (savedDoc.uri.toString() === document.uri.toString()) {
-        await this.saveToTrilium(document);
+        if (suppressNextDidSaveSync) {
+          suppressNextDidSaveSync = false;
+          return;
+        }
+        await this.saveToTrilium(document, tabTitle);
       }
     });
 
@@ -134,6 +186,7 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
       messageListener.dispose();
       changeListener.dispose();
       saveListener.dispose();
+      this.syncedContentByUri.delete(documentKey);
     });
   }
 
@@ -155,27 +208,137 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
   /**
    * Save document content to Trilium via ETAPI.
    */
-  private async saveToTrilium(document: vscode.TextDocument): Promise<void> {
+  private async saveToTrilium(document: vscode.TextDocument, tabTitle?: string): Promise<boolean> {
     const client = this.getClient();
     if (!client) {
       void vscode.window.showErrorMessage('Trilium: Not connected.');
-      return;
+      return false;
     }
 
     // Extract noteId from URI query
-    const noteId = new URLSearchParams(document.uri.query).get('noteId');
+    const query = new URLSearchParams(document.uri.query);
+    const noteId = query.get('noteId')
+      ?? TriliumTextEditorProvider.docMetaByUri.get(document.uri.toString())?.noteId;
     if (!noteId) {
       void vscode.window.showErrorMessage('Trilium: Invalid document URI.');
-      return;
+      return false;
     }
 
     try {
-      const content = document.getText();
-      await client.putNoteContent(noteId, content);
+      const documentKey = document.uri.toString();
+      const localContent = document.getText();
+      const previouslySynced = this.syncedContentByUri.get(documentKey) ?? '';
+      const serverContent = await client.getNoteContent(noteId);
+
+      const normalizedLocal = this.formatHtmlForDiff(localContent);
+      const normalizedSynced = this.formatHtmlForDiff(previouslySynced);
+      const normalizedServer = this.formatHtmlForDiff(serverContent);
+
+      // Upstream changed since we opened/synced this note.
+      if (normalizedServer !== normalizedSynced && normalizedServer !== normalizedLocal) {
+        const choice = await vscode.window.showWarningMessage(
+          `Trilium: "${tabTitle ?? 'Note'}" changed on the server.`,
+          { modal: true },
+          'Compare',
+          'Keep Ours',
+          'Use Theirs',
+        );
+
+        if (choice === 'Compare') {
+          await this.openConflictDiff(document, serverContent, tabTitle ?? 'Note', noteId);
+          return false;
+        }
+
+        if (choice === 'Use Theirs') {
+          await this.updateTextDocument(document, serverContent);
+          this.syncedContentByUri.set(documentKey, serverContent);
+          vscode.window.setStatusBarMessage('Trilium: Replaced local changes with server version', 4000);
+          return false;
+        }
+
+        if (choice !== 'Keep Ours') {
+          return false;
+        }
+      }
+
+  await client.putNoteContent(noteId, localContent);
+  this.syncedContentByUri.set(documentKey, localContent);
       vscode.window.setStatusBarMessage('$(check) Trilium: Note saved', 3000);
+      return true;
     } catch (err) {
       void vscode.window.showErrorMessage(`Trilium: Failed to save note: ${err}`);
+      return false;
     }
+  }
+
+  private async openConflictDiff(
+    oursDocument: vscode.TextDocument,
+    theirs: string,
+    title: string,
+    noteId: string,
+  ): Promise<void> {
+    const formattedOurs = this.formatHtmlForDiff(oursDocument.getText());
+    if (formattedOurs !== oursDocument.getText()) {
+      await this.updateTextDocument(oursDocument, formattedOurs);
+    }
+
+    const formattedTheirs = this.formatHtmlForDiff(theirs);
+    const conflictPath = `/${noteId}-${Date.now()}`;
+    this.conflictTheirsByPath.set(conflictPath, formattedTheirs);
+    const theirsUri = vscode.Uri.parse(`trilium-theirs:${conflictPath}`);
+
+    await vscode.commands.executeCommand(
+      'vscode.diff',
+      theirsUri,
+      oursDocument.uri,
+      `${title}: Theirs (read-only) ↔ Ours (editable)`,
+    );
+  }
+
+  /**
+   * Lightweight HTML pretty printer used only for conflict diff readability.
+   * This avoids adding formatter dependencies while producing stable line-by-line diffs.
+   */
+  private formatHtmlForDiff(html: string): string {
+    const voidTags = new Set([
+      'area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input',
+      'link', 'meta', 'param', 'source', 'track', 'wbr',
+    ]);
+
+    const tokens = html
+      .replace(/>\s+</g, '><')
+      .replace(/</g, '\n<')
+      .split('\n')
+      .map((t) => t.trim())
+      .filter(Boolean);
+
+    let indent = 0;
+    const lines: string[] = [];
+
+    const getTagName = (token: string): string => {
+      const match = token.match(/^<\/?\s*([a-zA-Z0-9:-]+)/);
+      return match ? match[1].toLowerCase() : '';
+    };
+
+    for (const token of tokens) {
+      const isClosing = /^<\//.test(token);
+      const isCommentOrDoctype = /^<!(--|doctype)/i.test(token);
+      const isTag = /^</.test(token);
+      const tagName = getTagName(token);
+      const selfClosing = /\/\s*>$/.test(token) || (tagName ? voidTags.has(tagName) : false);
+
+      if (isClosing) {
+        indent = Math.max(0, indent - 1);
+      }
+
+      lines.push(`${'  '.repeat(indent)}${token}`);
+
+      if (isTag && !isClosing && !selfClosing && !isCommentOrDoctype) {
+        indent += 1;
+      }
+    }
+
+    return `${lines.join('\n')}\n`;
   }
 
   private async fetchImageDataUri(relativeUrl: string): Promise<string> {

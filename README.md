@@ -22,6 +22,7 @@ Use it to:
 - Edit text notes in a rich CKEditor-powered WYSIWYG editor.
 - Open code, mermaid, canvas, and other note types with the right editor flow.
 - Search notes quickly, manage attributes and attachments, and review revisions.
+- Resolve upstream edit conflicts with a built-in compare flow (Theirs vs Ours).
 - Clone, move, and export notes without leaving VS Code.
 
 If you want a fast setup, you can be connected in about a minute.
@@ -37,6 +38,7 @@ If you want a fast setup, you can be connected in about a minute.
 ## Why It Feels Native
 
 - Keyboard-first workflows using normal VS Code commands and save behavior.
+- Text-note editing now keeps native unsaved-close protection, so unresolved changes are not silently lost.
 - Theme-aware editor styling so notes blend with your current color theme.
 - Secure token storage through VS Code secret storage.
 - Deep command coverage for daily note management.
