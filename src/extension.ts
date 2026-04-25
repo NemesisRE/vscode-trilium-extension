@@ -1230,9 +1230,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
       try {
         // Text notes are stored as Markdown locally; convert back to HTML for Trilium.
+        // Raw HTML temp files are already HTML and must be uploaded as-is.
         // Mind map notes are stored as Markdown locally; convert back to MindElixir JSON.
         let payload: string;
-        if (tempFileManager.isTextNote(noteId)) {
+        if (tempFileManager.isHtmlTempPath(doc.fileName)) {
+          payload = doc.getText();
+        } else if (tempFileManager.isTextNote(noteId)) {
           payload = tempFileManager.markdownToHtml(doc.getText());
         } else if (tempFileManager.isMindMapNote(noteId)) {
           payload = tempFileManager.markdownToMindMapJson(doc.getText());

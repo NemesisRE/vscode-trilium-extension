@@ -79,6 +79,7 @@ export class TempFileManager {
   private readonly pathByNoteId = new Map<string, string>();
   private readonly noteTypeByNoteId = new Map<string, string>();
   private readonly htmlTempPaths = new Set<string>();
+  private readonly htmlNoteIdByPath = new Map<string, string>();
   private readonly textEditorPathByNoteId = new Map<string, string>();
   private readonly textEditorNoteIdByPath = new Map<string, string>();
 
@@ -130,7 +131,8 @@ export class TempFileManager {
   }
 
   getNoteIdForPath(filePath: string): string | undefined {
-    return this.noteIdByPath.get(this.normalize(filePath));
+    const normalized = this.normalize(filePath);
+    return this.noteIdByPath.get(normalized) ?? this.htmlNoteIdByPath.get(normalized);
   }
 
   getLanguageId(note: Note): string {
@@ -152,15 +154,20 @@ export class TempFileManager {
     return this.noteTypeByNoteId.get(noteId) === 'mindMap';
   }
 
+  isHtmlTempPath(filePath: string): boolean {
+    return this.htmlTempPaths.has(this.normalize(filePath));
+  }
+
   /**
-   * Returns a temp file path for viewing raw HTML content.
-   * This path is intentionally NOT registered in the noteId map so saves
-   * to this file do not sync back to Trilium.
+   * Returns a temp file path for viewing/editing raw HTML content.
+   * These files sync directly to Trilium as HTML (no Markdown conversion).
    */
   getHtmlTempPath(note: Note): string {
     const safeName = note.title.replace(/[^a-zA-Z0-9_\-.]/g, '_').slice(0, 40);
     const filePath = path.join(this.tempDir, `${safeName}-${note.noteId}-raw.html`);
-    this.htmlTempPaths.add(this.normalize(filePath));
+    const normalized = this.normalize(filePath);
+    this.htmlTempPaths.add(normalized);
+    this.htmlNoteIdByPath.set(normalized, note.noteId);
     return filePath;
   }
 
@@ -230,6 +237,7 @@ export class TempFileManager {
         // best-effort
       }
       this.htmlTempPaths.delete(normalized);
+      this.htmlNoteIdByPath.delete(normalized);
       return true;
     }
 
@@ -367,6 +375,7 @@ export class TempFileManager {
     this.pathByNoteId.clear();
     this.noteTypeByNoteId.clear();
     this.htmlTempPaths.clear();
+    this.htmlNoteIdByPath.clear();
     this.textEditorPathByNoteId.clear();
     this.textEditorNoteIdByPath.clear();
   }

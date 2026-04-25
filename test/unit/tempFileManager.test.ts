@@ -179,10 +179,16 @@ describe('TempFileManager', () => {
       assert.ok(path.basename(p).includes('myHtmlNote'));
     });
 
-    it('is not tracked for save-back (getNoteIdForPath returns undefined)', () => {
+    it('is tracked for save-back (getNoteIdForPath returns the source noteId)', () => {
       const note = makeNote({ noteId: 'rawHtml1' });
       const p = manager.getHtmlTempPath(note);
-      assert.strictEqual(manager.getNoteIdForPath(p), undefined);
+      assert.strictEqual(manager.getNoteIdForPath(p), 'rawHtml1');
+    });
+
+    it('is recognized as an HTML temp path', () => {
+      const note = makeNote({ noteId: 'rawHtml2' });
+      const p = manager.getHtmlTempPath(note);
+      assert.strictEqual(manager.isHtmlTempPath(p), true);
     });
   });
 
