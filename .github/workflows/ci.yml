@@ -31,7 +31,7 @@ jobs:
         run: npm ci
 
       - name: Cache Trilium CKEditor plugins
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: vendor/
           key: trilium-plugins-${{ hashFiles('scripts/download-trilium-plugins.mjs') }}
@@ -63,7 +63,7 @@ jobs:
         run: npm ci
 
       - name: Cache Trilium CKEditor plugins
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: vendor/
           key: trilium-plugins-${{ hashFiles('scripts/download-trilium-plugins.mjs') }}
@@ -108,7 +108,7 @@ jobs:
         run: npm ci
 
       - name: Cache Trilium CKEditor plugins
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: vendor/
           key: trilium-plugins-${{ hashFiles('scripts/download-trilium-plugins.mjs') }}
