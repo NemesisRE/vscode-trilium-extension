@@ -570,6 +570,90 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       },
     }),
 
+    vscode.lm.registerTool<{
+      noteId: string;
+      content: string;
+    }>('trilium_updateNoteContent', {
+      prepareInvocation(options) {
+        return { invocationMessage: `Updating Trilium note "${options.input.noteId}"…` };
+      },
+      async invoke(options, _token) {
+        const { noteId, content } = options.input;
+        const client = treeProvider.getClient();
+        if (!client) {
+          return new vscode.LanguageModelToolResult([
+            new vscode.LanguageModelTextPart('Error: Trilium is not connected. Ask the user to run "Trilium: Connect to Trilium Server" first.'),
+          ]);
+        }
+
+        try {
+          const note = await client.getNote(noteId);
+          if (note.isProtected) {
+            return new vscode.LanguageModelToolResult([
+              new vscode.LanguageModelTextPart(`Error: Note "${noteId}" is protected and cannot be modified.`),
+            ]);
+          }
+
+          await client.putNoteContent(noteId, content);
+          treeProvider.refresh();
+          return new vscode.LanguageModelToolResult([
+            new vscode.LanguageModelTextPart(
+              `Updated note "${note.title}" (${noteId}) with ${content.length} characters of content.`,
+            ),
+          ]);
+        } catch (err) {
+          return new vscode.LanguageModelToolResult([
+            new vscode.LanguageModelTextPart(`Error updating note content: ${err}`),
+          ]);
+        }
+      },
+    }),
+
+    vscode.lm.registerTool<{
+      noteId: string;
+      content: string;
+      separator?: string;
+    }>('trilium_appendToNote', {
+      prepareInvocation(options) {
+        return { invocationMessage: `Appending to Trilium note "${options.input.noteId}"…` };
+      },
+      async invoke(options, _token) {
+        const { noteId, content, separator } = options.input;
+        const client = treeProvider.getClient();
+        if (!client) {
+          return new vscode.LanguageModelToolResult([
+            new vscode.LanguageModelTextPart('Error: Trilium is not connected. Ask the user to run "Trilium: Connect to Trilium Server" first.'),
+          ]);
+        }
+
+        try {
+          const note = await client.getNote(noteId);
+          if (note.isProtected) {
+            return new vscode.LanguageModelToolResult([
+              new vscode.LanguageModelTextPart(`Error: Note "${noteId}" is protected and cannot be modified.`),
+            ]);
+          }
+
+          const existing = await client.getNoteContent(noteId);
+          const defaultSeparator = note.type === 'text' ? '' : '\n';
+          const joiner = separator ?? defaultSeparator;
+          const merged = existing.length === 0 ? content : `${existing}${joiner}${content}`;
+
+          await client.putNoteContent(noteId, merged);
+          treeProvider.refresh();
+          return new vscode.LanguageModelToolResult([
+            new vscode.LanguageModelTextPart(
+              `Appended content to note "${note.title}" (${noteId}). New content length: ${merged.length} characters.`,
+            ),
+          ]);
+        } catch (err) {
+          return new vscode.LanguageModelToolResult([
+            new vscode.LanguageModelTextPart(`Error appending to note: ${err}`),
+          ]);
+        }
+      },
+    }),
+
     vscode.commands.registerCommand('trilium.openInBrowser', async (item: NoteItem) => {
       const serverUrl = getServerUrl().replace(/\/$/, '');
       const noteUrl = `${serverUrl}/#${item.path}`;
@@ -1213,6 +1297,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
     }),
 
+    vscode.commands.registerCommand('trilium.debugListLmTools', async () => {
+      const allTools = vscode.lm.tools;
+      const triliumTools = allTools.filter((tool) => tool.name.startsWith('trilium_'));
+
+      output.appendLine(`[lm] total tools visible in vscode.lm.tools: ${allTools.length}`);
+      output.appendLine(`[lm] trilium tools visible: ${triliumTools.length}`);
+      for (const tool of triliumTools) {
+        output.appendLine(`[lm] tool ${tool.name} tags=[${tool.tags.join(', ')}]`);
+      }
+
+      if (triliumTools.length === 0) {
+        void vscode.window.showWarningMessage(
+          'Trilium: No Trilium language model tools are visible at runtime. Open "Trilium Notes" output for diagnostics.',
+        );
+      } else {
+        void vscode.window.showInformationMessage(
+          `Trilium: ${triliumTools.length} language model tools are visible. See "Trilium Notes" output.`,
+        );
+      }
+    }),
+
     // Sync note content back to Trilium whenever a tracked temp file is saved.
     vscode.workspace.onDidSaveTextDocument(async (doc) => {
       if (tempFileManager.isTextEditorTempPath(doc.fileName)) {
@@ -1258,6 +1363,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
 
       if (doc.uri.scheme !== 'file') {
+        return;
+      }
+
+      // VS Code can close/reopen a file-backed document during language-mode
+      // transitions. Avoid deleting temp files while another document instance
+      // for the same file is still open.
+      const isStillOpen = vscode.workspace.textDocuments.some((openDoc) =>
+        openDoc.uri.scheme === 'file' && openDoc.fileName === doc.fileName,
+      );
+      if (isStillOpen) {
         return;
       }
 
