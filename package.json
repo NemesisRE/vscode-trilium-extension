@@ -744,7 +744,7 @@
     "highlight.js": "^11.11.1",
     "katex": "^0.16.45",
     "marked": "^18.0.3",
-    "mathlive": "^0.109.1",
+    "mathlive": "^0.109.2",
     "mermaid": "^11.14.0",
     "turndown": "^7.2.4"
   }
