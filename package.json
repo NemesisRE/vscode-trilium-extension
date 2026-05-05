@@ -16,6 +16,17 @@
     "Other"
   ],
   "main": "./out/extension.js",
+  "activationEvents": [
+    "onStartupFinished",
+    "onView:triliumNoteTree",
+    "onLanguageModelTool:trilium_createNote",
+    "onLanguageModelTool:trilium_importNotes",
+    "onLanguageModelTool:trilium_searchNotes",
+    "onLanguageModelTool:trilium_readNote",
+    "onLanguageModelTool:trilium_listChildren",
+    "onLanguageModelTool:trilium_updateNoteContent",
+    "onLanguageModelTool:trilium_appendToNote"
+  ],
   "contributes": {
     "customEditors": [
       {
@@ -250,6 +261,11 @@
         "command": "trilium.exportSubtree",
         "title": "Export Subtree...",
         "icon": "$(package)",
+        "category": "Trilium"
+      },
+      {
+        "command": "trilium.debugListLmTools",
+        "title": "Debug: List Language Model Tools",
         "category": "Trilium"
       }
     ],
@@ -489,7 +505,9 @@
       {
         "name": "trilium_createNote",
         "displayName": "Create Trilium Note",
-        "modelDescription": "Creates a single note in Trilium Notes. Supports types: text (rich HTML), code (source code with language), mermaid (diagram), canvas (Excalidraw drawing). Returns the new noteId.",
+        "toolReferenceName": "createTriliumNote",
+        "canBeReferencedInPrompt": true,
+        "modelDescription": "Creates a single note in Trilium Notes under parentNoteId. If parentNoteId is unknown, first use trilium_searchNotes and/or trilium_listChildren to locate the desired parent (for example an Inbox note), then call this tool with that parentNoteId. Supports types: text (rich HTML), code (source code with language), mermaid (diagram), canvas (Excalidraw drawing). Returns the new noteId.",
         "tags": [
           "trilium",
           "notes",
@@ -535,6 +553,8 @@
       {
         "name": "trilium_importNotes",
         "displayName": "Import Notes Tree to Trilium",
+        "toolReferenceName": "importTriliumNotes",
+        "canBeReferencedInPrompt": true,
         "modelDescription": "Recursively creates an entire hierarchy of notes in Trilium Notes from a JSON spec. Use this when the user asks to create documentation, a set of notes, or any multi-level note structure. Returns the total number of notes created.",
         "tags": [
           "trilium",
@@ -604,6 +624,8 @@
       {
         "name": "trilium_searchNotes",
         "displayName": "Search Trilium Notes",
+        "toolReferenceName": "searchTriliumNotes",
+        "canBeReferencedInPrompt": true,
         "modelDescription": "Searches notes in Trilium by a text query. Returns a list of matching notes with their noteId, title, type, and parent note title. Use this to find relevant notes before reading or linking them.",
         "tags": [
           "trilium",
@@ -634,6 +656,8 @@
       {
         "name": "trilium_readNote",
         "displayName": "Read Trilium Note Content",
+        "toolReferenceName": "readTriliumNote",
+        "canBeReferencedInPrompt": true,
         "modelDescription": "Reads the content of a specific Trilium note by its noteId. Returns the note title, type, and content as plain text (HTML stripped). Use this to inspect, summarise, or answer questions about a specific note.",
         "tags": [
           "trilium",
@@ -656,6 +680,8 @@
       {
         "name": "trilium_listChildren",
         "displayName": "List Trilium Note Children",
+        "toolReferenceName": "listTriliumNoteChildren",
+        "canBeReferencedInPrompt": true,
         "modelDescription": "Lists the direct child notes of a given Trilium note. Returns an array of noteId, title, and type. Use this to navigate the note tree or find child notes before reading them.",
         "tags": [
           "trilium",
@@ -671,6 +697,70 @@
             "noteId": {
               "type": "string",
               "description": "The ID of the parent note whose children should be listed. Use 'root' for the top level."
+            }
+          }
+        }
+      },
+      {
+        "name": "trilium_updateNoteContent",
+        "displayName": "Update Trilium Note Content",
+        "toolReferenceName": "updateTriliumNoteContent",
+        "canBeReferencedInPrompt": true,
+        "modelDescription": "Replaces the full content of an existing Trilium note identified by noteId. Use this when the user asks to rewrite or overwrite a note.",
+        "tags": [
+          "trilium",
+          "notes",
+          "update",
+          "edit"
+        ],
+        "inputSchema": {
+          "type": "object",
+          "required": [
+            "noteId",
+            "content"
+          ],
+          "properties": {
+            "noteId": {
+              "type": "string",
+              "description": "The ID of the note to update."
+            },
+            "content": {
+              "type": "string",
+              "description": "New full note content. For text notes provide HTML; for code notes provide raw source; for mermaid provide Mermaid syntax; for canvas provide Excalidraw JSON."
+            }
+          }
+        }
+      },
+      {
+        "name": "trilium_appendToNote",
+        "displayName": "Append To Trilium Note",
+        "toolReferenceName": "appendToTriliumNote",
+        "canBeReferencedInPrompt": true,
+        "modelDescription": "Appends content to an existing Trilium note identified by noteId. Use this for journaling, adding sections, or incremental updates.",
+        "tags": [
+          "trilium",
+          "notes",
+          "append",
+          "edit"
+        ],
+        "inputSchema": {
+          "type": "object",
+          "required": [
+            "noteId",
+            "content"
+          ],
+          "properties": {
+            "noteId": {
+              "type": "string",
+              "description": "The ID of the note to append to."
+            },
+            "content": {
+              "type": "string",
+              "description": "Content to append. Match note format (HTML for text notes, raw source for code notes, Mermaid syntax for mermaid notes, JSON for canvas notes)."
+            },
+            "separator": {
+              "type": "string",
+              "description": "Optional separator inserted between existing and appended content. Defaults to empty string for text notes and newline for others."
             }
           }
         }
