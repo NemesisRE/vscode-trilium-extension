@@ -23,6 +23,45 @@ const MIME_FOR_EXT: Record<string, string> = {
   xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
 };
 
+const EXT_FOR_MIME: Record<string, string> = {
+  'application/pdf': '.pdf',
+  'image/png': '.png',
+  'image/jpeg': '.jpg',
+  'image/gif': '.gif',
+  'image/webp': '.webp',
+  'image/svg+xml': '.svg',
+  'application/javascript': '.js',
+  'text/javascript': '.js',
+  'application/typescript': '.ts',
+  'text/typescript': '.ts',
+  'text/x-python': '.py',
+  'text/plain': '.txt',
+  'text/markdown': '.md',
+  'application/json': '.json',
+  'text/xml': '.xml',
+  'application/xml': '.xml',
+  'application/zip': '.zip',
+  'audio/mpeg': '.mp3',
+  'video/mp4': '.mp4',
+};
+
+function normalizeMime(mime: string): string {
+  return mime.split(';', 1)[0].trim().toLowerCase();
+}
+
+function ensureFileExtension(title: string, mime: string, fallbackBase: string): string {
+  const trimmed = title.trim();
+  const hasExt = /\.[a-z0-9]+$/i.test(trimmed);
+  if (trimmed && hasExt) {
+    return trimmed;
+  }
+  const ext = EXT_FOR_MIME[normalizeMime(mime)] ?? '.bin';
+  if (trimmed) {
+    return `${trimmed}${ext}`;
+  }
+  return `${fallbackBase}${ext}`;
+}
+
 // Messages sent from webview → extension host
 type WebviewMessage =
   | { type: 'saveValue'; attributeId: string; value: string }
@@ -91,7 +130,8 @@ export class AttributesViewProvider implements vscode.WebviewViewProvider {
           }
           case 'openAttachment': {
             const buf = await this._client.getAttachmentContent(msg.attachmentId);
-            const safeName = msg.title.replace(/[^a-zA-Z0-9._-]/g, '_') || `attachment-${msg.attachmentId}`;
+            const filename = ensureFileExtension(msg.title, msg.mime, `attachment-${msg.attachmentId}`);
+            const safeName = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
             const tmpDir = path.join(os.tmpdir(), 'trilium-attachments', msg.attachmentId);
             await vscode.workspace.fs.createDirectory(vscode.Uri.file(tmpDir));
             const tmpFile = vscode.Uri.file(path.join(tmpDir, safeName));
@@ -127,7 +167,24 @@ export class AttributesViewProvider implements vscode.WebviewViewProvider {
           }
         }
       } catch (err) {
-        void vscode.window.showErrorMessage(`Trilium: Operation failed: ${err}`);
+        const detail = err instanceof Error ? err.message : String(err);
+        if (msg.type === 'openAttachment') {
+          void vscode.window.showErrorMessage(
+            `Trilium: Failed to open attachment "${msg.title}" (${msg.mime}, id ${msg.attachmentId}): ${detail}`,
+          );
+        } else if (msg.type === 'downloadAttachment') {
+          void vscode.window.showErrorMessage(
+            `Trilium: Failed to download attachment "${msg.title}" (${msg.mime}, id ${msg.attachmentId}): ${detail}`,
+          );
+        } else if (msg.type === 'uploadAttachment') {
+          void vscode.window.showErrorMessage(`Trilium: Failed to upload attachment: ${detail}`);
+        } else if (msg.type === 'deleteAttachment') {
+          void vscode.window.showErrorMessage(
+            `Trilium: Failed to delete attachment ${msg.attachmentId}: ${detail}`,
+          );
+        } else {
+          void vscode.window.showErrorMessage(`Trilium: Operation failed: ${detail}`);
+        }
       }
     });
 
@@ -482,15 +539,39 @@ document.querySelector('.upload-btn')?.addEventListener('click', () => {
       padding: 2px 0;
     }
     .att-name {
-      flex: 1;
-      overflow: hidden;
+      display: grid;
+      grid-template-columns: 1fr auto auto auto;
+      align-items: center;
       text-overflow: ellipsis;
       white-space: nowrap;
       font-size: 0.85em;
+    .att-item.att-pdf {
+      grid-template-columns: 1fr auto auto auto;
+      padding: 4px 6px;
+      border: 1px solid var(--vscode-editorWidget-border, #444);
+      border-radius: 4px;
+      background: color-mix(in srgb, var(--vscode-editorWidget-background, #333) 88%, transparent);
+    }
     }
     .att-size {
       font-size: 0.75em;
       color: var(--vscode-descriptionForeground);
+      white-space: nowrap;
+    }
+    .att-name-wrap {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+    }
+    .att-badge {
+      font-size: 0.72em;
+      line-height: 1;
+      padding: 2px 5px;
+      border-radius: 999px;
+      border: 1px solid var(--vscode-inputOption-activeBorder, var(--vscode-focusBorder, #007acc));
+      color: var(--vscode-inputOption-activeForeground, var(--vscode-foreground));
+      background: var(--vscode-inputOption-activeBackground, rgba(0,122,204,0.2));
       white-space: nowrap;
     }
     .att-dl, .att-open, .att-del {
@@ -562,8 +643,11 @@ document.querySelector('.upload-btn')?.addEventListener('click', () => {
     const rows = attachments.length === 0
       ? `<p class="empty">No attachments.</p>`
       : `<ul class="attachment-list">${attachments.map((a) => `
-        <li class="att-item">
-          <span class="att-name" title="${escapeHtml(a.title)}">${escapeHtml(a.title)}</span>
+        <li class="att-item ${normalizeMime(a.mime) === 'application/pdf' ? 'att-pdf' : ''}">
+          <span class="att-name-wrap">
+            ${normalizeMime(a.mime) === 'application/pdf' ? '<span class="att-badge">PDF</span>' : ''}
+            <span class="att-name" title="${escapeHtml(a.title)}">${escapeHtml(a.title)}</span>
+          </span>
           <span class="att-size">${a.contentLength > 0
             ? (a.contentLength < 1024
               ? `${a.contentLength} B`

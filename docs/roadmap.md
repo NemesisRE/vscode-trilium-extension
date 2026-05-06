@@ -9,29 +9,31 @@ This roadmap is a working list of improvements and ideas, not a strict milestone
 - Conflict resolution for text notes now includes **Compare**, **Keep Ours**, and **Use Theirs**.
 - Conflict diff now uses read-only **Theirs** and editable **Ours** with HTML pretty-printing for readable line-by-line comparison.
 - Closing tabs now cleans up managed virtual/temp note documents more reliably.
+- Tree notes that are locked/protected are now visually marked so status is obvious in the tree.
+- Unchecked task-list checkboxes are now more visible in dark themes.
+- Notes that cannot be rendered natively now offer clear browser fallback actions.
+- Attachment/file opening now uses more predictable MIME-aware filename and extension handling.
+- Section notes now open on click while keeping disclosure arrows for expand/collapse.
+- Tree context menu now includes a right-click **View Attributes** action.
+- Code notes now open directly in VS Code editor tabs regardless of attachment presence.
+- Code-note extension detection now maps language MIME types more accurately (for example JavaScript to `.js`) instead of defaulting to `.txt`.
+- PDF/file notes now open directly in VS Code by default, with separate download action retained.
+- Webview notes now open VS Code's internal browser automatically when a URL-like attribute is present.
+- Added a `highlight.js` theme setting and applied selected theme palettes in the editor.
+- Inserted a trailing paragraph after trailing block elements (block quote, code block, admonition) so editing after them feels natural.
+- Embedded PDF attachments now clearly show filename with dedicated open and download actions.
+- Attachment-related failures now surface clearer, operation-specific error messages.
+- Tree icons now resolve original Trilium Boxicons from `iconClass` (regular, solid, and logos) with safe fallback behavior.
+- Search and destination quick picks now use iconClass-aware icon selection for more consistent visual presentation.
+- Note-type labels are now normalized (for example `webView` → `web view`, `mindMap` → `mind map`) for clearer, more Trilium-like presentation.
+- Tree note icons now use real Trilium Boxicons with theme-aware recoloring (plus codicon fallback), avoiding black icons while preserving visual fidelity across VS Code themes.
+- Notes can now be moved in the tree via drag-and-drop (branch move), with subtree-safe cycle protection and same-parent no-op behavior.
+- Tree context menu now includes a drag-based "Reorder Child Notes..." window to set precise sibling order and push notePosition updates.
 
 ## Editor Polish
 
 - Fix CKEditor dropdown button hover colors for insert actions such as code block and footnote.
-- Insert a trailing newline after block elements such as block quotes, code blocks, and admonitions so editing after them feels natural.
 - Render math elements visually as math instead of exposing raw LaTeX where possible.
-- Add a `highlight.js` theme setting and apply the selected theme in the editor.
-- Make unchecked checkboxes more visible in dark themes.
-- Improve embedded PDF handling so notes show at least the file name, plus open and download actions.
-
-## Note Opening and Navigation
-
-- Open section notes on click instead of only expanding or collapsing them.
-- Support middle click to select a note without opening it.
-- Add a right-click action for **View Attributes**.
-- Open code notes directly in a VS Code editor tab even when the note has attachments.
-- Improve file extension detection for code notes so JavaScript opens as `.js` and other languages use the best matching extension instead of `.txt`.
-
-## Media and External Content
-
-- Open PDF notes directly inside VS Code instead of forcing download.
-- Open VS Code's internal browser automatically when a webview note has a URL attribute.
-- Improve attachment-aware note handling so embedded and linked files behave more predictably.
 
 ## Richer Views
 
@@ -40,16 +42,12 @@ This roadmap is a working list of improvements and ideas, not a strict milestone
 
 ## Visual Fidelity with Trilium
 
-- Use original Trilium Boxicons more accurately by reading the `iconClass` attribute.
-- Make locked or protected notes visually distinct in the tree so their status is obvious at a glance.
 - Continue improving icon, color, and note-type presentation so the tree more closely matches Trilium itself.
 
 ## Reliability and UX
 
 - Extend native-style dirty-state and conflict handling consistency from text notes to all editable note types.
 - Refresh open editors more predictably when notes are renamed, moved, or modified externally.
-- Add clearer fallback behavior when a note type cannot be rendered natively.
-- Improve error messages around attachments and binary note handling.
 
 ## Good Next Additions
 

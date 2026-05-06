@@ -61,6 +61,16 @@ describe('TempFileManager', () => {
       assert.ok(p.endsWith('.js'), `Expected .js extension, got: ${p}`);
     });
 
+    it('returns a .js path for javascript MIME variants', () => {
+      const p = manager.getTempPath(makeNote({ type: 'code', mime: 'application/x-javascript' }));
+      assert.ok(p.endsWith('.js'), `Expected .js extension, got: ${p}`);
+    });
+
+    it('ignores MIME parameters when choosing extension', () => {
+      const p = manager.getTempPath(makeNote({ type: 'code', mime: 'text/x-python; charset=utf-8' }));
+      assert.ok(p.endsWith('.py'), `Expected .py extension, got: ${p}`);
+    });
+
     it('returns the same path on subsequent calls for the same note', () => {
       const note = makeNote();
       assert.strictEqual(manager.getTempPath(note), manager.getTempPath(note));
@@ -120,6 +130,13 @@ describe('TempFileManager', () => {
     it('returns python for text/x-python code notes', () => {
       assert.strictEqual(
         manager.getLanguageId(makeNote({ type: 'code', mime: 'text/x-python' })),
+        'python',
+      );
+    });
+
+    it('returns python for MIME values that include parameters', () => {
+      assert.strictEqual(
+        manager.getLanguageId(makeNote({ type: 'code', mime: 'text/x-python; charset=utf-8' })),
         'python',
       );
     });

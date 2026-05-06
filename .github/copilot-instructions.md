@@ -34,6 +34,11 @@ Never rely on recalled API shapes for a package you haven't verified at the reso
 - **Wait for explicit user approval** before executing the plan.
 - If a step becomes unclear during execution, pause and re-confirm rather than making a judgment call.
 
+### Approval Handshake (Strict)
+- Do not edit files, run patch tools, execute write operations or any other potentially destructive actions until the user gives explicit approval.
+- The required approval phrase is **"APPROVE PLAN"** (exact words, case-insensitive).
+- If approval is missing or ambiguous, ask for approval and stop.
+
 ### Ask When in Doubt
 - If the user's intent is ambiguous, ask a focused clarifying question before proceeding.
 - If two valid implementation approaches exist with meaningful trade-offs, present them briefly and ask which to use.

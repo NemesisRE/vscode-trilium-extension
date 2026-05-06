@@ -29,6 +29,12 @@ export function getEditorSpellcheck(): boolean {
   return vscode.workspace.getConfiguration('trilium').get<boolean>('editor.spellcheck', false);
 }
 
+export function getEditorHighlightTheme(): string {
+  return vscode.workspace
+    .getConfiguration('trilium')
+    .get<string>('editor.highlightTheme', 'vscode');
+}
+
 export function getRootNoteId(): string {
   return vscode.workspace.getConfiguration('trilium').get<string>('rootNoteId', 'root');
 }

@@ -122,6 +122,12 @@
         "category": "Trilium"
       },
       {
+        "command": "trilium.openFile",
+        "title": "Open File",
+        "icon": "$(go-to-file)",
+        "category": "Trilium"
+      },
+      {
         "command": "trilium.downloadFile",
         "title": "Download File",
         "icon": "$(cloud-download)",
@@ -258,9 +264,21 @@
         "category": "Trilium"
       },
       {
+        "command": "trilium.reorderChildren",
+        "title": "Reorder Child Notes...",
+        "icon": "$(list-ordered)",
+        "category": "Trilium"
+      },
+      {
         "command": "trilium.exportSubtree",
         "title": "Export Subtree...",
         "icon": "$(package)",
+        "category": "Trilium"
+      },
+      {
+        "command": "trilium.viewAttributes",
+        "title": "View Attributes",
+        "icon": "$(symbol-property)",
         "category": "Trilium"
       },
       {
@@ -370,7 +388,7 @@
           "group": "inline"
         },
         {
-          "command": "trilium.downloadFile",
+          "command": "trilium.openFile",
           "when": "viewItem == noteFile",
           "group": "inline"
         },
@@ -395,9 +413,14 @@
           "group": "navigation@1"
         },
         {
-          "command": "trilium.downloadFile",
+          "command": "trilium.openFile",
           "when": "viewItem == noteFile",
           "group": "navigation@1"
+        },
+        {
+          "command": "trilium.downloadFile",
+          "when": "viewItem == noteFile",
+          "group": "navigation@2"
         },
         {
           "command": "trilium.openInBrowser",
@@ -407,12 +430,12 @@
         {
           "command": "trilium.openInBrowser",
           "when": "viewItem == noteCode",
-          "group": "navigation@2"
+          "group": "navigation@3"
         },
         {
           "command": "trilium.openInBrowser",
           "when": "viewItem == noteFile",
-          "group": "navigation@2"
+          "group": "navigation@3"
         },
         {
           "command": "trilium.openInBrowser",
@@ -427,17 +450,22 @@
         {
           "command": "trilium.openInBrowserExternal",
           "when": "viewItem == noteCode",
-          "group": "navigation@3"
+          "group": "navigation@4"
         },
         {
           "command": "trilium.openInBrowserExternal",
           "when": "viewItem == noteFile",
-          "group": "navigation@3"
+          "group": "navigation@4"
         },
         {
           "command": "trilium.openInBrowserExternal",
           "when": "viewItem == noteExternal",
           "group": "navigation@2"
+        },
+        {
+          "command": "trilium.viewAttributes",
+          "when": "viewItem =~ /^note(Text|Code|File|External)$/",
+          "group": "navigation@9"
         },
         {
           "submenu": "trilium.newNoteSubmenu",
@@ -493,6 +521,11 @@
           "command": "trilium.moveNote",
           "when": "viewItem =~ /^note(Text|Code|File|External)$/",
           "group": "3_history@3"
+        },
+        {
+          "command": "trilium.reorderChildren",
+          "when": "viewItem =~ /^note(Text|Code|File|External)$/",
+          "group": "3_history@3.5"
         },
         {
           "command": "trilium.exportSubtree",
@@ -797,6 +830,17 @@
           "type": "boolean",
           "default": false,
           "description": "Enable the browser's built-in spellcheck in the CKEditor content area."
+        },
+        "trilium.editor.highlightTheme": {
+          "type": "string",
+          "default": "vscode",
+          "enum": [
+            "vscode",
+            "github",
+            "atom-one-dark",
+            "solarized-light"
+          ],
+          "description": "Theme for code block syntax highlighting in the editor."
         }
       }
     }
@@ -831,6 +875,7 @@
     "typescript": "^6.0.3"
   },
   "dependencies": {
+    "boxicons": "^2.1.4",
     "highlight.js": "^11.11.1",
     "katex": "^0.16.45",
     "marked": "^18.0.3",

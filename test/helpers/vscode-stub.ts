@@ -70,6 +70,10 @@ export class Uri {
     }
     return new Uri('file', '', value, '', '');
   }
+
+  static file(fsPath: string): Uri {
+    return new Uri('file', '', fsPath, '', '');
+  }
 }
 
 export class FileDecoration {
@@ -98,10 +102,12 @@ export class EventEmitter<T> {
 }
 
 export const window = {
+  activeColorTheme: { kind: 2 },
   showErrorMessage: (_message: string) => Promise.resolve(undefined),
   showWarningMessage: (_message: string) => Promise.resolve(undefined),
   showInformationMessage: (_message: string) => Promise.resolve(undefined),
   setStatusBarMessage: (_message: string, _timeout?: number) => ({ dispose: () => undefined }),
+  onDidChangeActiveColorTheme: (_listener: unknown) => ({ dispose: () => undefined }),
   showInputBox: (_options?: unknown) => Promise.resolve(undefined as string | undefined),
   createTreeView: (_id: string, _options?: unknown) => ({
     onDidChangeSelection: () => ({ dispose: () => undefined }),
@@ -131,6 +137,13 @@ export const commands = {
 export enum UIKind {
   Desktop = 1,
   Web = 2,
+}
+
+export enum ColorThemeKind {
+  Light = 1,
+  Dark = 2,
+  HighContrast = 3,
+  HighContrastLight = 4,
 }
 
 export const env = {
