@@ -1,5 +1,17 @@
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { strict as assert } from 'assert';
-import { NoteItem, NoteTreeProvider, boxiconToCodeicon, cssColorToThemeColorId } from '../../src/noteTreeProvider';
+import {
+  NoteItem,
+  NoteTreeDecorationProvider,
+  NoteTreeProvider,
+  boxiconToCodeicon,
+  cssColorToThemeColorId,
+  noteTypeToLabel,
+  parseBoxiconClass,
+  preferredCodiconForNote,
+} from '../../src/noteTreeProvider';
 import type { Note, Attribute } from '../../src/etapiClient';
 import type { EtapiClient } from '../../src/etapiClient';
 
@@ -58,9 +70,14 @@ describe('NoteItem', () => {
     assert.strictEqual(item.label, 'My Important Note');
   });
 
-  it('sets item id to noteId', () => {
+  it('sets item id to path when branch is not provided', () => {
     const item = new NoteItem(makeNote({ noteId: 'abc123' }));
     assert.strictEqual(item.id, 'abc123');
+  });
+
+  it('sets item id to noteId@branchId for cloned locations', () => {
+    const item = new NoteItem(makeNote({ noteId: 'abc123' }), 'root/abc123', 'branch-9');
+    assert.strictEqual(item.id, 'abc123@branch-9');
   });
 
   it('shows note type as description for non-text notes', () => {
@@ -73,9 +90,14 @@ describe('NoteItem', () => {
     assert.strictEqual(item.description, undefined);
   });
 
-  it('attaches an open command to leaf notes', () => {
+  it('shows protected marker in description for protected notes', () => {
+    const item = new NoteItem(makeNote({ type: 'text', isProtected: true }));
+    assert.strictEqual(item.description, 'protected');
+  });
+
+  it('attaches an open command to notes', () => {
     const item = new NoteItem(makeNote({ childNoteIds: [] }));
-    assert.ok(item.command, 'leaf note should have a command');
+    assert.ok(item.command, 'note should have a command');
     assert.strictEqual((item.command as { command: string }).command, 'trilium.openNote');
   });
 
@@ -85,21 +107,22 @@ describe('NoteItem', () => {
     assert.strictEqual((item.command as { command: string }).command, 'trilium.openInBrowser');
   });
 
-  it('attaches downloadFile command to leaf file notes', () => {
+  it('attaches openFile command to file notes', () => {
     const item = new NoteItem(makeNote({ type: 'file', childNoteIds: [] }));
-    assert.ok(item.command, 'leaf file note should have a command');
-    assert.strictEqual((item.command as { command: string }).command, 'trilium.downloadFile');
+    assert.ok(item.command, 'file note should have a command');
+    assert.strictEqual((item.command as { command: string }).command, 'trilium.openFile');
   });
 
-  it('attaches downloadFile command to leaf image notes', () => {
+  it('attaches openFile command to image notes', () => {
     const item = new NoteItem(makeNote({ type: 'image', childNoteIds: [] }));
-    assert.ok(item.command, 'leaf image note should have a command');
-    assert.strictEqual((item.command as { command: string }).command, 'trilium.downloadFile');
+    assert.ok(item.command, 'image note should have a command');
+    assert.strictEqual((item.command as { command: string }).command, 'trilium.openFile');
   });
 
-  it('does not attach a command to collapsible notes', () => {
+  it('attaches a command to collapsible section notes', () => {
     const item = new NoteItem(makeNote({ childNoteIds: ['child1'] }));
-    assert.strictEqual(item.command, undefined);
+    assert.ok(item.command, 'collapsible note should have a command');
+    assert.strictEqual((item.command as { command: string }).command, 'trilium.openNote');
   });
 
   it('contextValue is noteText for text notes', () => {
@@ -144,7 +167,13 @@ describe('NoteItem', () => {
     const item = new NoteItem(makeNote({ type: 'text' }));
     // iconPath is a ThemeIcon from the stub
     assert.ok(item.iconPath);
-    assert.strictEqual((item.iconPath as { id: string }).id, 'file-text');
+    assert.strictEqual((item.iconPath as { id: string }).id, 'note');
+  });
+
+  it('uses folder icon for section text notes (default Trilium behavior)', () => {
+    const item = new NoteItem(makeNote({ type: 'text', childNoteIds: ['c1'] }));
+    assert.ok(item.iconPath);
+    assert.strictEqual((item.iconPath as { id: string }).id, 'folder');
   });
 
   it('uses the mapped codicon when #iconClass attribute is present', () => {
@@ -156,6 +185,37 @@ describe('NoteItem', () => {
     assert.strictEqual((item.iconPath as { id: string }).id, 'home');
   });
 
+  it('uses a themed Boxicon SVG when icon assets are available', () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'trilium-boxicons-test-'));
+    const boxiconsRoot = path.join(tempRoot, 'svg');
+    const regularDir = path.join(boxiconsRoot, 'regular');
+    fs.mkdirSync(regularDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(regularDir, 'bx-home.svg'),
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M0 0h10v10H0z"/></svg>',
+      'utf8',
+    );
+
+    const iconAttr: Attribute = {
+      attributeId: 'a1', noteId: 'testId', type: 'label', name: 'iconClass',
+      value: 'bx bx-home', position: 0, isInheritable: false,
+    };
+    const colorAttr: Attribute = {
+      attributeId: 'a2', noteId: 'testId', type: 'label', name: 'color',
+      value: 'red', position: 1, isInheritable: false,
+    };
+
+    const item = new NoteItem(makeNote({ attributes: [iconAttr, colorAttr] }), 'testId', undefined, boxiconsRoot);
+    const uri = item.iconPath as { scheme?: string; path?: string };
+    assert.strictEqual(uri.scheme, 'file');
+    assert.ok(uri.path, 'expected a file path for themed boxicon');
+
+    const themedSvg = fs.readFileSync(uri.path as string, 'utf8');
+    assert.ok(themedSvg.includes('fill="red"'));
+
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  });
+
   it('falls back to type icon when #iconClass maps to an unknown boxicon', () => {
     const attr: Attribute = {
       attributeId: 'a1', noteId: 'testId', type: 'label', name: 'iconClass',
@@ -163,6 +223,25 @@ describe('NoteItem', () => {
     };
     const item = new NoteItem(makeNote({ type: 'code', attributes: [attr] }));
     assert.strictEqual((item.iconPath as { id: string }).id, 'file-code');
+  });
+
+  it('tints ThemeIcon when #color maps to a theme color', () => {
+    const attr: Attribute = {
+      attributeId: 'a2', noteId: 'testId', type: 'label', name: 'color',
+      value: 'red', position: 0, isInheritable: false,
+    };
+    const item = new NoteItem(makeNote({ attributes: [attr] }));
+    assert.strictEqual((item.iconPath as { id: string }).id, 'note');
+    assert.strictEqual((item.iconPath as { color?: { id: string } }).color?.id, 'charts.red');
+  });
+
+  it('does not tint ThemeIcon when #color is achromatic', () => {
+    const attr: Attribute = {
+      attributeId: 'a4', noteId: 'testId', type: 'label', name: 'color',
+      value: '#808080', position: 0, isInheritable: false,
+    };
+    const item = new NoteItem(makeNote({ attributes: [attr] }));
+    assert.strictEqual((item.iconPath as { color?: { id: string } }).color, undefined);
   });
 
   it('sets resourceUri with color query when #color attribute is a named color', () => {
@@ -194,6 +273,32 @@ describe('NoteItem', () => {
     const item = new NoteItem(makeNote({ attributes: [attr] }));
     assert.strictEqual(item.resourceUri, undefined);
   });
+
+  it('sets resourceUri when note is protected', () => {
+    const item = new NoteItem(makeNote({ isProtected: true }));
+    assert.ok(item.resourceUri, 'resourceUri should be set for protected note');
+    assert.ok((item.resourceUri as { query: string }).query.includes('protected=1'));
+  });
+});
+
+describe('NoteTreeDecorationProvider', () => {
+  it('returns protected badge decoration', () => {
+    const provider = new NoteTreeDecorationProvider();
+    const uri = { scheme: 'trilium-note', query: 'protected=1' } as unknown as import('vscode').Uri;
+    const decoration = provider.provideFileDecoration(uri);
+    assert.ok(decoration);
+    assert.strictEqual(decoration?.badge, 'L');
+    assert.strictEqual(decoration?.tooltip, 'Protected note');
+  });
+
+  it('returns color-only decoration when only color is provided', () => {
+    const provider = new NoteTreeDecorationProvider();
+    const uri = { scheme: 'trilium-note', query: 'color=charts.red' } as unknown as import('vscode').Uri;
+    const decoration = provider.provideFileDecoration(uri);
+    assert.ok(decoration);
+    assert.strictEqual(decoration?.badge, undefined);
+    assert.ok(decoration?.color);
+  });
 });
 
 describe('boxiconToCodeicon', () => {
@@ -215,6 +320,83 @@ describe('boxiconToCodeicon', () => {
 
   it('returns undefined for non-boxicon class strings', () => {
     assert.strictEqual(boxiconToCodeicon('fa fa-home'), undefined);
+  });
+});
+
+describe('parseBoxiconClass', () => {
+  it('parses regular boxicon classes', () => {
+    const parsed = parseBoxiconClass('bx bx-home');
+    assert.ok(parsed);
+    assert.strictEqual(parsed?.style, 'regular');
+    assert.strictEqual(parsed?.fileName, 'bx-home.svg');
+    assert.strictEqual(parsed?.iconName, 'home');
+  });
+
+  it('parses solid boxicon classes', () => {
+    const parsed = parseBoxiconClass('bx bxs-lock');
+    assert.ok(parsed);
+    assert.strictEqual(parsed?.style, 'solid');
+    assert.strictEqual(parsed?.fileName, 'bxs-lock.svg');
+    assert.strictEqual(parsed?.iconName, 'lock');
+  });
+
+  it('parses logo boxicon classes', () => {
+    const parsed = parseBoxiconClass('bx bxl-github');
+    assert.ok(parsed);
+    assert.strictEqual(parsed?.style, 'logos');
+    assert.strictEqual(parsed?.fileName, 'bxl-github.svg');
+    assert.strictEqual(parsed?.iconName, 'github');
+  });
+
+  it('returns undefined for icon classes without an icon token', () => {
+    assert.strictEqual(parseBoxiconClass('bx'), undefined);
+  });
+});
+
+describe('noteTypeToLabel', () => {
+  it('formats camel-case note types for presentation', () => {
+    assert.strictEqual(noteTypeToLabel('mindMap'), 'mind map');
+    assert.strictEqual(noteTypeToLabel('webView'), 'web view');
+    assert.strictEqual(noteTypeToLabel('relationMap'), 'relation map');
+  });
+
+  it('keeps simple lowercase types unchanged', () => {
+    assert.strictEqual(noteTypeToLabel('code'), 'code');
+    assert.strictEqual(noteTypeToLabel('text'), 'text');
+  });
+});
+
+describe('preferredCodiconForNote', () => {
+  it('prefers iconClass mapping over default type icon', () => {
+    const note = makeNote({
+      type: 'book',
+      attributes: [{
+        attributeId: 'a1',
+        noteId: 'testId',
+        type: 'label',
+        name: 'iconClass',
+        value: 'bx bx-home',
+        position: 0,
+        isInheritable: false,
+      }],
+    });
+    assert.strictEqual(preferredCodiconForNote(note), 'home');
+  });
+
+  it('falls back to type icon when iconClass is not mapped', () => {
+    const note = makeNote({
+      type: 'book',
+      attributes: [{
+        attributeId: 'a1',
+        noteId: 'testId',
+        type: 'label',
+        name: 'iconClass',
+        value: 'bx bx-not-real',
+        position: 0,
+        isInheritable: false,
+      }],
+    });
+    assert.strictEqual(preferredCodiconForNote(note), 'book');
   });
 });
 
@@ -338,5 +520,81 @@ describe('NoteTreeProvider', () => {
 
     assert.strictEqual(provider.getClient(), client);
     assert.ok(fired, 'onDidChangeTreeData should have fired');
+  });
+
+  it('moves a note to a different parent on drop', async () => {
+    const calls: string[] = [];
+    const client = {
+      createBranch: async (noteId: string, parentNoteId: string) => {
+        calls.push(`create:${noteId}:${parentNoteId}`);
+        return { branchId: 'newb', noteId, parentNoteId };
+      },
+      deleteBranch: async (branchId: string) => {
+        calls.push(`delete:${branchId}`);
+      },
+      refreshNoteOrdering: async (parentNoteId: string) => {
+        calls.push(`refresh:${parentNoteId}`);
+      },
+    } as unknown as EtapiClient;
+
+    const provider = new NoteTreeProvider(client);
+    const target = new NoteItem(makeNote({ noteId: 'parentB', childNoteIds: ['childX'] }), 'root/parentB', 'branch-parentB');
+    const payload = [{ noteId: 'childA', path: 'root/parentA/childA', branchId: 'branch-childA' }];
+    const transfer = {
+      get: (mime: string) => mime === 'application/vnd.code.tree.triliumnotetree'
+        ? { value: payload, asString: async () => JSON.stringify(payload) }
+        : undefined,
+    } as unknown as import('vscode').DataTransfer;
+
+    await provider.handleDrop(target, transfer);
+
+    assert.ok(calls.includes('create:childA:parentB'));
+    assert.ok(calls.includes('delete:branch-childA'));
+    assert.ok(calls.includes('refresh:parentA'));
+    assert.ok(calls.includes('refresh:parentB'));
+  });
+
+  it('does not move when dropped onto same parent', async () => {
+    const calls: string[] = [];
+    const client = {
+      createBranch: async () => { calls.push('create'); return { branchId: 'new' }; },
+      deleteBranch: async () => { calls.push('delete'); },
+      refreshNoteOrdering: async () => { calls.push('refresh'); },
+    } as unknown as EtapiClient;
+
+    const provider = new NoteTreeProvider(client);
+    const target = new NoteItem(makeNote({ noteId: 'parentA' }), 'root/parentA', 'branch-parentA');
+    const payload = [{ noteId: 'childA', path: 'root/parentA/childA', branchId: 'branch-childA' }];
+    const transfer = {
+      get: (mime: string) => mime === 'application/vnd.code.tree.triliumnotetree'
+        ? { value: payload, asString: async () => JSON.stringify(payload) }
+        : undefined,
+    } as unknown as import('vscode').DataTransfer;
+
+    await provider.handleDrop(target, transfer);
+
+    assert.deepStrictEqual(calls, []);
+  });
+
+  it('does not move when dropping a parent onto its own descendant', async () => {
+    const calls: string[] = [];
+    const client = {
+      createBranch: async () => { calls.push('create'); return { branchId: 'new' }; },
+      deleteBranch: async () => { calls.push('delete'); },
+      refreshNoteOrdering: async () => { calls.push('refresh'); },
+    } as unknown as EtapiClient;
+
+    const provider = new NoteTreeProvider(client);
+    const target = new NoteItem(makeNote({ noteId: 'childA' }), 'root/parentA/childA', 'branch-childA');
+    const payload = [{ noteId: 'parentA', path: 'root/parentA', branchId: 'branch-parentA' }];
+    const transfer = {
+      get: (mime: string) => mime === 'application/vnd.code.tree.triliumnotetree'
+        ? { value: payload, asString: async () => JSON.stringify(payload) }
+        : undefined,
+    } as unknown as import('vscode').DataTransfer;
+
+    await provider.handleDrop(target, transfer);
+
+    assert.deepStrictEqual(calls, []);
   });
 });

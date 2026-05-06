@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { EtapiClient } from './etapiClient';
-import { getEditorFontSize, getEditorSpellcheck } from './settings';
+import { getEditorFontSize, getEditorHighlightTheme, getEditorSpellcheck } from './settings';
 
 /**
  * CustomTextEditorProvider for Trilium text notes using CKEditor 5.
@@ -77,6 +77,7 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
       webviewPanel.webview,
       getEditorFontSize(),
       getEditorSpellcheck(),
+      getEditorHighlightTheme(),
     );
 
     // True while we are applying a CKEditor-originated edit to the document.
@@ -399,7 +400,12 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
   /**
    * Generate HTML for the webview with CKEditor 5.
    */
-  private getHtmlForWebview(webview: vscode.Webview, fontSize: number, spellcheck: boolean): string {
+  private getHtmlForWebview(
+    webview: vscode.Webview,
+    fontSize: number,
+    spellcheck: boolean,
+    highlightTheme: string,
+  ): string {
     // Load CKEditor from out/ckeditor (CSS and JS are bundled separately by esbuild)
     const ckeditorUri = webview.asWebviewUri(
       vscode.Uri.joinPath(
@@ -593,6 +599,44 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
         overflow: hidden;
         display: flex;
         flex-direction: column;
+        --trilium-hljs-comment: var(--vscode-editorCodeLens-foreground, #6a9955);
+        --trilium-hljs-keyword: var(--vscode-symbolIcon-keywordForeground, #569cd6);
+        --trilium-hljs-string: var(--vscode-debugTokenExpression-string, #ce9178);
+        --trilium-hljs-number: var(--vscode-debugTokenExpression-number, #b5cea8);
+        --trilium-hljs-title: var(--vscode-symbolIcon-functionForeground, #dcdcaa);
+        --trilium-hljs-property: var(--vscode-symbolIcon-propertyForeground, #9cdcfe);
+        --trilium-hljs-meta: var(--vscode-symbolIcon-operatorForeground, #c586c0);
+        --trilium-hljs-deletion: var(--vscode-diffEditor-removedTextForeground, #f14c4c);
+      }
+      body[data-hljs-theme='github'] {
+        --trilium-hljs-comment: #6a737d;
+        --trilium-hljs-keyword: #d73a49;
+        --trilium-hljs-string: #032f62;
+        --trilium-hljs-number: #005cc5;
+        --trilium-hljs-title: #6f42c1;
+        --trilium-hljs-property: #24292e;
+        --trilium-hljs-meta: #22863a;
+        --trilium-hljs-deletion: #b31d28;
+      }
+      body[data-hljs-theme='atom-one-dark'] {
+        --trilium-hljs-comment: #5c6370;
+        --trilium-hljs-keyword: #c678dd;
+        --trilium-hljs-string: #98c379;
+        --trilium-hljs-number: #d19a66;
+        --trilium-hljs-title: #61afef;
+        --trilium-hljs-property: #e06c75;
+        --trilium-hljs-meta: #56b6c2;
+        --trilium-hljs-deletion: #e06c75;
+      }
+      body[data-hljs-theme='solarized-light'] {
+        --trilium-hljs-comment: #93a1a1;
+        --trilium-hljs-keyword: #859900;
+        --trilium-hljs-string: #2aa198;
+        --trilium-hljs-number: #d33682;
+        --trilium-hljs-title: #268bd2;
+        --trilium-hljs-property: #657b83;
+        --trilium-hljs-meta: #cb4b16;
+        --trilium-hljs-deletion: #dc322f;
       }
       #breadcrumb {
         flex-shrink: 0;
@@ -785,16 +829,37 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
         color: var(--vscode-editor-foreground, #000);
         font-family: inherit;
       }
+      .ck-content .todo-list .todo-list__label > input[type='checkbox'] {
+        appearance: none;
+        -webkit-appearance: none;
+        width: 14px;
+        height: 14px;
+        margin-right: 8px;
+        border-radius: 3px;
+        border: 2px solid var(--vscode-checkbox-border, var(--vscode-contrastBorder, #9a9a9a));
+        background: var(--vscode-checkbox-background, var(--vscode-editor-background, transparent));
+        box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.15);
+        vertical-align: -2px;
+      }
+      .ck-content .todo-list .todo-list__label > input[type='checkbox']:checked {
+        background: var(--vscode-checkbox-selectBackground, var(--vscode-inputOption-activeBackground, #0e639c));
+        border-color: var(--vscode-checkbox-selectBorder, var(--vscode-inputOption-activeBackground, #0e639c));
+        box-shadow: none;
+      }
+      .ck-content .todo-list .todo-list__label > input[type='checkbox']:focus-visible {
+        outline: 2px solid var(--vscode-focusBorder, #007fd4);
+        outline-offset: 1px;
+      }
       .ck-content .hljs-comment,
       .ck-content .hljs-quote {
-        color: var(--vscode-editorCodeLens-foreground, #6a9955) !important;
+        color: var(--trilium-hljs-comment) !important;
       }
       .ck-content .hljs-keyword,
       .ck-content .hljs-selector-tag,
       .ck-content .hljs-literal,
       .ck-content .hljs-section,
       .ck-content .hljs-link {
-        color: var(--vscode-symbolIcon-keywordForeground, #569cd6) !important;
+        color: var(--trilium-hljs-keyword) !important;
       }
       .ck-content .hljs-string,
       .ck-content .hljs-regexp,
@@ -802,7 +867,7 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
       .ck-content .hljs-attribute,
       .ck-content .hljs-template-tag,
       .ck-content .hljs-template-variable {
-        color: var(--vscode-debugTokenExpression-string, #ce9178) !important;
+        color: var(--trilium-hljs-string) !important;
       }
       .ck-content .hljs-number,
       .ck-content .hljs-symbol,
@@ -810,27 +875,27 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
       .ck-content .hljs-variable,
       .ck-content .hljs-built_in,
       .ck-content .hljs-type {
-        color: var(--vscode-debugTokenExpression-number, #b5cea8) !important;
+        color: var(--trilium-hljs-number) !important;
       }
       .ck-content .hljs-title,
       .ck-content .hljs-title.class_,
       .ck-content .hljs-title.function_,
       .ck-content .hljs-function {
-        color: var(--vscode-symbolIcon-functionForeground, #dcdcaa) !important;
+        color: var(--trilium-hljs-title) !important;
       }
       .ck-content .hljs-property,
       .ck-content .hljs-attr,
       .ck-content .hljs-selector-id,
       .ck-content .hljs-selector-class {
-        color: var(--vscode-symbolIcon-propertyForeground, #9cdcfe) !important;
+        color: var(--trilium-hljs-property) !important;
       }
       .ck-content .hljs-meta,
       .ck-content .hljs-meta .hljs-keyword,
       .ck-content .hljs-doctag {
-        color: var(--vscode-symbolIcon-operatorForeground, #c586c0) !important;
+        color: var(--trilium-hljs-meta) !important;
       }
       .ck-content .hljs-deletion {
-        color: var(--vscode-diffEditor-removedTextForeground, #f14c4c) !important;
+        color: var(--trilium-hljs-deletion) !important;
       }
       .ck-content .hljs-emphasis {
         font-style: italic;
@@ -840,7 +905,7 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
       }
     </style>
 </head>
-<body>
+<body data-hljs-theme="${highlightTheme}">
     <div id="breadcrumb"></div>
     <div id="editor-container"></div>
     
@@ -1156,6 +1221,29 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
           })
           .then(newEditor => {
             editor = newEditor;
+
+            const trailingBlockNames = new Set(['codeBlock', 'blockQuote', 'admonition']);
+            editor.model.document.registerPostFixer(writer => {
+              let changed = false;
+              for (const root of editor.model.document.roots) {
+                if (!root.is('rootElement') || root.rootName === '$graveyard') {
+                  continue;
+                }
+                if (root.childCount === 0) {
+                  continue;
+                }
+                const last = root.getChild(root.childCount - 1);
+                if (
+                  last
+                  && last.is('element')
+                  && trailingBlockNames.has(last.name)
+                ) {
+                  writer.insertElement('paragraph', writer.createPositionAfter(last));
+                  changed = true;
+                }
+              }
+              return changed;
+            });
 
             // Apply spellcheck setting to the editable area
             editor.editing.view.change(writer => {

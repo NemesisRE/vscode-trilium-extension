@@ -335,4 +335,28 @@ describe('EtapiClient', () => {
       );
     });
   });
+
+  describe('patchBranch', () => {
+    it('sends PATCH to /etapi/branches/{branchId} with notePosition patch body', async () => {
+      const updatedBranch = {
+        branchId: 'b1',
+        noteId: 'n1',
+        parentNoteId: 'p1',
+        prefix: '',
+        notePosition: 30,
+        isExpanded: true,
+        utcDateModified: '2024-01-01T00:00:00Z',
+      };
+      const capture = capturingFetch(200, updatedBranch);
+
+      const client = new EtapiClient('http://localhost:8080', 'tok');
+      const result = await client.patchBranch('b1', { notePosition: 30 });
+
+      assert.ok(capture.url.endsWith('/branches/b1'));
+      assert.strictEqual(capture.init?.method, 'PATCH');
+      const body = JSON.parse(capture.init?.body as string);
+      assert.strictEqual(body.notePosition, 30);
+      assert.strictEqual(result.notePosition, 30);
+    });
+  });
 });

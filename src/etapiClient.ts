@@ -353,6 +353,13 @@ export class EtapiClient {
     });
   }
 
+  async patchBranch(
+    branchId: string,
+    patch: Partial<Pick<Branch, 'notePosition' | 'prefix' | 'isExpanded'>>,
+  ): Promise<Branch> {
+    return this.jsonRequest<Branch>('PATCH', `/branches/${branchId}`, patch);
+  }
+
   async deleteBranch(branchId: string): Promise<void> {
     return this.jsonRequest<void>('DELETE', `/branches/${branchId}`);
   }

@@ -39,20 +39,32 @@ const MIME_TO_LANGUAGE_ID: ReadonlyMap<string, string> = new Map([
 const MIME_TO_EXT: ReadonlyMap<string, string> = new Map([
   ['text/html', '.html'],
   ['text/javascript', '.js'],
+  ['text/x-javascript', '.js'],
   ['application/javascript', '.js'],
+  ['application/x-javascript', '.js'],
   ['text/typescript', '.ts'],
+  ['text/x-typescript', '.ts'],
   ['application/typescript', '.ts'],
+  ['application/x-typescript', '.ts'],
   ['text/x-python', '.py'],
+  ['application/x-python-code', '.py'],
   ['text/markdown', '.md'],
   ['text/css', '.css'],
   ['application/json', '.json'],
   ['text/xml', '.xml'],
   ['application/xml', '.xml'],
   ['text/x-c', '.c'],
+  ['text/x-csrc', '.c'],
+  ['text/x-chdr', '.h'],
   ['text/x-c++', '.cpp'],
+  ['text/x-c++src', '.cpp'],
+  ['text/x-c++hdr', '.hpp'],
   ['text/x-java', '.java'],
   ['text/x-ruby', '.rb'],
+  ['application/x-ruby', '.rb'],
   ['text/x-sh', '.sh'],
+  ['text/x-shellscript', '.sh'],
+  ['application/x-sh', '.sh'],
   ['text/x-sql', '.sql'],
   ['text/x-kotlin', '.kt'],
   ['text/x-go', '.go'],
@@ -60,6 +72,10 @@ const MIME_TO_EXT: ReadonlyMap<string, string> = new Map([
   ['text/x-yaml', '.yaml'],
   ['application/x-yaml', '.yaml'],
 ]);
+
+function normalizeMime(mime: string): string {
+  return mime.split(';', 1)[0].trim().toLowerCase();
+}
 
 interface MindElixirNode {
   id: string;
@@ -118,7 +134,7 @@ export class TempFileManager {
     } else if (note.type === 'mindMap') {
       ext = '.md';
     } else {
-      ext = MIME_TO_EXT.get(note.mime) ?? '.txt';
+      ext = MIME_TO_EXT.get(normalizeMime(note.mime)) ?? '.txt';
     }
 
     const safeName = note.title.replace(/[^a-zA-Z0-9_\-.]/g, '_').slice(0, 40);
@@ -139,7 +155,7 @@ export class TempFileManager {
     if (note.type === 'text' || note.type === 'mindMap') { return 'markdown'; }
     if (note.type === 'mermaid') { return 'mermaid'; }
     if (note.type === 'canvas') { return 'json'; }
-    return MIME_TO_LANGUAGE_ID.get(note.mime) ?? 'plaintext';
+    return MIME_TO_LANGUAGE_ID.get(normalizeMime(note.mime)) ?? 'plaintext';
   }
 
   /**
