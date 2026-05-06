@@ -63,6 +63,18 @@
           "type": "webview",
           "icon": "media/trilium.svg",
           "contextualTitle": "Trilium Notes"
+        },
+        {
+          "id": "triliumRecentNotes",
+          "name": "Recent Notes",
+          "icon": "media/trilium.svg",
+          "contextualTitle": "Trilium Notes"
+        },
+        {
+          "id": "triliumBacklinks",
+          "name": "Backlinks",
+          "icon": "media/trilium.svg",
+          "contextualTitle": "Trilium Notes"
         }
       ]
     },
@@ -285,6 +297,17 @@
         "command": "trilium.debugListLmTools",
         "title": "Debug: List Language Model Tools",
         "category": "Trilium"
+      },
+      {
+        "command": "trilium.clearRecentNotes",
+        "title": "Clear Recent Notes",
+        "icon": "$(clear-all)",
+        "category": "Trilium"
+      },
+      {
+        "command": "trilium.openNoteById",
+        "title": "Open Note by ID (internal)",
+        "category": "Trilium"
       }
     ],
     "submenus": [
@@ -308,6 +331,11 @@
         }
       ],
       "view/title": [
+        {
+          "command": "trilium.clearRecentNotes",
+          "when": "view == triliumRecentNotes",
+          "group": "navigation"
+        },
         {
           "command": "trilium.searchNotes",
           "when": "view == triliumNoteTree",
@@ -841,6 +869,20 @@
             "solarized-light"
           ],
           "description": "Theme for code block syntax highlighting in the editor."
+        },
+        "trilium.recentNotesMaxCount": {
+          "type": "number",
+          "default": 10,
+          "minimum": 1,
+          "maximum": 50,
+          "description": "Maximum number of recently opened notes to show in the Recent Notes view."
+        },
+        "trilium.autoRefreshIntervalSeconds": {
+          "type": "number",
+          "default": 30,
+          "minimum": 0,
+          "maximum": 600,
+          "description": "How often (in seconds) to check for external changes to open notes and refresh them. Set to 0 to disable."
         }
       }
     }

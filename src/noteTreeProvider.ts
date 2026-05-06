@@ -24,6 +24,9 @@ const BOXICON_TO_CODICON: Record<string, string> = {
   'file-doc': 'file',
   'file-pdf': 'file',
   'file-gif': 'file-media',
+  'file-archive': 'archive',
+  'file-image': 'file-media',
+  music: 'unmute',
   bookmark: 'bookmark', bookmarks: 'bookmark',
   // Files & Folders
   file: 'file', 'file-blank': 'file', folder: 'folder', 'folder-open': 'folder-opened',
@@ -126,9 +129,18 @@ const TRILIUM_TYPE_ICON_CLASS: Partial<Record<Note['type'], string>> = {
 const FILE_MIME_ICON_CLASS: Record<string, string> = {
   'application/pdf': 'bx bxs-file-pdf',
   'image/gif': 'bx bxs-file-gif',
+  'application/zip': 'bx bxs-file-archive',
+  'application/x-zip-compressed': 'bx bxs-file-archive',
+  'application/x-7z-compressed': 'bx bxs-file-archive',
+  'application/x-rar-compressed': 'bx bxs-file-archive',
   'application/msword': 'bx bxs-file-doc',
   'application/vnd.oasis.opendocument.text': 'bx bxs-file-doc',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'bx bxs-file-doc',
+  'image/jpeg': 'bx bxs-file-image',
+  'image/jpg': 'bx bxs-file-image',
+  'image/png': 'bx bxs-file-image',
+  'image/webp': 'bx bxs-file-image',
+  'image/svg+xml': 'bx bxs-file-image',
 };
 
 function normalizeMimeForIcon(mime: string): string {
@@ -371,6 +383,32 @@ export function cssColorToThemeColorId(css: string): string | undefined {
   if (h < 165) { return 'charts.green'; }
   if (h < 255) { return 'charts.blue'; }
   return 'charts.purple';
+}
+
+// ---------------------------------------------------------------------------
+
+const MIME_TO_FENCE_LANG: Record<string, string> = {
+  'text/javascript': 'javascript',
+  'application/javascript': 'javascript',
+  'text/typescript': 'typescript',
+  'application/typescript': 'typescript',
+  'text/x-python': 'python',
+  'text/markdown': 'markdown',
+  'text/x-markdown': 'markdown',
+  'application/json': 'json',
+  'text/xml': 'xml',
+  'application/xml': 'xml',
+  'text/css': 'css',
+  'text/x-sh': 'bash',
+  'text/x-sql': 'sql',
+  'text/x-java': 'java',
+  'text/x-csrc': 'c',
+  'text/x-c': 'c',
+  'text/x-c++src': 'cpp',
+};
+
+function mimeToCodeFenceLang(mime: string): string {
+  return MIME_TO_FENCE_LANG[mime.split(';', 1)[0].trim().toLowerCase()] ?? '';
 }
 
 // ---------------------------------------------------------------------------
@@ -654,6 +692,67 @@ export class NoteTreeProvider implements vscode.TreeDataProvider<NoteItem>, vsco
     return element;
   }
 
+  async resolveTreeItem(
+    item: vscode.TreeItem,
+    element: NoteItem,
+    token: vscode.CancellationToken,
+  ): Promise<vscode.TreeItem | undefined> {
+    if (!this.client) {
+      return undefined;
+    }
+
+    const { note } = element;
+    const previewTypes = new Set<Note['type']>(['text', 'code', 'mermaid']);
+
+    if (!previewTypes.has(note.type)) {
+      return undefined;
+    }
+
+    let content: string;
+    try {
+      content = await this.client.getNoteContent(note.noteId);
+    } catch {
+      return undefined;
+    }
+
+    if (token.isCancellationRequested) {
+      return undefined;
+    }
+
+    const md = new vscode.MarkdownString('', true);
+    md.isTrusted = false;
+    md.supportHtml = false;
+
+    const typeLabel = noteTypeToLabel(note.type);
+    const childCount = note.childNoteIds.length;
+    const childPart = childCount > 0 ? `, ${childCount} child${childCount === 1 ? '' : 'ren'}` : '';
+    md.appendMarkdown(`**${typeLabel}${childPart}**\n\n`);
+
+    if (note.type === 'text') {
+      const plain = content
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/&nbsp;/g, ' ')
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/\s+/g, ' ')
+        .trim();
+      if (plain.length > 0) {
+        const preview = plain.length > 300 ? `${plain.slice(0, 300)}…` : plain;
+        md.appendMarkdown(preview);
+      }
+    } else {
+      // code / mermaid
+      const lang = mimeToCodeFenceLang(note.mime);
+      const preview = content.length > 300 ? `${content.slice(0, 300)}…` : content;
+      md.appendCodeblock(preview, lang);
+    }
+
+    item.tooltip = md;
+    return item;
+  }
+
   async getChildren(element?: NoteItem): Promise<NoteItem[]> {
     if (!this.client) {
       return [];
@@ -676,10 +775,24 @@ export class NoteTreeProvider implements vscode.TreeDataProvider<NoteItem>, vsco
     }
 
     const rootNoteId = getRootNoteId();
-    const noteId = element?.note.noteId ?? rootNoteId;
+    if (!element) {
+      try {
+        const root = await this.client.getNote(rootNoteId);
+        const rootItem = new NoteItem(root, rootNoteId, undefined, this.boxiconsSvgRoot);
+        if (root.childNoteIds.length > 0) {
+          rootItem.collapsibleState = vscode.TreeItemCollapsibleState.Expanded;
+        }
+        return [rootItem];
+      } catch (err) {
+        vscode.window.showErrorMessage(`Trilium: Failed to load root note "${rootNoteId}": ${err}`);
+        return [];
+      }
+    }
+
+    const noteId = element.note.noteId;
     // parentPath is the fragment path used to build the Trilium browser URL.
     // root-level items: "root/childId"; deeper: "root/a/b/childId"
-    const parentPath = element?.path ?? rootNoteId;
+    const parentPath = element.path;
 
     try {
       const parent = await this.client.getNote(noteId);

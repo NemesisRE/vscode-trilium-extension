@@ -20,6 +20,8 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
   private readonly syncedContentByUri = new Map<string, string>();
   private readonly conflictTheirsByPath = new Map<string, string>();
 
+  private static readonly openBreadcrumbCommand = 'trilium._openBreadcrumbNote';
+
   public static setDocumentMetadata(uri: vscode.Uri, meta: { noteId: string; title: string }): void {
     TriliumTextEditorProvider.docMetaByUri.set(uri.toString(), meta);
   }
@@ -149,6 +151,13 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
           }).catch(() => {
             void webviewPanel.webview.postMessage({ type: 'imageFetchResult', id, error: 'fetch failed' });
           });
+          break;
+        }
+        case 'openBreadcrumbNote': {
+          const { noteId: targetNoteId } = message as { type: string; noteId?: string };
+          if (targetNoteId) {
+            void vscode.commands.executeCommand(TriliumTextEditorProvider.openBreadcrumbCommand, targetNoteId);
+          }
           break;
         }
         case 'error':
@@ -378,7 +387,7 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
     const client = this.getClient();
     if (!client) { return; }
 
-    const parts: string[] = [];
+    const parts: Array<{ noteId: string; title: string }> = [];
     const visited = new Set<string>();
     let currentId: string = noteId;
 
@@ -386,7 +395,7 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
       visited.add(currentId);
       try {
         const note = await client.getNote(currentId);
-        parts.unshift(note.title);
+        parts.unshift({ noteId: currentId, title: note.title });
         if (currentId === 'root' || note.parentNoteIds.length === 0) { break; }
         currentId = note.parentNoteIds[0];
       } catch {
@@ -394,7 +403,31 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
       }
     }
 
-    panel.webview.postMessage({ type: 'breadcrumb', path: parts.join(' › ') });
+    const backlinksCount = await this.countBacklinks(noteId);
+    panel.webview.postMessage({ type: 'breadcrumb', parts, backlinksCount });
+  }
+
+  private async countBacklinks(noteId: string): Promise<number> {
+    const client = this.getClient();
+    if (!client) { return 0; }
+
+    try {
+      const { results } = await client.searchNotes('note.targetRelationCount > 0', { limit: 100 });
+      const checks = await Promise.all(results.map(async (candidate) => {
+        try {
+          const fullNote = await client.getNote(candidate.noteId);
+          return fullNote.attributes?.some(
+            (attr) => attr.type === 'relation' && attr.value === noteId,
+          ) ?? false;
+        } catch {
+          return false;
+        }
+      }));
+
+      return checks.filter(Boolean).length;
+    } catch {
+      return 0;
+    }
   }
 
   /**
@@ -562,10 +595,33 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
       .ck.ck-list__item>.ck-button { color: var(--vscode-editor-foreground, #cccccc) !important; }
       .ck.ck-list__item>.ck-button:hover {
         background: var(--vscode-list-hoverBackground, rgba(90,93,94,.31)) !important;
+        color: var(--vscode-list-hoverForeground, var(--vscode-editor-foreground, #cccccc)) !important;
       }
       .ck.ck-list__item>.ck-button.ck-on {
         background: var(--vscode-list-activeSelectionBackground, #094771) !important;
         color: var(--vscode-list-activeSelectionForeground, #fff) !important;
+      }
+      /* Split-button (bulleted list, numbered list, image, code block, admonition, footnote, highlight, …)
+         Each half must highlight independently. CKEditor's default applies a hover background to
+         BOTH halves whenever the cursor is anywhere inside the container (.ck-splitbutton:hover …),
+         causing the non-hovered half to light up. Suppress that bleed here and let the per-element
+         hover rule above handle only the half that is actually under the cursor. */
+      .ck.ck-splitbutton .ck-splitbutton__arrow {
+        border-left-color: var(--vscode-editorWidget-border, rgba(128,128,128,.35)) !important;
+      }
+      /* Reset the action half when the cursor is on the arrow half */
+      .ck.ck-splitbutton:hover .ck-splitbutton__action:not(:hover):not(.ck-on):not(.ck-disabled) {
+        background: transparent !important;
+      }
+      /* Reset the arrow half when the cursor is on the action half */
+      .ck.ck-splitbutton:hover .ck-splitbutton__arrow:not(:hover):not(.ck-disabled) {
+        background: transparent !important;
+        border-left-color: var(--vscode-editorWidget-border, rgba(128,128,128,.35)) !important;
+      }
+      /* Action buttons inside balloon panels (e.g. "Insert code block" confirm) */
+      .ck.ck-button.ck-button_action:not(.ck-disabled):hover {
+        background: var(--vscode-button-hoverBackground, #0062a3) !important;
+        color: var(--vscode-button-foreground, #fff) !important;
       }
       .ck.ck-input {
         background: var(--vscode-input-background, #3c3c3c) !important;
@@ -649,6 +705,39 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
         overflow: hidden;
         text-overflow: ellipsis;
         user-select: none;
+      }
+      #breadcrumb .crumb {
+        appearance: none;
+        border: 0;
+        background: transparent;
+        color: var(--vscode-textLink-foreground, #3794ff);
+        cursor: pointer;
+        font: inherit;
+        margin: 0;
+        padding: 0;
+      }
+      #breadcrumb .crumb:hover {
+        color: var(--vscode-textLink-activeForeground, #4daafc);
+        text-decoration: underline;
+      }
+      #breadcrumb .crumb:focus-visible {
+        outline: 1px solid var(--vscode-focusBorder, #007fd4);
+        outline-offset: 2px;
+        border-radius: 2px;
+      }
+      #breadcrumb .separator {
+        color: var(--vscode-descriptionForeground);
+        margin: 0 0.4ch;
+      }
+      #breadcrumb .backlinks-badge {
+        margin-left: 1ch;
+        padding: 0 0.6ch;
+        border-radius: 999px;
+        border: 1px solid var(--vscode-badge-background, #4d4d4d);
+        color: var(--vscode-badge-foreground, #ffffff);
+        background: var(--vscode-badge-background, #4d4d4d);
+        font-size: 0.92em;
+        vertical-align: middle;
       }
       #editor-container {
         flex: 1;
@@ -1299,7 +1388,37 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
               break;
             case 'breadcrumb': {
               const el = document.getElementById('breadcrumb');
-              if (el) { el.textContent = message.path; }
+              if (el) {
+                el.replaceChildren();
+                const parts = Array.isArray(message.parts) ? message.parts : [];
+                const backlinksCount = typeof message.backlinksCount === 'number'
+                  ? message.backlinksCount
+                  : 0;
+                parts.forEach((part, index) => {
+                  const button = document.createElement('button');
+                  button.type = 'button';
+                  button.className = 'crumb';
+                  button.textContent = part.title;
+                  button.title = part.title;
+                  button.addEventListener('click', () => {
+                    vscode.postMessage({ type: 'openBreadcrumbNote', noteId: part.noteId });
+                  });
+                  el.appendChild(button);
+
+                  if (index < parts.length - 1) {
+                    const sep = document.createElement('span');
+                    sep.className = 'separator';
+                    sep.textContent = '›';
+                    el.appendChild(sep);
+                  }
+                });
+
+                const badge = document.createElement('span');
+                badge.className = 'backlinks-badge';
+                badge.textContent = 'Backlinks ' + backlinksCount;
+                badge.title = 'Number of notes that link to this note via relations';
+                el.appendChild(badge);
+              }
               break;
             }
             case 'imageFetchResult': {

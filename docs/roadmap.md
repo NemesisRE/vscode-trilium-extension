@@ -27,12 +27,18 @@ This roadmap is a working list of improvements and ideas, not a strict milestone
 - Search and destination quick picks now use iconClass-aware icon selection for more consistent visual presentation.
 - Note-type labels are now normalized (for example `webView` → `web view`, `mindMap` → `mind map`) for clearer, more Trilium-like presentation.
 - Tree note icons now use real Trilium Boxicons with theme-aware recoloring (plus codicon fallback), avoiding black icons while preserving visual fidelity across VS Code themes.
+- Default tree note icons now follow Trilium behavior more closely, including section-folder defaults and MIME-aware file/image icon choices.
 - Notes can now be moved in the tree via drag-and-drop (branch move), with subtree-safe cycle protection and same-parent no-op behavior.
 - Tree context menu now includes a drag-based "Reorder Child Notes..." window to set precise sibling order and push notePosition updates.
+- Notes show a rich hover tooltip in the tree with note type, child count, and a content preview (plain text for text notes, code block for code/mermaid notes).
+- CKEditor dropdown button hover colors now correctly follow the active VS Code theme (split-button separator, list-item hover foreground, action-button hover state).
+- A "Recent Notes" sidebar section tracks the last N (configurable via `trilium.recentNotesMaxCount`, default 10) opened notes with a clear-all toolbar button.
+- Open notes are now silently refreshed when changed externally on the Trilium server. Controlled by `trilium.autoRefreshIntervalSeconds` (default 30 s, 0 = disabled); clean documents are updated automatically, dirty documents are left untouched.
+- The text-note editor breadcrumb is now clickable, so parent-path navigation can open any ancestor note directly from the editor header.
+- Added lightweight backlinks support: a dedicated Backlinks sidebar view for the currently selected/opened note plus an in-editor backlinks count badge in the breadcrumb header.
 
 ## Editor Polish
 
-- Fix CKEditor dropdown button hover colors for insert actions such as code block and footnote.
 - Render math elements visually as math instead of exposing raw LaTeX where possible.
 
 ## Richer Views
@@ -47,11 +53,3 @@ This roadmap is a working list of improvements and ideas, not a strict milestone
 ## Reliability and UX
 
 - Extend native-style dirty-state and conflict handling consistency from text notes to all editable note types.
-- Refresh open editors more predictably when notes are renamed, moved, or modified externally.
-
-## Good Next Additions
-
-- Add quick backlinks and parent-path navigation.
-- Add a lightweight recent notes or pinned notes view.
-- Add note preview on hover in the tree.
-- Add optional auto-refresh for externally changed notes.
