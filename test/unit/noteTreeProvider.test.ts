@@ -176,6 +176,48 @@ describe('NoteItem', () => {
     assert.strictEqual((item.iconPath as { id: string }).id, 'folder');
   });
 
+  it('uses home icon for the root note default', () => {
+    const item = new NoteItem(makeNote({ noteId: 'root', type: 'text' }));
+    assert.ok(item.iconPath);
+    assert.strictEqual((item.iconPath as { id: string }).id, 'home');
+  });
+
+  it('uses share icon for the _share note default', () => {
+    const item = new NoteItem(makeNote({ noteId: '_share', type: 'text' }));
+    assert.ok(item.iconPath);
+    assert.strictEqual((item.iconPath as { id: string }).id, 'share');
+  });
+
+  it('uses PDF-specific default icon for file notes', () => {
+    const item = new NoteItem(makeNote({ type: 'file', mime: 'application/pdf' }));
+    assert.ok(item.iconPath);
+    assert.strictEqual((item.iconPath as { id: string }).id, 'file');
+  });
+
+  it('uses archive-specific default icon for compressed file notes', () => {
+    const item = new NoteItem(makeNote({ type: 'file', mime: 'application/zip' }));
+    assert.ok(item.iconPath);
+    assert.strictEqual((item.iconPath as { id: string }).id, 'archive');
+  });
+
+  it('uses video default icon for video file notes', () => {
+    const item = new NoteItem(makeNote({ type: 'file', mime: 'video/mp4' }));
+    assert.ok(item.iconPath);
+    assert.strictEqual((item.iconPath as { id: string }).id, 'device-camera-video');
+  });
+
+  it('uses audio default icon for audio file notes', () => {
+    const item = new NoteItem(makeNote({ type: 'file', mime: 'audio/mpeg' }));
+    assert.ok(item.iconPath);
+    assert.strictEqual((item.iconPath as { id: string }).id, 'unmute');
+  });
+
+  it('uses image MIME specific default for image notes', () => {
+    const item = new NoteItem(makeNote({ type: 'image', mime: 'image/png' }));
+    assert.ok(item.iconPath);
+    assert.strictEqual((item.iconPath as { id: string }).id, 'file-media');
+  });
+
   it('uses the mapped codicon when #iconClass attribute is present', () => {
     const attr: Attribute = {
       attributeId: 'a1', noteId: 'testId', type: 'label', name: 'iconClass',
@@ -469,14 +511,19 @@ describe('NoteTreeProvider', () => {
     assert.deepStrictEqual(children, []);
   });
 
-  it('loads children of the root note when called with no element', async () => {
+  it('loads the root note when called with no element and expands it by default', async () => {
     const root = makeNote({ noteId: 'root', childNoteIds: ['c1', 'c2'] });
     const child1 = makeNote({ noteId: 'c1', title: 'Child One' });
     const child2 = makeNote({ noteId: 'c2', title: 'Child Two' });
 
     const provider = new NoteTreeProvider(makeClient({ root, c1: child1, c2: child2 }));
-    const children = await provider.getChildren();
+    const topLevel = await provider.getChildren();
 
+    assert.strictEqual(topLevel.length, 1);
+    assert.strictEqual(topLevel[0].note.noteId, 'root');
+    assert.strictEqual(topLevel[0].collapsibleState, 2);
+
+    const children = await provider.getChildren(topLevel[0]);
     assert.strictEqual(children.length, 2);
     assert.strictEqual(children[0].note.noteId, 'c1');
     assert.strictEqual(children[1].note.noteId, 'c2');
