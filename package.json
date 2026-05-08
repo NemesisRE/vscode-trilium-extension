@@ -18,7 +18,6 @@
   "main": "./out/extension.js",
   "activationEvents": [
     "onStartupFinished",
-    "onView:triliumNoteTree",
     "onLanguageModelTool:trilium_createNote",
     "onLanguageModelTool:trilium_importNotes",
     "onLanguageModelTool:trilium_searchNotes",

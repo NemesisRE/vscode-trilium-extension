@@ -1,0 +1,11 @@
+{
+  "repo": "TriliumNext/Trilium",
+  "ref": "5163afc69474134406fe8c1ee55e705670a28804",
+  "plugins": [
+    "ckeditor5-admonition",
+    "ckeditor5-footnotes",
+    "ckeditor5-keyboard-marker",
+    "ckeditor5-math",
+    "ckeditor5-mermaid"
+  ]
+}

@@ -99,9 +99,9 @@ Plugins are **not checked into Git**. They are downloaded from the [Trilium sour
 1. The `prebuild` script invokes `scripts/download-trilium-plugins.mjs`
 2. npm automatically runs `prebuild` before the `build` script (due to the `pre` prefix naming convention)
 3. For `build:prod` and `vscode:prepublish`, `prebuild` is called explicitly (npm's auto-hook doesn't work for script names with colons)
-4. The script downloads the latest `main` branch tarball from `https://github.com/TriliumNext/Trilium/archive/main.tar.gz`
-5. It extracts only the five plugin directories from `src/public/app/widgets/type_widgets/text/ckeditor_plugins/`
-6. Plugins are written to `vendor/{plugin}/` (e.g., `vendor/admonition/`, `vendor/math/`)
+4. The script downloads the pinned Trilium revision from `scripts/trilium-plugins.lock.json`
+5. It extracts only the five plugin directories from `packages/ckeditor5-*/`
+6. Plugins are written to `vendor/{plugin}/` (e.g., `vendor/ckeditor5-admonition/`, `vendor/ckeditor5-math/`)
 7. The `vendor/` directory is gitignored
 
 **To update plugins:**
@@ -114,23 +114,29 @@ rm -r vendor
 npm run prebuild
 ```
 
+**Automated daily ref updates:**
+
+- A scheduled GitHub Actions workflow (`.github/workflows/update-trilium-plugin-ref.yml`) checks Trilium's latest release tag daily.
+- If `scripts/trilium-plugins.lock.json` is behind, it opens an automated PR with the updated `ref`.
+- The PR is labeled `dependencies` so it is categorized correctly by Release Drafter.
+
 The `prebuild` script ensures plugins are always downloaded before building, whether in development or CI.
 
 **CI Caching:**
 
-The GitHub Actions workflow caches the `vendor/` directory to avoid re-downloading plugins on every CI run. The cache key is based on the hash of `scripts/download-trilium-plugins.mjs`, so:
+The GitHub Actions workflow caches the `vendor/` directory to avoid re-downloading plugins on every CI run. The cache key is based on the plugin lock file and download scripts, so:
 
-- If the download script changes, the cache is invalidated and plugins are re-downloaded
+- If the lock file or download scripts change, the cache is invalidated and plugins are re-downloaded
 - Otherwise, the cached plugins are reused across workflow runs
-- To force a fresh download, update the download script or manually clear the cache via GitHub's UI
+- To force a fresh download, update `scripts/trilium-plugins.lock.json` or manually clear the cache via GitHub's UI
 
 ### Plugin Source
 
 - **Repository:** [Trilium source repository](https://github.com/TriliumNext/Trilium)
-- **Path:** `src/public/app/widgets/type_widgets/text/ckeditor_plugins/`
+- **Path:** `packages/ckeditor5-*/`
 - **License:** AGPL-3.0 (same as Trilium)
 
-The vendored plugins are compiled into the CKEditor build (`out/ckeditor-build.js`) via `src/ckeditor-build.ts`.
+The vendored plugins are compiled into the CKEditor build (`out/ckeditor/ckeditor.js`) via `src/ckeditor-build.ts`.
 
 ---
 

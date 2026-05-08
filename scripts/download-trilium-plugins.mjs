@@ -3,19 +3,15 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as https from 'https';
 import * as tar from 'tar';
-import { promisify } from 'util';
+import { applyVendorPatches } from './apply-vendor-patches.mjs';
 
-const TRILIUM_REPO = 'TriliumNext/Trilium';
-const TRILIUM_REF = 'main';
 const VENDOR_DIR = path.join(process.cwd(), 'vendor');
+const LOCK_PATH = path.join(process.cwd(), 'scripts', 'trilium-plugins.lock.json');
 
-const PLUGINS = [
-  'ckeditor5-admonition',
-  'ckeditor5-footnotes',
-  'ckeditor5-keyboard-marker',
-  'ckeditor5-math',
-  'ckeditor5-mermaid',
-];
+const lock = JSON.parse(fs.readFileSync(LOCK_PATH, 'utf8'));
+const TRILIUM_REPO = lock.repo;
+const TRILIUM_REF = lock.ref;
+const PLUGINS = lock.plugins;
 
 /**
  * Downloads the entire Trilium repository tarball once and extracts all plugins.
@@ -92,25 +88,6 @@ function extractPlugins(stream, resolve, reject) {
 }
 
 /**
- * Applies local patches to vendor files that are incompatible with the project's TypeScript setup.
- */
-function patchPlugins() {
-  // ckeditor5-math: remove the custom `declare global` block for window.mathVirtualKeyboard.
-  // mathlive already declares `window.mathVirtualKeyboard: VirtualKeyboardInterface & EventTarget`
-  // in its own types, so redefining it with a narrower type causes TS2687/TS2717.
-  const mathInputViewPath = path.join(VENDOR_DIR, 'ckeditor5-math', 'src', 'ui', 'mathinputview.ts');
-  if (fs.existsSync(mathInputViewPath)) {
-    let src = fs.readFileSync(mathInputViewPath, 'utf8');
-    const declareGlobalBlock = /^declare global \{[\s\S]*?\}\s*\n\n/m;
-    if (declareGlobalBlock.test(src)) {
-      src = src.replace(declareGlobalBlock, '');
-      fs.writeFileSync(mathInputViewPath, src, 'utf8');
-      console.log('[download-plugins] ✓ Patched ckeditor5-math/src/ui/mathinputview.ts');
-    }
-  }
-}
-
-/**
  * Main execution
  */
 async function main() {
@@ -121,7 +98,7 @@ async function main() {
 
   try {
     await downloadAllPlugins();
-    patchPlugins();
+    applyVendorPatches(VENDOR_DIR, '[download-plugins]');
     console.log('[download-plugins] All plugins downloaded successfully.');
   } catch (error) {
     console.error('[download-plugins] Error:', error.message);
