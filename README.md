@@ -1,7 +1,7 @@
 # Trilium Notes for VS Code
 
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
-[![VS Code Engine](https://img.shields.io/badge/VS%20Code-%5E1.116.0-007ACC?logo=visualstudiocode&logoColor=white)](https://code.visualstudio.com)
+[![VS Code Engine](https://img.shields.io/badge/VS%20Code-%5E1.118.0-007ACC?logo=visualstudiocode&logoColor=white)](https://code.visualstudio.com)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
 [![CI](https://github.com/NemesisRE/vscode-trilium-extension/actions/workflows/ci.yml/badge.svg)](https://github.com/NemesisRE/vscode-trilium-extension/actions/workflows/ci.yml)
 [![GitHub Release](https://img.shields.io/github/v/release/NemesisRE/vscode-trilium-extension?style=flat&logo=github&label=release)](https://github.com/NemesisRE/vscode-trilium-extension/releases/latest)
@@ -97,7 +97,7 @@ If you want a fast setup, you can be connected in about a minute.
 
 ## Requirements
 
-- VS Code 1.116 or later
+- VS Code 1.118 or later
 - Desktop VS Code (not web/Codespaces)
 - A reachable Trilium Notes server with ETAPI enabled
 
