@@ -4,7 +4,7 @@
 
 - **Node.js** 24 (matches CI)
 - **npm** (comes with Node.js)
-- **VS Code** 1.116 or later (desktop)
+- **VS Code** 1.118 or later (desktop)
 - **npx** / **@vscode/vsce** — installed automatically via `npm ci`
 
 ---
@@ -194,18 +194,32 @@ When adding a new source file, add a corresponding test file under `test/unit/`.
 
 Releases are managed through GitHub's release UI, assisted by [Release Drafter](https://github.com/release-drafter/release-drafter).
 
+### One-time setup
+
+- Create a Visual Studio Marketplace publisher that matches the `publisher` field in `package.json`.
+- Create an Open VSX namespace that matches the same `publisher` value.
+- Add these repository secrets:
+  - `VSCE_PAT`: Azure DevOps Marketplace PAT with `Marketplace (Manage)` scope.
+  - `OVSX_PAT`: Open VSX personal access token.
+- If branch protection blocks direct pushes from GitHub Actions, allow the workflow to push version-sync commits to `main`.
+
 ### Step-by-step
 
-1. **Label every merged PR** with one of: `feature` / `enhancement`, `fix` / `bug`, `chore` / `maintenance` / `dependencies` / `documentation`. Release Drafter uses these labels to categorise changes and determine the next version number (major / minor / patch).
+1. **Label every merged PR** with one of: `feature` / `enhancement`, `fix` / `bug`, `chore` / `maintenance` / `dependencies` / `documentation`. Release Drafter uses these labels to categorise changes and determine the next version number.
 
-2. **Draft release** — Release Drafter automatically maintains a draft release at the top of the [Releases page](https://github.com/NemesisRE/vscode-trilium-extension/releases). Review the draft, edit the title/notes if needed.
+2. **Draft release** — Release Drafter automatically maintains a draft release at the top of the [Releases page](https://github.com/NemesisRE/vscode-trilium-extension/releases). Review the draft, adjust the notes if needed, and make sure the tag uses the format `vX.Y.Z`.
 
-3. **Publish the draft release** on GitHub. This triggers the `release` event in CI.
+3. **Publish the GitHub release**. The dedicated release workflow then:
+   - checks out the tagged source,
+   - syncs `package.json` to the tag version,
+   - runs type-checks, unit tests, integration tests, and the production build,
+   - packages the `.vsix`,
+   - publishes the same artifact to the Visual Studio Marketplace and Open VSX,
+   - uploads the `.vsix` to the GitHub Release assets,
+   - pushes a follow-up commit to `main` so `package.json` permanently reflects the released version.
 
-4. **CI runs automatically** — the `package` job extracts the version from the release tag, updates `package.json` automatically, builds the VSIX, and attaches it to the GitHub Release as a downloadable asset.
-
-The `.vsix` file is named `trilium-notes-<version>.vsix` and appears in the release assets within a few minutes of publishing.
+The `.vsix` file is attached to the GitHub Release automatically after a successful publish.
 
 ### Version synchronization
 
-The CI workflow automatically extracts the version from the Git tag (e.g., `v1.0.1` → `1.0.1`) and updates `package.json` before building. You don't need to manually update `package.json` before creating a release — the tag is the single source of truth.
+The GitHub release tag is the single source of truth. When you publish a release with a tag such as `v1.2.3`, the workflow automatically updates `package.json` to `1.2.3` and commits that change back to `main`. Do not manually edit the version before creating the release.

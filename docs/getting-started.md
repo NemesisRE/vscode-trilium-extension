@@ -6,7 +6,7 @@ If you already use Trilium every day, this gives you a smoother flow without swi
 
 ## Requirements
 
-- VS Code **1.116** or later.
+- VS Code **1.118** or later.
 - Desktop VS Code only. Web extensions and Codespaces are not supported.
 - A running **Trilium Notes** server reachable from your machine.
 - An **ETAPI token** generated in Trilium: `Options -> ETAPI -> Create new ETAPI token`.

@@ -70,12 +70,14 @@ const ckeditorBuildOptions = {
  * Build both extension and CKEditor.
  */
 async function buildAll() {
+  await fs.promises.rm('out', { recursive: true, force: true });
+
   console.log('[esbuild] Building extension...');
   await esbuild.build(extensionBuildOptions);
-  
+
   console.log('[esbuild] Building CKEditor...');
   await esbuild.build(ckeditorBuildOptions);
-  
+
   console.log('[esbuild] Build complete!');
 }
 
@@ -84,15 +86,15 @@ async function buildAll() {
  */
 async function watchAll() {
   console.log('[esbuild] Starting watch mode...');
-  
+
   const extensionCtx = await esbuild.context(extensionBuildOptions);
   const ckeditorCtx = await esbuild.context(ckeditorBuildOptions);
-  
+
   await Promise.all([
     extensionCtx.watch(),
     ckeditorCtx.watch(),
   ]);
-  
+
   console.log('[esbuild] Watching for changes...');
 }
 

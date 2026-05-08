@@ -5,12 +5,33 @@
   "version": "1.0.0",
   "publisher": "NemesisRE",
   "license": "AGPL-3.0-or-later",
+  "homepage": "https://github.com/NemesisRE/vscode-trilium-extension#readme",
+  "bugs": {
+    "url": "https://github.com/NemesisRE/vscode-trilium-extension/issues"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/NemesisRE/vscode-trilium-extension"
   },
+  "files": [
+    "out/extension.js",
+    "out/ckeditor/**",
+    "media/**",
+    "README.md",
+    "LICENSE",
+    "package.json"
+  ],
+  "keywords": [
+    "trilium",
+    "trilium-notes",
+    "notes",
+    "knowledge-base",
+    "pkm",
+    "zettelkasten",
+    "etapi"
+  ],
   "engines": {
-    "vscode": "^1.116.0"
+    "vscode": "^1.118.0"
   },
   "categories": [
     "Other"
@@ -924,6 +945,7 @@
   },
   "scripts": {
     "prebuild": "node scripts/download-trilium-plugins.mjs",
+    "release:sync-version": "node scripts/set-package-version.mjs",
     "vscode:prepublish": "npm run prebuild && node esbuild.mjs --production",
     "build": "node esbuild.mjs",
     "build:prod": "npm run prebuild && node esbuild.mjs --production",
@@ -935,7 +957,8 @@
     "test": "npm run test:unit",
     "test:all": "npm run test:unit && npm run test:integration",
     "lint": "tsc --noEmit",
-    "package": "npx @vscode/vsce package"
+    "package": "npx @vscode/vsce package --no-dependencies",
+    "package:vsix": "npx @vscode/vsce package --no-dependencies"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",
