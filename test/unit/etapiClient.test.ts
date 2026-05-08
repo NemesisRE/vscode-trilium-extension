@@ -359,4 +359,27 @@ describe('EtapiClient', () => {
       assert.strictEqual(result.notePosition, 30);
     });
   });
+
+  describe('getBranch', () => {
+    it('sends GET request to /etapi/branches/{branchId}', async () => {
+      const branch = {
+        branchId: 'b1',
+        noteId: 'n1',
+        parentNoteId: 'parent',
+        prefix: '',
+        notePosition: 0,
+        isExpanded: true,
+        utcDateModified: '2024-01-01T00:00:00Z',
+      };
+      const capture = capturingFetch(200, branch);
+
+      const client = new EtapiClient('http://localhost:8080', 'tok');
+      const result = await client.getBranch('b1');
+
+      assert.ok(capture.url.endsWith('/branches/b1'));
+      assert.strictEqual(capture.init?.method, 'GET');
+      assert.strictEqual(result.branchId, 'b1');
+      assert.strictEqual(result.noteId, 'n1');
+    });
+  });
 });

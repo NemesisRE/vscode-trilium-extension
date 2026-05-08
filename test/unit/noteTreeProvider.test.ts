@@ -12,7 +12,7 @@ import {
   parseBoxiconClass,
   preferredCodiconForNote,
 } from '../../src/noteTreeProvider';
-import type { Note, Attribute } from '../../src/etapiClient';
+import type { Note, Attribute, Branch } from '../../src/etapiClient';
 import type { EtapiClient } from '../../src/etapiClient';
 
 function makeNote(overrides: Partial<Note> = {}): Note {
@@ -35,7 +35,20 @@ function makeNote(overrides: Partial<Note> = {}): Note {
   };
 }
 
-function makeClient(notes: Record<string, Note>): EtapiClient {
+function makeBranch(overrides: Partial<Branch> = {}): Branch {
+  return {
+    branchId: 'branch-1',
+    noteId: 'noteId',
+    parentNoteId: 'parent',
+    prefix: '',
+    notePosition: 0,
+    isExpanded: false,
+    utcDateModified: '2024-01-01T00:00:00Z',
+    ...overrides,
+  };
+}
+
+function makeClient(notes: Record<string, Note>, branches: Record<string, Branch> = {}): EtapiClient {
   return {
     getNote: async (id: string) => {
       const note = notes[id];
@@ -43,6 +56,13 @@ function makeClient(notes: Record<string, Note>): EtapiClient {
         throw new Error(`Note not found: ${id}`);
       }
       return note;
+    },
+    getBranch: async (branchId: string) => {
+      const branch = branches[branchId];
+      if (!branch) {
+        throw new Error(`Branch not found: ${branchId}`);
+      }
+      return branch;
     },
     // Unused methods stubbed to satisfy the type.
     getAppInfo: async () => ({ appVersion: '', dbVersion: 0, syncVersion: 0, buildDate: '', buildRevision: '', dataDirectory: '', utcDateTime: '' }),
@@ -512,11 +532,15 @@ describe('NoteTreeProvider', () => {
   });
 
   it('loads the root note when called with no element and expands it by default', async () => {
-    const root = makeNote({ noteId: 'root', childNoteIds: ['c1', 'c2'] });
+    const root = makeNote({ noteId: 'root', childNoteIds: ['c1', 'c2'], childBranchIds: ['b1', 'b2'] });
     const child1 = makeNote({ noteId: 'c1', title: 'Child One' });
     const child2 = makeNote({ noteId: 'c2', title: 'Child Two' });
+    const branches = {
+      b1: makeBranch({ branchId: 'b1', noteId: 'c1', parentNoteId: 'root', notePosition: 0 }),
+      b2: makeBranch({ branchId: 'b2', noteId: 'c2', parentNoteId: 'root', notePosition: 1 }),
+    };
 
-    const provider = new NoteTreeProvider(makeClient({ root, c1: child1, c2: child2 }));
+    const provider = new NoteTreeProvider(makeClient({ root, c1: child1, c2: child2 }, branches));
     const topLevel = await provider.getChildren();
 
     assert.strictEqual(topLevel.length, 1);
@@ -530,10 +554,13 @@ describe('NoteTreeProvider', () => {
   });
 
   it('loads children of a given NoteItem element', async () => {
-    const parent = makeNote({ noteId: 'parent', childNoteIds: ['kid1'] });
+    const parent = makeNote({ noteId: 'parent', childNoteIds: ['kid1'], childBranchIds: ['b1'] });
     const kid = makeNote({ noteId: 'kid1', title: 'Kid' });
+    const branches = {
+      b1: makeBranch({ branchId: 'b1', noteId: 'kid1', parentNoteId: 'parent', notePosition: 0 }),
+    };
 
-    const provider = new NoteTreeProvider(makeClient({ parent, kid1: kid }));
+    const provider = new NoteTreeProvider(makeClient({ parent, kid1: kid }, branches));
     const parentItem = new NoteItem(parent);
     const children = await provider.getChildren(parentItem);
 
@@ -544,11 +571,36 @@ describe('NoteTreeProvider', () => {
   it('returns empty array for leaf notes', async () => {
     const leaf = makeNote({ noteId: 'leaf', childNoteIds: [] });
 
-    const provider = new NoteTreeProvider(makeClient({ leaf }));
+    const provider = new NoteTreeProvider(makeClient({ leaf }, {}));
     const leafItem = new NoteItem(leaf);
     const children = await provider.getChildren(leafItem);
 
     assert.deepStrictEqual(children, []);
+  });
+
+  it('sorts children by notePosition from branches', async () => {
+    const parent = makeNote({ noteId: 'parent', childNoteIds: ['c1', 'c2', 'c3'], childBranchIds: ['b2', 'b1', 'b3'] });
+    const c1 = makeNote({ noteId: 'c1', title: 'First' });
+    const c2 = makeNote({ noteId: 'c2', title: 'Second' });
+    const c3 = makeNote({ noteId: 'c3', title: 'Third' });
+    const branches = {
+      b2: makeBranch({ branchId: 'b2', noteId: 'c1', parentNoteId: 'parent', notePosition: 1 }),
+      b1: makeBranch({ branchId: 'b1', noteId: 'c2', parentNoteId: 'parent', notePosition: 0 }),
+      b3: makeBranch({ branchId: 'b3', noteId: 'c3', parentNoteId: 'parent', notePosition: 2 }),
+    };
+
+    const provider = new NoteTreeProvider(makeClient({ parent, c1, c2, c3 }, branches));
+    const parentItem = new NoteItem(parent);
+    const children = await provider.getChildren(parentItem);
+
+    assert.strictEqual(children.length, 3);
+    // Should be sorted by notePosition: 0, 1, 2
+    assert.strictEqual(children[0].note.noteId, 'c2');
+    assert.strictEqual(children[0].note.title, 'Second');
+    assert.strictEqual(children[1].note.noteId, 'c1');
+    assert.strictEqual(children[1].note.title, 'First');
+    assert.strictEqual(children[2].note.noteId, 'c3');
+    assert.strictEqual(children[2].note.title, 'Third');
   });
 
   it('exposes the client via getClient', () => {

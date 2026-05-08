@@ -801,12 +801,33 @@ export class NoteTreeProvider implements vscode.TreeDataProvider<NoteItem>, vsco
         return [];
       }
 
-      const children = await Promise.all(
-        parent.childNoteIds.map((id) => this.client!.getNote(id)),
+      const childEntries = await Promise.all(
+        parent.childNoteIds.map(async (childNoteId, index) => {
+          const branchId = parent.childBranchIds[index];
+          const [note, branch] = await Promise.all([
+            this.client!.getNote(childNoteId),
+            branchId ? this.client!.getBranch(branchId) : Promise.resolve(undefined),
+          ]);
+
+          return {
+            note,
+            branchId,
+            notePosition: branch?.notePosition ?? Number.MAX_SAFE_INTEGER,
+            originalIndex: index,
+          };
+        }),
       );
 
-      const items = children.map((n, i) =>
-        new NoteItem(n, `${parentPath}/${n.noteId}`, parent.childBranchIds[i], this.boxiconsSvgRoot));
+      childEntries.sort((left, right) => {
+        if (left.notePosition !== right.notePosition) {
+          return left.notePosition - right.notePosition;
+        }
+
+        return left.originalIndex - right.originalIndex;
+      });
+
+      const items = childEntries.map(({ note, branchId }) =>
+        new NoteItem(note, `${parentPath}/${note.noteId}`, branchId, this.boxiconsSvgRoot));
       this.log(`getChildren(${noteId}): ${items.length} items`);
       items.forEach((item) =>
         this.log(`  ${item.note.noteId} "${item.note.title}" type=${item.note.type} contextValue="${item.contextValue}"`),

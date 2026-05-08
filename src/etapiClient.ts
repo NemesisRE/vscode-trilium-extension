@@ -360,6 +360,10 @@ export class EtapiClient {
     return this.jsonRequest<Branch>('PATCH', `/branches/${branchId}`, patch);
   }
 
+  async getBranch(branchId: string): Promise<Branch> {
+    return this.jsonRequest<Branch>('GET', `/branches/${branchId}`);
+  }
+
   async deleteBranch(branchId: string): Promise<void> {
     return this.jsonRequest<void>('DELETE', `/branches/${branchId}`);
   }
