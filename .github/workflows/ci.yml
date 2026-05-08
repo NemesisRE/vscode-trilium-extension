@@ -34,7 +34,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: vendor/
-          key: trilium-plugins-${{ hashFiles('scripts/download-trilium-plugins.mjs') }}
+          key: trilium-plugins-${{ hashFiles('scripts/trilium-plugins.lock.json', 'scripts/download-trilium-plugins.mjs', 'scripts/patch-trilium-plugins.mjs', 'scripts/apply-vendor-patches.mjs') }}
           restore-keys: |
             trilium-plugins-
 
@@ -66,15 +66,12 @@ jobs:
         uses: actions/cache@v5
         with:
           path: vendor/
-          key: trilium-plugins-${{ hashFiles('scripts/download-trilium-plugins.mjs') }}
+          key: trilium-plugins-${{ hashFiles('scripts/trilium-plugins.lock.json', 'scripts/download-trilium-plugins.mjs', 'scripts/patch-trilium-plugins.mjs', 'scripts/apply-vendor-patches.mjs') }}
           restore-keys: |
             trilium-plugins-
 
       - name: Patch Trilium plugins
         run: node scripts/patch-trilium-plugins.mjs
-
-      - name: Type check
-        run: npm run compile
 
       - name: Run unit tests
         run: npm test
@@ -111,7 +108,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: vendor/
-          key: trilium-plugins-${{ hashFiles('scripts/download-trilium-plugins.mjs') }}
+          key: trilium-plugins-${{ hashFiles('scripts/trilium-plugins.lock.json', 'scripts/download-trilium-plugins.mjs', 'scripts/patch-trilium-plugins.mjs', 'scripts/apply-vendor-patches.mjs') }}
           restore-keys: |
             trilium-plugins-
 

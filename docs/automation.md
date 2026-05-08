@@ -2,7 +2,7 @@
 
 ## GitHub Copilot Chat
 
-The extension registers five Language Model Tools that Copilot Chat discovers automatically. Once the extension is connected, you can ask Copilot to search, read, create, or import notes directly.
+The extension registers seven Language Model Tools that Copilot Chat discovers automatically. Once the extension is connected, you can ask Copilot to search, read, create, import, replace, or append note content directly.
 
 Example prompts:
 
@@ -11,6 +11,8 @@ Example prompts:
 > *"Search my Trilium notes for anything about Kubernetes."*
 > *"What does my 'Project Overview' note say?"*
 > *"List the children of the root note."*
+> *"Rewrite note abc123 with this updated section."*
+> *"Append today's meeting summary to note abc123."*
 
 ### Available Tools
 
@@ -21,6 +23,8 @@ Example prompts:
 | `trilium_searchNotes` | Full-text search that returns note ID, title, type, and parent for each match. |
 | `trilium_readNote` | Read a note's content by note ID with HTML stripped to plain text. |
 | `trilium_listChildren` | List the direct children of a note by note ID. |
+| `trilium_updateNoteContent` | Replace the full content of an existing note by note ID. |
+| `trilium_appendToNote` | Append content to an existing note, with an optional separator. |
 
 ### Content Format Guidelines
 

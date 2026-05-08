@@ -1,0 +1,90 @@
+name: Update Trilium Plugin Ref
+
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: update-trilium-plugin-ref
+  cancel-in-progress: true
+
+jobs:
+  update-ref:
+    name: Update locked Trilium ref
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Resolve latest Trilium release commit
+        id: latest
+        run: |
+          set -euo pipefail
+          RELEASE_TAG="$(curl -sSfL https://api.github.com/repos/TriliumNext/Trilium/releases/latest | jq -r '.tag_name')"
+          if [[ -z "$RELEASE_TAG" || "$RELEASE_TAG" == "null" ]]; then
+            echo "Could not resolve latest Trilium release tag" >&2
+            exit 1
+          fi
+
+          REF_JSON="$(curl -sSfL "https://api.github.com/repos/TriliumNext/Trilium/git/ref/tags/${RELEASE_TAG}")"
+          REF_TYPE="$(jq -r '.object.type' <<<"$REF_JSON")"
+          REF_SHA="$(jq -r '.object.sha' <<<"$REF_JSON")"
+
+          if [[ "$REF_TYPE" == "tag" ]]; then
+            TAG_JSON="$(curl -sSfL "https://api.github.com/repos/TriliumNext/Trilium/git/tags/${REF_SHA}")"
+            SHA="$(jq -r '.object.sha' <<<"$TAG_JSON")"
+          else
+            SHA="$REF_SHA"
+          fi
+
+          if [[ -z "$SHA" || "$SHA" == "null" ]]; then
+            echo "Could not resolve release commit SHA for tag ${RELEASE_TAG}" >&2
+            exit 1
+          fi
+
+          echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Read current locked ref
+        id: current
+        run: |
+          set -euo pipefail
+          CURRENT="$(node -p "require('./scripts/trilium-plugins.lock.json').ref")"
+          echo "sha=$CURRENT" >> "$GITHUB_OUTPUT"
+
+      - name: Update lock file
+        if: steps.latest.outputs.sha != steps.current.outputs.sha
+        run: |
+          set -euo pipefail
+          LATEST_SHA='${{ steps.latest.outputs.sha }}'
+          node -e "const fs=require('fs');const p='scripts/trilium-plugins.lock.json';const d=JSON.parse(fs.readFileSync(p,'utf8'));d.ref=process.env.LATEST_SHA;fs.writeFileSync(p,JSON.stringify(d,null,2)+'\\n');"
+        env:
+          LATEST_SHA: ${{ steps.latest.outputs.sha }}
+
+      - name: Create pull request
+        if: steps.latest.outputs.sha != steps.current.outputs.sha
+        uses: peter-evans/create-pull-request@v8.1.1
+        with:
+          commit-message: 'chore(dependencies): update Trilium plugin ref to ${{ steps.latest.outputs.sha }}'
+          branch: chore/update-trilium-plugin-ref
+          delete-branch: true
+          title: 'chore(dependencies): update Trilium plugin ref'
+          body: |
+            Automated daily update of the vendored Trilium plugin lock ref.
+
+            - Release tag: `${{ steps.latest.outputs.tag }}`
+            - Previous ref: `${{ steps.current.outputs.sha }}`
+            - New ref: `${{ steps.latest.outputs.sha }}`
+            - File: `scripts/trilium-plugins.lock.json`
+          labels: |
+            dependencies
+
+      - name: No update needed
+        if: steps.latest.outputs.sha == steps.current.outputs.sha
+        run: echo "Lock file is already up to date."
