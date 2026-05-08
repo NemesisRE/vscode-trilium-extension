@@ -18,6 +18,13 @@ export class VirtualDocumentProvider implements vscode.TextDocumentContentProvid
 
   constructor(private readonly getClient: () => EtapiClient | undefined) {}
 
+  private disconnectedPlaceholder(noteId: string): string {
+    return [
+      '<p><strong>Trilium is not connected.</strong></p>',
+      `<p>This restored editor tab (noteId: <code>${noteId}</code>) will load automatically after you reconnect.</p>`,
+    ].join('');
+  }
+
   /**
    * Provide the initial content for a virtual document.
    * Content is fetched from Trilium via ETAPI.
@@ -30,7 +37,8 @@ export class VirtualDocumentProvider implements vscode.TextDocumentContentProvid
 
     const client = this.getClient();
     if (!client) {
-      throw new Error('Trilium: Not connected.');
+      const noteId = uri.path.substring(1);
+      return this.disconnectedPlaceholder(noteId || 'unknown');
     }
 
     const noteId = uri.path.substring(1); // Remove leading '/'
