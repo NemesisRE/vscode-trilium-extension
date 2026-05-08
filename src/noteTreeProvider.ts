@@ -560,6 +560,63 @@ export class NoteTreeProvider implements vscode.TreeDataProvider<NoteItem>, vsco
     this._onDidChangeTreeData.fire();
   }
 
+  async findItemByNoteId(noteId: string): Promise<NoteItem | undefined> {
+    if (!this.client || this.filter) {
+      return undefined;
+    }
+
+    const pathParts = await this.pathPartsFromRoot(noteId);
+    if (!pathParts) {
+      return undefined;
+    }
+
+    const note = await this.client.getNote(noteId);
+    const branchId = await this.resolveBranchIdForPath(pathParts);
+    return new NoteItem(note, pathParts.join('/'), branchId, this.boxiconsSvgRoot);
+  }
+
+  private async pathPartsFromRoot(noteId: string): Promise<string[] | undefined> {
+    if (!this.client) {
+      return undefined;
+    }
+
+    const rootId = getRootNoteId();
+    const reversedPath: string[] = [];
+    const visited = new Set<string>();
+    let currentId = noteId;
+
+    while (true) {
+      if (visited.has(currentId)) {
+        return undefined;
+      }
+      visited.add(currentId);
+      reversedPath.push(currentId);
+
+      if (currentId === rootId) {
+        return reversedPath.reverse();
+      }
+
+      const current = await this.client.getNote(currentId);
+      const parentId = current.parentNoteIds[0];
+      if (!parentId) {
+        return undefined;
+      }
+      currentId = parentId;
+    }
+  }
+
+  private async resolveBranchIdForPath(pathParts: string[]): Promise<string | undefined> {
+    if (!this.client || pathParts.length < 2) {
+      return undefined;
+    }
+
+    const noteId = pathParts[pathParts.length - 1];
+    const parentId = pathParts[pathParts.length - 2];
+    const parent = await this.client.getNote(parentId);
+    const childIndex = parent.childNoteIds.indexOf(noteId);
+    return childIndex >= 0 ? parent.childBranchIds[childIndex] : undefined;
+  }
+
   handleDrag(
     source: readonly NoteItem[],
     dataTransfer: vscode.DataTransfer,
@@ -690,6 +747,24 @@ export class NoteTreeProvider implements vscode.TreeDataProvider<NoteItem>, vsco
 
   getTreeItem(element: NoteItem): vscode.TreeItem {
     return element;
+  }
+
+  async getParent(element: NoteItem): Promise<NoteItem | undefined> {
+    if (!this.client || this.filter) {
+      return undefined;
+    }
+
+    const pathParts = element.path.split('/').filter(Boolean);
+    if (pathParts.length <= 1) {
+      return undefined;
+    }
+
+    const parentPathParts = pathParts.slice(0, -1);
+    const parentId = parentPathParts[parentPathParts.length - 1];
+    const parent = await this.client.getNote(parentId);
+    const parentBranchId = await this.resolveBranchIdForPath(parentPathParts);
+
+    return new NoteItem(parent, parentPathParts.join('/'), parentBranchId, this.boxiconsSvgRoot);
   }
 
   async resolveTreeItem(

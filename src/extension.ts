@@ -198,6 +198,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     treeView.description = info ? `Trilium v${info.appVersion}` : 'Not connected';
   }
 
+  async function refreshOpenVirtualEditorsAfterReconnect(): Promise<void> {
+    const client = treeProvider.getClient();
+    if (!client) {
+      return;
+    }
+
+    const openVirtualDocs = vscode.workspace.textDocuments.filter((doc) => doc.uri.scheme === 'trilium-text');
+    await Promise.all(openVirtualDocs.map(async (doc) => {
+      const noteId = doc.uri.path.substring(1);
+      if (!noteId) {
+        return;
+      }
+      try {
+        const content = await client.getNoteContent(noteId);
+        virtualDocProvider.updateContent(doc.uri, content);
+      } catch {
+        // Keep existing content for docs that still cannot be fetched.
+      }
+    }));
+  }
+
   const treeView = vscode.window.createTreeView('triliumNoteTree', {
     treeDataProvider: treeProvider,
     dragAndDropController: treeProvider,
@@ -272,6 +293,57 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
       }),
 
+    vscode.commands.registerCommand('trilium.revealInTree', async (item?: NoteItem) => {
+      const noteId = item?.note.noteId ?? getActiveNoteId(tempFileManager);
+      if (!noteId) {
+        void vscode.window.showWarningMessage(
+          'Trilium: No active Trilium note found to reveal.',
+        );
+        return;
+      }
+
+      try {
+        const revealed = await revealNoteInTree(noteId, treeProvider, treeView);
+        if (!revealed) {
+          void vscode.window.showWarningMessage(
+            'Trilium: Could not reveal note in tree (note may be outside current root/filter).',
+          );
+        }
+      } catch (err) {
+        void vscode.window.showErrorMessage(`Trilium: Failed to reveal note in tree: ${err}`);
+      }
+    }),
+
+    vscode.commands.registerCommand('trilium.openParent', async (item?: NoteItem) => {
+      const client = treeProvider.getClient();
+      if (!client) {
+        void vscode.window.showErrorMessage('Trilium: Not connected.');
+        return;
+      }
+
+      const noteId = item?.note.noteId ?? getActiveNoteId(tempFileManager);
+      if (!noteId) {
+        void vscode.window.showWarningMessage(
+          'Trilium: No active Trilium note found to open its parent.',
+        );
+        return;
+      }
+
+      try {
+        const source = item?.note ?? await client.getNote(noteId);
+        const parentId = source.parentNoteIds[0];
+        if (!parentId) {
+          void vscode.window.showInformationMessage('Trilium: This note has no parent.');
+          return;
+        }
+
+        const parent = await client.getNote(parentId);
+        await openNoteInEditor(parent, client, tempFileManager, virtualDocProvider);
+      } catch (err) {
+        void vscode.window.showErrorMessage(`Trilium: Failed to open parent note: ${err}`);
+      }
+    }),
+
     vscode.commands.registerCommand('trilium.refresh', () => {
       virtualDocProvider.clearAllCache();
       treeProvider.refresh();
@@ -285,6 +357,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       attributesProvider.setClient(treeProvider.getClient());
       ensureBacklinksView();
       virtualDocProvider.clearAllCache();
+      if (info) {
+        await refreshOpenVirtualEditorsAfterReconnect();
+      }
     }),
 
     vscode.commands.registerCommand('trilium.reconnect', async () => {
@@ -295,6 +370,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       attributesProvider.setClient(treeProvider.getClient());
       ensureBacklinksView();
       virtualDocProvider.clearAllCache();
+      if (info) {
+        await refreshOpenVirtualEditorsAfterReconnect();
+      }
     }),
 
     vscode.commands.registerCommand('trilium.createNote', async (item?: NoteItem) => {
@@ -1837,6 +1915,63 @@ async function openNoteInEditor(
   const doc = await vscode.workspace.openTextDocument(filePath);
   await vscode.languages.setTextDocumentLanguage(doc, tempFileManager.getLanguageId(note));
   await vscode.window.showTextDocument(doc, { preview: false });
+}
+
+function noteIdFromUri(uri: vscode.Uri, tempFileManager: TempFileManager): string | undefined {
+  if (uri.scheme === 'trilium-text') {
+    const query = new URLSearchParams(uri.query);
+    return query.get('noteId') ?? undefined;
+  }
+
+  if (uri.scheme === 'file') {
+    return tempFileManager.getNoteIdForPath(uri.fsPath);
+  }
+
+  return undefined;
+}
+
+function getActiveNoteId(tempFileManager: TempFileManager): string | undefined {
+  const activeEditorUri = vscode.window.activeTextEditor?.document.uri;
+  if (activeEditorUri) {
+    const fromEditor = noteIdFromUri(activeEditorUri, tempFileManager);
+    if (fromEditor) {
+      return fromEditor;
+    }
+  }
+
+  const activeTab = vscode.window.tabGroups.activeTabGroup.activeTab;
+  if (!activeTab) {
+    return undefined;
+  }
+
+  if (activeTab.input instanceof vscode.TabInputText) {
+    return noteIdFromUri(activeTab.input.uri, tempFileManager);
+  }
+
+  if (activeTab.input instanceof vscode.TabInputCustom) {
+    return noteIdFromUri(activeTab.input.uri, tempFileManager);
+  }
+
+  return undefined;
+}
+
+async function revealNoteInTree(
+  noteId: string,
+  treeProvider: NoteTreeProvider,
+  treeView: vscode.TreeView<NoteItem>,
+): Promise<boolean> {
+  const item = await treeProvider.findItemByNoteId(noteId);
+  if (!item) {
+    return false;
+  }
+
+  await vscode.commands.executeCommand('triliumNoteTree.focus');
+  await treeView.reveal(item, {
+    select: true,
+    focus: true,
+    expand: 3,
+  });
+  return true;
 }
 
 // ---------------------------------------------------------------------------

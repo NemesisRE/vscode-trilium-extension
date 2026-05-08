@@ -308,6 +308,18 @@
         "command": "trilium.openNoteById",
         "title": "Open Note by ID (internal)",
         "category": "Trilium"
+      },
+      {
+        "command": "trilium.revealInTree",
+        "title": "Reveal Note in Tree",
+        "icon": "$(list-tree)",
+        "category": "Trilium"
+      },
+      {
+        "command": "trilium.openParent",
+        "title": "Open Parent Note",
+        "icon": "$(arrow-up)",
+        "category": "Trilium"
       }
     ],
     "submenus": [
@@ -559,6 +571,30 @@
           "command": "trilium.exportSubtree",
           "when": "viewItem =~ /^note(Text|Code|File|External)$/",
           "group": "3_history@4"
+        }
+      ],
+      "editor/title/context": [
+        {
+          "command": "trilium.revealInTree",
+          "when": "resourceScheme == trilium-text",
+          "group": "navigation@20"
+        },
+        {
+          "command": "trilium.openParent",
+          "when": "resourceScheme == trilium-text",
+          "group": "navigation@21"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "trilium.revealInTree",
+          "when": "resourceScheme == trilium-text",
+          "group": "navigation@20"
+        },
+        {
+          "command": "trilium.openParent",
+          "when": "resourceScheme == trilium-text",
+          "group": "navigation@21"
         }
       ]
     },

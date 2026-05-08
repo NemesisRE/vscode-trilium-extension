@@ -36,20 +36,47 @@ This roadmap is a working list of improvements and ideas, not a strict milestone
 - Open notes are now silently refreshed when changed externally on the Trilium server. Controlled by `trilium.autoRefreshIntervalSeconds` (default 30 s, 0 = disabled); clean documents are updated automatically, dirty documents are left untouched.
 - The text-note editor breadcrumb is now clickable, so parent-path navigation can open any ancestor note directly from the editor header.
 - Added lightweight backlinks support: a dedicated Backlinks sidebar view for the currently selected/opened note plus an in-editor backlinks count badge in the breadcrumb header.
+- Added "Reveal in Tree" and "Open Parent" editor navigation actions (available in editor title bar, tab context menu, and tree context menu) to speed up large-tree navigation; both commands work with all editor types (CKEditor, code, canvas, mermaid, mind-map).
+- Fixed stale-cache reopen resilience: restored text-note editor tabs no longer throw errors on startup when disconnected. Instead, they show a safe placeholder and auto-refresh once reconnected, with automatic content fetch and update. Added unit test coverage for disconnected provider path.
 
-## Editor Polish
+## Next Priorities
 
-- Render math elements visually as math instead of exposing raw LaTeX where possible.
+These are the most useful and needed improvements based on current capabilities and known limitations.
 
-## Richer Views
+### Editing Fidelity and Format Safety
 
-- Add a calendar view for notes that use `viewType=calendar`.
-- Fix mind map support so mind map notes open in a native format for the MindElixir extension instead of round-tripping through Markdown.
+- Implement true native mind-map editing for `mindMap` notes so the extension opens and saves MindElixir JSON directly (no Markdown round-trip and no metadata loss for node styles, colors, or layout).
+- Add visual math rendering in text notes while preserving stable source editing and save fidelity.
+- Support CKEditor image upload by routing inserted images into Trilium attachments, then linking them back into the note HTML automatically.
 
-## Visual Fidelity with Trilium
+### Reliability and Conflict Handling
 
-- Continue improving icon, color, and note-type presentation so the tree more closely matches Trilium itself.
+- Extend server-first save + conflict tooling beyond text notes to all editable note types where safe and applicable.
+- **Done (stale-cache reopen).** Restored editors no longer throw errors when disconnected; placeholder content is shown and auto-refreshed after reconnect with automatic content fetch and display update.
+- Improve refresh robustness for intermittent ETAPI/network failures with clearer retry UX and operation-specific recovery messages.
 
-## Reliability and UX
+### Trilium Compatibility and UX Parity
 
-- Extend native-style dirty-state and conflict handling consistency from text notes to all editable note types.
+- Add a calendar note view for notes using `viewType=calendar`.
+- Continue improving visual parity with Trilium for icon, color, and note-type presentation details.
+- Improve protected-note handling UX: clearly communicate lock/protection state in editors and provide guided actions when protected sessions are required.
+
+### Tree and Navigation Workflows
+
+- Add optional "Reveal in Tree" and "Open Parent" actions from editor context to speed up large-tree navigation.
+  - **Done.** `trilium.revealInTree` and `trilium.openParent` commands are registered and appear in the editor title bar (for CKEditor text notes), the editor tab context menu, and the tree's right-click context menu. Both commands also resolve the active note from temp-file-backed editors (code, canvas, mermaid, mind-map), so they work regardless of which editor type is in focus.
+
+- Improve large-tree responsiveness (incremental load/refresh strategy, reduced redundant note fetches, and fewer full-tree redraws).
+- Extend recent-notes workflow with optional pinning and jump actions for frequently revisited notes.
+
+### Copilot and Automation Tools
+
+- Add write-safe LM tools for common operations (rename, move, update attributes, append to note) with explicit confirmation boundaries.
+- Add optional search modes for LM tools (title-only vs full-text, scoped subtree search).
+- Improve LM tool output structure for downstream automation (stable IDs, parent-path metadata, and consistent result blocks).
+
+### Quality, Tests, and Documentation
+
+- Expand automated coverage for conflict resolution, auto-refresh behavior, drag-and-drop move/reorder, and code-note MIME/extension mapping.
+- Add regression tests for stale-cache reopen and network-retry flows.
+- Keep docs synchronized with shipped settings/commands (including new refresh, recent-notes, and backlinks behaviors) and call out compatibility caveats clearly.

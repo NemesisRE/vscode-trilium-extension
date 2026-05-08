@@ -108,6 +108,12 @@ describe('TempFileManager', () => {
         : p[0].toUpperCase() + p.slice(1);
       assert.strictEqual(manager.getNoteIdForPath(flipped), 'caseTest');
     });
+
+    it('returns the noteId for a text-editor temp path', () => {
+      const note = makeNote({ noteId: 'editorNote1' });
+      const p = manager.getTextEditorTempPath(note);
+      assert.strictEqual(manager.getNoteIdForPath(p), 'editorNote1');
+    });
   });
 
   describe('getLanguageId', () => {

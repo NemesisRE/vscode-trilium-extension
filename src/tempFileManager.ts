@@ -148,7 +148,9 @@ export class TempFileManager {
 
   getNoteIdForPath(filePath: string): string | undefined {
     const normalized = this.normalize(filePath);
-    return this.noteIdByPath.get(normalized) ?? this.htmlNoteIdByPath.get(normalized);
+    return this.noteIdByPath.get(normalized)
+      ?? this.htmlNoteIdByPath.get(normalized)
+      ?? this.textEditorNoteIdByPath.get(normalized);
   }
 
   getLanguageId(note: Note): string {
