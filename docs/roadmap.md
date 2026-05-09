@@ -54,6 +54,7 @@ These are the most useful and needed improvements based on current capabilities 
 - Extend server-first save + conflict tooling beyond text notes to all editable note types where safe and applicable.
 - **Done (stale-cache reopen).** Restored editors no longer throw errors when disconnected; placeholder content is shown and auto-refreshed after reconnect with automatic content fetch and display update.
 - Improve refresh robustness for intermittent ETAPI/network failures with clearer retry UX and operation-specific recovery messages.
+- Fix dirty-state regression for text notes: unsaved edits must reliably mark tabs as changed and remain protected by native unsaved-close behavior, so closing a tab cannot silently discard edits.
 
 ### Trilium Compatibility and UX Parity
 
