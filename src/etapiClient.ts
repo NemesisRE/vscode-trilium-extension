@@ -410,6 +410,26 @@ export class EtapiClient {
     return this.jsonRequest<void>('DELETE', `/attachments/${attachmentId}`);
   }
 
+  async putAttachmentContentBinary(attachmentId: string, content: Uint8Array, mime: string): Promise<void> {
+    const response = await fetch(`${this.baseUrl()}/attachments/${attachmentId}/content`, {
+      method: 'PUT',
+      headers: {
+        ...this.authHeaders(),
+        'Content-Type': 'application/octet-stream',
+        'Content-Transfer-Encoding': 'binary',
+      },
+      body: content,
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => '');
+      throw new EtapiError(
+        `Failed to update attachment content ${attachmentId}: ${response.status} ${text}`,
+        response.status,
+      );
+    }
+  }
+
   // ---------------------------------------------------------------------------
   // Export subtree  (Phase 5d)
   // ---------------------------------------------------------------------------
