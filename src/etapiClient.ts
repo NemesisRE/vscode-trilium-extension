@@ -411,7 +411,7 @@ export class EtapiClient {
   }
 
   async putAttachmentContentBinary(attachmentId: string, content: Uint8Array, mime: string): Promise<void> {
-    const body = content.buffer.slice(content.byteOffset, content.byteOffset + content.byteLength);
+    const body = new Blob([content], { type: mime });
     const response = await fetch(`${this.baseUrl()}/attachments/${attachmentId}/content`, {
       method: 'PUT',
       headers: {
