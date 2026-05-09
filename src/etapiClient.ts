@@ -118,6 +118,10 @@ export class EtapiClient {
     private readonly token: string,
   ) {}
 
+  private static toArrayBuffer(content: Uint8Array): ArrayBuffer {
+    return content.buffer.slice(content.byteOffset, content.byteOffset + content.byteLength) as ArrayBuffer;
+  }
+
   getServerUrl(): string { return this.serverUrl; }
   getToken(): string { return this.token; }
 
@@ -410,8 +414,8 @@ export class EtapiClient {
     return this.jsonRequest<void>('DELETE', `/attachments/${attachmentId}`);
   }
 
-  async putAttachmentContentBinary(attachmentId: string, content: Uint8Array, mime: string): Promise<void> {
-    const body = new Blob([content], { type: mime });
+  async putAttachmentContentBinary(attachmentId: string, content: Uint8Array): Promise<void> {
+    const body = EtapiClient.toArrayBuffer(content);
     const response = await fetch(`${this.baseUrl()}/attachments/${attachmentId}/content`, {
       method: 'PUT',
       headers: {

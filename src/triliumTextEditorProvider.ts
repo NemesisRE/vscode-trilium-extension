@@ -418,7 +418,7 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
 
     const attachment = await client.createAttachment(noteId, 'image', mime, filename, '');
     const binary = Buffer.from(dataBase64, 'base64');
-    await client.putAttachmentContentBinary(attachment.attachmentId, binary, mime);
+    await client.putAttachmentContentBinary(attachment.attachmentId, binary);
     return 'api/attachments/' + attachment.attachmentId + '/image/' + encodeURIComponent(filename);
   }
 
