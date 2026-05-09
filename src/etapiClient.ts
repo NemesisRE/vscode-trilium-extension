@@ -411,6 +411,7 @@ export class EtapiClient {
   }
 
   async putAttachmentContentBinary(attachmentId: string, content: Uint8Array, mime: string): Promise<void> {
+    const body = content.buffer.slice(content.byteOffset, content.byteOffset + content.byteLength);
     const response = await fetch(`${this.baseUrl()}/attachments/${attachmentId}/content`, {
       method: 'PUT',
       headers: {
@@ -418,7 +419,7 @@ export class EtapiClient {
         'Content-Type': 'application/octet-stream',
         'Content-Transfer-Encoding': 'binary',
       },
-      body: content,
+      body,
     });
 
     if (!response.ok) {
