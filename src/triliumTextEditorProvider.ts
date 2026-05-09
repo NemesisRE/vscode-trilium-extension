@@ -5,12 +5,12 @@ import { getEditorFontSize, getEditorHighlightTheme, getEditorSpellcheck } from 
 
 /**
  * CustomTextEditorProvider for Trilium text notes using CKEditor 5.
- * 
+ *
  * This provider opens Trilium HTML notes in a WYSIWYG CKEditor webview instead
  * of converting to Markdown. Changes are synced bidirectionally:
  * - CKEditor → TextDocument (enables Undo/Redo)
  * - TextDocument.save() → ETAPI PUT
- * 
+ *
  * Virtual document URI format:
  * trilium-text://trilium/noteId?title=Note+Title
  */
@@ -86,10 +86,23 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
     // Prevents the onDidChangeTextDocument listener from echoing the change
     // back to the webview and creating an infinite update loop.
     let pendingWebviewUpdate = false;
-    // Tracks the latest async edit coming from CKEditor so Save can wait for it.
-    let pendingDocumentUpdate: PromiseLike<unknown> = Promise.resolve();
+    // Tracks CKEditor-originated edits so they are applied serially.
+    let pendingDocumentUpdate: Promise<void> = Promise.resolve();
     // Avoid duplicate ETAPI sync when we trigger document.save() after a successful push.
     let suppressNextDidSaveSync = false;
+
+    const queueDocumentUpdate = (content: string): void => {
+      pendingDocumentUpdate = pendingDocumentUpdate
+        .catch(() => undefined)
+        .then(async () => {
+          pendingWebviewUpdate = true;
+          try {
+            await this.updateTextDocument(document, content);
+          } finally {
+            pendingWebviewUpdate = false;
+          }
+        });
+    };
 
     // Extract the note ID from the virtual document URI so the breadcrumb can
     // walk the parent chain once the webview is ready.
@@ -116,12 +129,7 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
 
         case 'contentChanged':
           // CKEditor content changed - update the document
-          pendingWebviewUpdate = true;
-          pendingDocumentUpdate = this.updateTextDocument(document, message.content).then(() => {
-            pendingWebviewUpdate = false;
-          }, () => {
-            pendingWebviewUpdate = false;
-          });
+          queueDocumentUpdate(message.content);
           break;
 
         case 'save':
@@ -150,6 +158,22 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
             void webviewPanel.webview.postMessage({ type: 'imageFetchResult', id, dataUri });
           }).catch(() => {
             void webviewPanel.webview.postMessage({ type: 'imageFetchResult', id, error: 'fetch failed' });
+          });
+          break;
+        }
+        case 'uploadImage': {
+          const { id: uploadId, filename, mime: uploadMime, dataBase64 } = message as {
+            type: string; id: string; filename: string; mime: string; dataBase64: string;
+          };
+          void this.uploadImageAsAttachment(noteId, filename, uploadMime, dataBase64).then(url => {
+            void webviewPanel.webview.postMessage({
+              type: 'imageUploadResult',
+              id: uploadId,
+              url,
+              dataUri: `data:${uploadMime};base64,${dataBase64}`,
+            });
+          }).catch((err: unknown) => {
+            void webviewPanel.webview.postMessage({ type: 'imageUploadResult', id: uploadId, error: String(err) });
           });
           break;
         }
@@ -383,6 +407,21 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
     return `data:${mime};base64,${base64}`;
   }
 
+  private async uploadImageAsAttachment(
+    noteId: string,
+    filename: string,
+    mime: string,
+    dataBase64: string,
+  ): Promise<string> {
+    const client = this.getClient();
+    if (!client) { throw new Error('Not connected'); }
+
+    const attachment = await client.createAttachment(noteId, 'image', mime, filename, '');
+    const binary = Buffer.from(dataBase64, 'base64');
+    await client.putAttachmentContentBinary(attachment.attachmentId, binary);
+    return 'api/attachments/' + attachment.attachmentId + '/image/' + encodeURIComponent(filename);
+  }
+
   private async sendBreadcrumb(panel: vscode.WebviewPanel, noteId: string): Promise<void> {
     const client = this.getClient();
     if (!client) { return; }
@@ -448,7 +487,7 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
         'ckeditor.js',
       ),
     );
-    
+
     const ckeditorCssUri = webview.asWebviewUri(
       vscode.Uri.joinPath(
         this.context.extensionUri,
@@ -785,7 +824,7 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
         background-color: #f2f2f2;
         font-weight: bold;
       }
-      
+
       /* Admonition type-specific colors (uses aside.admonition.TYPE) */
       .ck-content aside.admonition {
         border-left: 4px solid;
@@ -813,7 +852,7 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
         border-left-color: #cf222e;
         background-color: rgba(207, 34, 46, 0.1);
       }
-      
+
       /* Dropdown preview colors for admonition types */
       .ck-tn-admonition-note .ck-button__label::before {
         content: "● ";
@@ -845,7 +884,7 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
         font-weight: bold;
         margin-right: 4px;
       }
-      
+
       /* Background colors for admonition dropdown items */
       .ck-tn-admonition-note {
         background-color: rgba(9, 105, 218, 0.08) !important;
@@ -877,7 +916,7 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
       .ck-tn-admonition-warning:hover {
         background-color: rgba(207, 34, 46, 0.15) !important;
       }
-      
+
       /* Code block styling to match VS Code theme, including Trilium-style
          marker-based syntax highlighting in the editing view. */
       .ck-content pre {
@@ -997,15 +1036,17 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
 <body data-hljs-theme="${highlightTheme}">
     <div id="breadcrumb"></div>
     <div id="editor-container"></div>
-    
+
     <script type="module" nonce="${nonce}">
       import { TriliumEditor } from '${ckeditorUri}';
-      
+
       (function() {
         const vscode = acquireVsCodeApi();
         let editor;
         let isUpdatingFromExtension = false;
         const pendingImageFetches = new Map();
+        const pendingUploads = new Map();
+        const uploadedImageUrlByDataUri = new Map();
 
         const triliumToLocalLanguageMap = {
           'text-plain': 'plaintext',
@@ -1165,6 +1206,28 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
           return doc.body.innerHTML;
         }
 
+        function normalizeOutgoingImageSources(html) {
+          if (!html || typeof html !== 'string') {
+            return html;
+          }
+
+          const doc = new DOMParser().parseFromString(html, 'text/html');
+          let changed = false;
+
+          for (const img of doc.querySelectorAll('img[src]')) {
+            const src = img.getAttribute('src') ?? '';
+            const mapped = uploadedImageUrlByDataUri.get(src);
+            if (!mapped) {
+              continue;
+            }
+
+            img.setAttribute('src', mapped);
+            changed = true;
+          }
+
+          return changed ? doc.body.innerHTML : html;
+        }
+
         // Initialize TriliumEditor (custom CKEditor build with Trilium plugins)
         TriliumEditor
           .create(document.querySelector('#editor-container'), {
@@ -1247,9 +1310,8 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
             },
             image: {
               toolbar: [
-                'imageStyle:inline', 'imageStyle:alignCenter',
-                '|', 'imageResize:50', 'imageResize:75', 'imageResize:original',
-                '|', 'toggleImageCaption', 'imageTextAlternative'
+                'imageStyle:inline', 'imageStyle:block', 'imageStyle:side',
+                '|', 'toggleImageCaption', 'imageTextAlternative', 'linkImage'
               ]
             },
             link: {
@@ -1348,7 +1410,9 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
               if (isUpdatingFromExtension) {
                 return;
               }
-              const content = normalizeOutgoingCodeBlockLanguages(editor.getData());
+              const content = normalizeOutgoingImageSources(
+                normalizeOutgoingCodeBlockLanguages(editor.getData())
+              );
               vscode.postMessage({
                 type: 'contentChanged',
                 content: content
@@ -1363,6 +1427,51 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
               }
             });
 
+            // Route image uploads through the extension host to Trilium attachments.
+            editor.plugins.get('FileRepository').createUploadAdapter = (loader) => {
+              return {
+                upload() {
+                  return loader.file.then(file => {
+                    return new Promise((resolve, reject) => {
+                      const uploadId = Math.random().toString(36).slice(2);
+                      pendingUploads.set(uploadId, { resolve, reject });
+                      const reader = new FileReader();
+                      reader.onload = (e) => {
+                        const dataUrl = e.target?.result;
+                        if (typeof dataUrl !== 'string') {
+                          pendingUploads.delete(uploadId);
+                          reject(new Error('Failed to read image file'));
+                          return;
+                        }
+                        const comma = dataUrl.indexOf(',');
+                        if (comma < 0) {
+                          pendingUploads.delete(uploadId);
+                          reject(new Error('Failed to encode image file'));
+                          return;
+                        }
+                        const dataBase64 = dataUrl.slice(comma + 1);
+                        vscode.postMessage({
+                          type: 'uploadImage',
+                          id: uploadId,
+                          filename: file.name || 'image.png',
+                          mime: file.type || 'image/png',
+                          dataBase64,
+                        });
+                      };
+                      reader.onerror = () => {
+                        pendingUploads.delete(uploadId);
+                        reject(new Error('Failed to read image file'));
+                      };
+                      reader.readAsDataURL(file);
+                    });
+                  });
+                },
+                abort() {
+                  return Promise.resolve();
+                },
+              };
+            };
+
             // Signal ready
             vscode.postMessage({ type: 'ready' });
           })
@@ -1376,7 +1485,7 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
         // Handle messages from extension
         window.addEventListener('message', event => {
           const message = event.data;
-          
+
           switch (message.type) {
             case 'init':
             case 'update':
@@ -1425,6 +1534,21 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
               const img = pendingImageFetches.get(message.id);
               pendingImageFetches.delete(message.id);
               if (img && message.dataUri) { img.src = message.dataUri; }
+              break;
+            }
+            case 'imageUploadResult': {
+              const pending = pendingUploads.get(message.id);
+              pendingUploads.delete(message.id);
+              if (pending) {
+                if (message.url) {
+                  if (message.dataUri) {
+                    uploadedImageUrlByDataUri.set(message.dataUri, message.url);
+                  }
+                  pending.resolve({ default: message.dataUri });
+                } else {
+                  pending.reject(new Error(message.error || 'Upload failed'));
+                }
+              }
               break;
             }
           }

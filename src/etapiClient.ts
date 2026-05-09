@@ -118,6 +118,10 @@ export class EtapiClient {
     private readonly token: string,
   ) {}
 
+  private static toArrayBuffer(content: Uint8Array): ArrayBuffer {
+    return content.buffer.slice(content.byteOffset, content.byteOffset + content.byteLength) as ArrayBuffer;
+  }
+
   getServerUrl(): string { return this.serverUrl; }
   getToken(): string { return this.token; }
 
@@ -408,6 +412,27 @@ export class EtapiClient {
 
   async deleteAttachment(attachmentId: string): Promise<void> {
     return this.jsonRequest<void>('DELETE', `/attachments/${attachmentId}`);
+  }
+
+  async putAttachmentContentBinary(attachmentId: string, content: Uint8Array): Promise<void> {
+    const body = EtapiClient.toArrayBuffer(content);
+    const response = await fetch(`${this.baseUrl()}/attachments/${attachmentId}/content`, {
+      method: 'PUT',
+      headers: {
+        ...this.authHeaders(),
+        'Content-Type': 'application/octet-stream',
+        'Content-Transfer-Encoding': 'binary',
+      },
+      body,
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => '');
+      throw new EtapiError(
+        `Failed to update attachment content ${attachmentId}: ${response.status} ${text}`,
+        response.status,
+      );
+    }
   }
 
   // ---------------------------------------------------------------------------

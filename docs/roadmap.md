@@ -38,6 +38,7 @@ This roadmap is a working list of improvements and ideas, not a strict milestone
 - Added lightweight backlinks support: a dedicated Backlinks sidebar view for the currently selected/opened note plus an in-editor backlinks count badge in the breadcrumb header.
 - Added "Reveal in Tree" and "Open Parent" editor navigation actions (available in editor title bar, tab context menu, and tree context menu) to speed up large-tree navigation; both commands work with all editor types (CKEditor, code, canvas, mermaid, mind-map).
 - Fixed stale-cache reopen resilience: restored text-note editor tabs no longer throw errors on startup when disconnected. Instead, they show a safe placeholder and auto-refresh once reconnected, with automatic content fetch and update. Added unit test coverage for disconnected provider path.
+- CKEditor image upload now routes inserted images through the extension host into Trilium attachments, then links them back into the note HTML automatically using Trilium's native attachment URL format.
 
 ## Next Priorities
 
@@ -47,13 +48,13 @@ These are the most useful and needed improvements based on current capabilities 
 
 - Implement true native mind-map editing for `mindMap` notes so the extension opens and saves MindElixir JSON directly (no Markdown round-trip and no metadata loss for node styles, colors, or layout).
 - Add visual math rendering in text notes while preserving stable source editing and save fidelity.
-- Support CKEditor image upload by routing inserted images into Trilium attachments, then linking them back into the note HTML automatically.
 
 ### Reliability and Conflict Handling
 
 - Extend server-first save + conflict tooling beyond text notes to all editable note types where safe and applicable.
 - **Done (stale-cache reopen).** Restored editors no longer throw errors when disconnected; placeholder content is shown and auto-refreshed after reconnect with automatic content fetch and display update.
 - Improve refresh robustness for intermittent ETAPI/network failures with clearer retry UX and operation-specific recovery messages.
+- Fix dirty-state regression for text notes: unsaved edits must reliably mark tabs as changed and remain protected by native unsaved-close behavior, so closing a tab cannot silently discard edits.
 
 ### Trilium Compatibility and UX Parity
 
