@@ -18,17 +18,11 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
   public static readonly viewType = 'trilium.textEditor';
   private static readonly docMetaByUri = new Map<string, { noteId: string; title: string }>();
   private readonly syncedContentByUri = new Map<string, string>();
+  private readonly openPanelsByUri = new Map<string, Set<vscode.WebviewPanel>>();
+  private readonly openEditorMetaByUri = new Map<string, { uri: vscode.Uri; noteId: string }>();
   private readonly conflictTheirsByPath = new Map<string, string>();
 
   private static readonly openBreadcrumbCommand = 'trilium._openBreadcrumbNote';
-
-  public static setDocumentMetadata(uri: vscode.Uri, meta: { noteId: string; title: string }): void {
-    TriliumTextEditorProvider.docMetaByUri.set(uri.toString(), meta);
-  }
-
-  public static clearDocumentMetadata(uri: vscode.Uri): void {
-    TriliumTextEditorProvider.docMetaByUri.delete(uri.toString());
-  }
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -46,6 +40,50 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
         }
       }),
     );
+  }
+
+  public static setDocumentMetadata(uri: vscode.Uri, meta: { noteId: string; title: string }): void {
+    TriliumTextEditorProvider.docMetaByUri.set(uri.toString(), meta);
+  }
+
+  public static clearDocumentMetadata(uri: vscode.Uri): void {
+    TriliumTextEditorProvider.docMetaByUri.delete(uri.toString());
+  }
+
+  public pushContentToOpenEditor(uri: vscode.Uri, content: string): number {
+    const key = uri.toString();
+    this.syncedContentByUri.set(key, content);
+    const panels = this.openPanelsByUri.get(key);
+    if (!panels || panels.size === 0) {
+      return 0;
+    }
+    for (const panel of panels) {
+      void panel.webview.postMessage({
+        type: 'update',
+        content,
+      });
+    }
+    return panels.size;
+  }
+
+  public setTitleForOpenEditor(uri: vscode.Uri, title: string): number {
+    const key = uri.toString();
+    const panels = this.openPanelsByUri.get(key);
+    if (!panels || panels.size === 0) {
+      return 0;
+    }
+    for (const panel of panels) {
+      panel.title = title;
+    }
+    return panels.size;
+  }
+
+  public getOpenEditorUris(): vscode.Uri[] {
+    return Array.from(this.openEditorMetaByUri.values()).map((meta) => meta.uri);
+  }
+
+  public getOpenEditorMetadata(): Array<{ uri: vscode.Uri; noteId: string }> {
+    return Array.from(this.openEditorMetaByUri.values());
   }
 
   /**
@@ -72,7 +110,42 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
     const tabTitle = query.get('title') ?? docMeta?.title ?? 'Trilium Note';
     webviewPanel.title = tabTitle;
     const documentKey = document.uri.toString();
-    this.syncedContentByUri.set(documentKey, document.getText());
+    if (!this.syncedContentByUri.has(documentKey)) {
+      this.syncedContentByUri.set(documentKey, document.getText());
+    }
+    this.openEditorMetaByUri.set(documentKey, {
+      uri: document.uri,
+      noteId,
+    });
+    const currentPanels = this.openPanelsByUri.get(documentKey) ?? new Set<vscode.WebviewPanel>();
+    currentPanels.add(webviewPanel);
+    this.openPanelsByUri.set(documentKey, currentPanels);
+
+    if (noteId) {
+      void (async () => {
+        try {
+          const client = this.getClient();
+          if (!client) {
+            return;
+          }
+
+          const note = await client.getNote(noteId);
+          const content = await client.getNoteContent(noteId);
+
+          this.syncedContentByUri.set(documentKey, content);
+          webviewPanel.title = note.title;
+
+          if (this.openPanelsByUri.get(documentKey)?.has(webviewPanel)) {
+            void webviewPanel.webview.postMessage({
+              type: 'update',
+              content,
+            });
+          }
+        } catch {
+          // Keep the restored placeholder if the note cannot be loaded yet.
+        }
+      })();
+    }
 
     // Set initial HTML
     webviewPanel.webview.html = this.getHtmlForWebview(
@@ -90,6 +163,7 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
     let pendingDocumentUpdate: Promise<void> = Promise.resolve();
     // Avoid duplicate ETAPI sync when we trigger document.save() after a successful push.
     let suppressNextDidSaveSync = false;
+    let didNotifyApplyFailure = false;
 
     const queueDocumentUpdate = (content: string): void => {
       pendingDocumentUpdate = pendingDocumentUpdate
@@ -98,6 +172,15 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
           pendingWebviewUpdate = true;
           try {
             await this.updateTextDocument(document, content);
+            didNotifyApplyFailure = false;
+          } catch (err) {
+            if (!didNotifyApplyFailure) {
+              didNotifyApplyFailure = true;
+              void vscode.window.showErrorMessage(
+                'Trilium: Failed to apply editor changes locally. Please retry the edit.',
+              );
+            }
+            throw err;
           } finally {
             pendingWebviewUpdate = false;
           }
@@ -110,9 +193,10 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
 
     // Send initial content once webview is ready
     const sendContent = () => {
+      const latest = this.syncedContentByUri.get(documentKey) ?? document.getText();
       webviewPanel.webview.postMessage({
         type: 'init',
-        content: document.getText(),
+        content: latest,
       });
     };
 
@@ -141,7 +225,8 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
             try {
               await pendingDocumentUpdate;
             } catch {
-              // updateTextDocument already surfaced errors via failed save path.
+              // Failed local apply is already surfaced. Avoid pushing stale content.
+              return;
             }
 
             const pushed = await this.saveToTrilium(document, tabTitle);
@@ -220,6 +305,14 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
       messageListener.dispose();
       changeListener.dispose();
       saveListener.dispose();
+      const panels = this.openPanelsByUri.get(documentKey);
+      if (panels) {
+        panels.delete(webviewPanel);
+        if (panels.size === 0) {
+          this.openPanelsByUri.delete(documentKey);
+          this.openEditorMetaByUri.delete(documentKey);
+        }
+      }
       this.syncedContentByUri.delete(documentKey);
     });
   }
@@ -228,7 +321,7 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
    * Update the TextDocument with new content from CKEditor.
    * This enables VS Code's native undo/redo stack.
    */
-  private updateTextDocument(document: vscode.TextDocument, content: string): Thenable<boolean> {
+  private async updateTextDocument(document: vscode.TextDocument, content: string): Promise<void> {
     const edit = new vscode.WorkspaceEdit();
     const lastLine = document.lineAt(document.lineCount - 1);
     edit.replace(
@@ -236,7 +329,10 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
       new vscode.Range(0, 0, lastLine.range.end.line, lastLine.range.end.character),
       content,
     );
-    return vscode.workspace.applyEdit(edit);
+    const applied = await vscode.workspace.applyEdit(edit);
+    if (!applied) {
+      throw new Error('Workspace edit was rejected because the document changed.');
+    }
   }
 
   /**
@@ -1044,6 +1140,8 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
         const vscode = acquireVsCodeApi();
         let editor;
         let isUpdatingFromExtension = false;
+        let pendingExternalContent = '';
+        let hasPendingExternalContent = false;
         const pendingImageFetches = new Map();
         const pendingUploads = new Map();
         const uploadedImageUrlByDataUri = new Map();
@@ -1472,6 +1570,14 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
               };
             };
 
+            if (hasPendingExternalContent) {
+              isUpdatingFromExtension = true;
+              editor.setData(normalizeIncomingCodeBlockLanguages(pendingExternalContent));
+              isUpdatingFromExtension = false;
+              hasPendingExternalContent = false;
+              pendingExternalContent = '';
+            }
+
             // Signal ready
             vscode.postMessage({ type: 'ready' });
           })
@@ -1493,6 +1599,9 @@ export class TriliumTextEditorProvider implements vscode.CustomTextEditorProvide
                 isUpdatingFromExtension = true;
                 editor.setData(normalizeIncomingCodeBlockLanguages(message.content || ''));
                 isUpdatingFromExtension = false;
+              } else {
+                pendingExternalContent = message.content || '';
+                hasPendingExternalContent = true;
               }
               break;
             case 'breadcrumb': {

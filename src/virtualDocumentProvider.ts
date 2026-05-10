@@ -3,10 +3,10 @@ import { EtapiClient } from './etapiClient';
 
 /**
  * TextDocumentContentProvider for virtual trilium-text:// URIs.
- * 
+ *
  * This provider creates virtual documents for Trilium text notes that can be
  * opened with the custom CKEditor provider without creating temp files.
- * 
+ *
  * URI format: trilium-text://trilium/noteId?title=Note+Title
  */
 export class VirtualDocumentProvider implements vscode.TextDocumentContentProvider {
@@ -17,6 +17,32 @@ export class VirtualDocumentProvider implements vscode.TextDocumentContentProvid
   private readonly contentCache = new Map<string, string>();
 
   constructor(private readonly getClient: () => EtapiClient | undefined) {}
+
+  private static getNoteIdFromUri(uri: vscode.Uri): string | undefined {
+    const query = new URLSearchParams(uri.query);
+    const fromQuery = query.get('noteId');
+    if (fromQuery) {
+      return fromQuery;
+    }
+
+    // Some legacy URIs were serialized with the full query encoded into one key.
+    // Try decoding once and parsing again to recover noteId.
+    if (uri.query.includes('%3D') || uri.query.includes('%26')) {
+      try {
+        const decodedQuery = decodeURIComponent(uri.query);
+        const decoded = new URLSearchParams(decodedQuery);
+        const decodedNoteId = decoded.get('noteId');
+        if (decodedNoteId) {
+          return decodedNoteId;
+        }
+      } catch {
+        // Fall through to path fallback.
+      }
+    }
+
+    const fromPath = uri.path.substring(1);
+    return fromPath || undefined;
+  }
 
   private disconnectedPlaceholder(noteId: string): string {
     return [
@@ -37,11 +63,11 @@ export class VirtualDocumentProvider implements vscode.TextDocumentContentProvid
 
     const client = this.getClient();
     if (!client) {
-      const noteId = uri.path.substring(1);
+      const noteId = VirtualDocumentProvider.getNoteIdFromUri(uri);
       return this.disconnectedPlaceholder(noteId || 'unknown');
     }
 
-    const noteId = uri.path.substring(1); // Remove leading '/'
+    const noteId = VirtualDocumentProvider.getNoteIdFromUri(uri);
     if (!noteId) {
       throw new Error('Trilium: Invalid URI - missing noteId.');
     }
@@ -81,16 +107,23 @@ export class VirtualDocumentProvider implements vscode.TextDocumentContentProvid
 
 /**
  * Create a virtual document URI for a Trilium text note.
- * 
+ *
  * @param noteId - The Trilium note ID
  * @param title - The note title (for display in editor tab)
  * @returns A trilium-text:// URI
  */
 export function createVirtualDocumentUri(noteId: string, title: string): vscode.Uri {
-  // Encode title for query parameter
-  const encodedTitle = encodeURIComponent(title);
-  
-  // URI format: trilium-text://trilium/{noteId}?title={title}&noteId={noteId}
-  // We include noteId in both path and query for convenience
-  return vscode.Uri.parse(`trilium-text://trilium/${noteId}?title=${encodedTitle}&noteId=${noteId}`);
+  const safeTitle = (title || noteId).trim() || noteId;
+  const query = new URLSearchParams({
+    noteId,
+    title: safeTitle,
+  }).toString();
+
+  // Use title-like path segment for better tab labels while keeping noteId in query.
+  return vscode.Uri.from({
+    scheme: 'trilium-text',
+    authority: 'trilium',
+    path: `/${safeTitle}`,
+    query,
+  });
 }

@@ -382,4 +382,40 @@ describe('EtapiClient', () => {
       assert.strictEqual(result.noteId, 'n1');
     });
   });
+
+  describe('putAttachmentContentBinary', () => {
+    it('sends PUT to /etapi/attachments/{attachmentId}/content with binary headers', async () => {
+      const capture = capturingFetch(204, '');
+
+      const client = new EtapiClient('http://localhost:8080', 'tok');
+      await client.putAttachmentContentBinary('a1', new Uint8Array([1, 2, 3]));
+
+      assert.ok(capture.url.endsWith('/attachments/a1/content'));
+      assert.strictEqual(capture.init?.method, 'PUT');
+      assert.strictEqual(
+        (capture.init?.headers as Record<string, string>)?.['Content-Type'],
+        'application/octet-stream',
+      );
+      assert.strictEqual(
+        (capture.init?.headers as Record<string, string>)?.['Content-Transfer-Encoding'],
+        'binary',
+      );
+      assert.ok(capture.init?.body instanceof ArrayBuffer);
+      assert.strictEqual((capture.init?.body as ArrayBuffer).byteLength, 3);
+    });
+
+    it('throws EtapiError when attachment upload fails', async () => {
+      mockFetch(400, 'Bad Request', false);
+
+      const client = new EtapiClient('http://localhost:8080', 'tok');
+      await assert.rejects(
+        () => client.putAttachmentContentBinary('a1', new Uint8Array([1, 2, 3])),
+        (err: unknown) => {
+          assert.ok(err instanceof EtapiError);
+          assert.strictEqual(err.statusCode, 400);
+          return true;
+        },
+      );
+    });
+  });
 });
