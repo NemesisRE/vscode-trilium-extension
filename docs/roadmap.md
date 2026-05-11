@@ -45,14 +45,13 @@ This roadmap is a working list of improvements and ideas, not a strict milestone
 - Protected-note open flows now provide guided recovery actions (`Open in Browser`, `Open in External Browser`, `Reconnect`) instead of warning-only dead ends.
 - Auto-refresh for open notes now keeps retrying through intermittent ETAPI/network failures, surfaces operation-specific recovery warnings, and supports configurable failure thresholds.
 - Large-tree performance improved with short-lived note/branch fetch caching plus targeted subtree refresh calls for create/rename/delete/clone/move/reorder flows, reducing redundant ETAPI requests and full-tree redraws.
+- Automated coverage now includes targeted tests for conflict-resolution save flows, reorder-panel validation/save behavior, tree refresh caching, and network-retry policy branches.
 
 ## Next Priorities
 
 These are the most useful and needed improvements based on current capabilities and known limitations.
 
 ### Near-Term Execution Order
-
-- Expand automated coverage for conflict resolution, auto-refresh behavior, drag-and-drop move/reorder, and network-retry flows to keep recent reliability work stable.
 
 ### Editing Fidelity and Format Safety
 
