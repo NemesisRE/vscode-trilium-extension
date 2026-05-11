@@ -64,6 +64,8 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
     private readonly context: vscode.ExtensionContext,
     private readonly getClient: () => EtapiClient | undefined,
     private readonly draftNoteManager: DraftNoteManager,
+    private readonly refreshTreeForNote: (noteId: string) => void | Promise<void> = () => undefined,
+    private readonly refreshTreeOnEditorLoad: () => void | Promise<void> = () => undefined,
   ) {
     this.context.subscriptions.push(
       vscode.workspace.registerTextDocumentContentProvider('trilium-theirs', {
@@ -261,6 +263,7 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
           if (document.panels.has(webviewPanel)) {
             void webviewPanel.webview.postMessage({ type: 'update', content });
           }
+          await this.refreshTreeOnEditorLoad();
         } catch {
           // Keep the restored placeholder if the note cannot be loaded yet.
         }
@@ -417,6 +420,7 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
 
       await client.putNoteContent(document.noteId, localContent);
       document.syncedContent = localContent;
+      await this.refreshTreeForNote(document.noteId);
       vscode.window.setStatusBarMessage('$(check) Trilium: Note saved', 3000);
     } catch (err) {
       if (err instanceof Error && err.message.startsWith('Conflict:')) {

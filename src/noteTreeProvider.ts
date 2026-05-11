@@ -646,6 +646,7 @@ export class NoteTreeProvider implements vscode.TreeDataProvider<NoteItem>, vsco
 
   refreshItem(item: NoteItem): void {
     this.noteCache.delete(item.note.noteId);
+    this.branchCache.clear();
     this.knownItemsByNoteId.set(item.note.noteId, {
       path: item.path,
       branchId: item.branchId,
@@ -660,6 +661,7 @@ export class NoteTreeProvider implements vscode.TreeDataProvider<NoteItem>, vsco
     }
 
     this.noteCache.delete(noteId);
+    this.branchCache.clear();
 
     const known = this.knownItemsByNoteId.get(noteId);
     if (known) {

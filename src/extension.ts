@@ -253,6 +253,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     context,
     () => treeProvider.getClient(),
     draftNoteManager,
+    (noteId) => treeProvider.refreshNoteById(noteId),
+    () => treeProvider.refreshRoot(),
   );
   context.subscriptions.push(
     vscode.window.registerCustomEditorProvider(
@@ -1941,6 +1943,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
 
         await client.putNoteContent(noteId, payload);
+        await treeProvider.refreshNoteById(noteId);
         vscode.window.setStatusBarMessage('Trilium: Note saved.', 3000);
       } catch (err) {
         void vscode.window.showErrorMessage(`Trilium: Failed to save note: ${err}`);

@@ -688,6 +688,51 @@ describe('NoteTreeProvider', () => {
     assert.strictEqual(firedElement?.note.noteId, 'c1');
   });
 
+  it('clears cached branch ordering when refreshing a reordered parent note', async () => {
+    const root = makeNote({ noteId: 'root', childNoteIds: ['parent'], childBranchIds: ['bp'] });
+    const parent = makeNote({ noteId: 'parent', childNoteIds: ['c1', 'c2'], childBranchIds: ['b1', 'b2'] });
+    const c1 = makeNote({ noteId: 'c1', title: 'First' });
+    const c2 = makeNote({ noteId: 'c2', title: 'Second' });
+    let branchOrder: Record<string, Branch> = {
+      bp: makeBranch({ branchId: 'bp', noteId: 'parent', parentNoteId: 'root', notePosition: 10 }),
+      b1: makeBranch({ branchId: 'b1', noteId: 'c1', parentNoteId: 'parent', notePosition: 10 }),
+      b2: makeBranch({ branchId: 'b2', noteId: 'c2', parentNoteId: 'parent', notePosition: 20 }),
+    };
+
+    const client = {
+      getNote: async (id: string) => {
+        if (id === 'root') { return root; }
+        if (id === 'parent') { return parent; }
+        if (id === 'c1') { return c1; }
+        if (id === 'c2') { return c2; }
+        throw new Error(`Note not found: ${id}`);
+      },
+      getBranch: async (branchId: string) => {
+        const branch = branchOrder[branchId];
+        if (!branch) {
+          throw new Error(`Branch not found: ${branchId}`);
+        }
+        return branch;
+      },
+    } as unknown as EtapiClient;
+
+    const provider = new NoteTreeProvider(client);
+    const parentItem = new NoteItem(parent, 'root/parent', 'bp');
+
+    const first = await provider.getChildren(parentItem);
+    assert.deepStrictEqual(first.map((item) => item.note.noteId), ['c1', 'c2']);
+
+    branchOrder = {
+      bp: makeBranch({ branchId: 'bp', noteId: 'parent', parentNoteId: 'root', notePosition: 10 }),
+      b1: makeBranch({ branchId: 'b1', noteId: 'c1', parentNoteId: 'parent', notePosition: 20 }),
+      b2: makeBranch({ branchId: 'b2', noteId: 'c2', parentNoteId: 'parent', notePosition: 10 }),
+    };
+
+    await provider.refreshNoteById('parent');
+    const second = await provider.getChildren(parentItem);
+    assert.deepStrictEqual(second.map((item) => item.note.noteId), ['c2', 'c1']);
+  });
+
   it('moves a note to a different parent on drop', async () => {
     const calls: string[] = [];
     const client = {
