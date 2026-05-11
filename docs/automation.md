@@ -142,3 +142,7 @@ interface NoteImportSpec {
 ```
 
 When using the programmatic `trilium.importNotes` command, you can ask Copilot to generate the JSON spec for you and then pass it directly into the command.
+
+## Maintainer Note
+
+The Trilium plugin-ref update workflow can surface upstream CKEditor plugin drift, especially around package import paths and TypeScript strictness. When that happens, keep the compatibility fix in the local vendor patch flow at [scripts/apply-vendor-patches.mjs](/Users/skurz/Repos/vscode-trilium-extension/scripts/apply-vendor-patches.mjs) so future ref bumps reuse the same stabilization point after each download.

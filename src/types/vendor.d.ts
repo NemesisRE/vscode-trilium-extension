@@ -21,6 +21,13 @@ declare module 'mathlive' {
   export default any;
 }
 
+declare module 'lodash-es' {
+  export function debounce<T extends (...args: any[]) => any>(
+    func: T,
+    wait?: number,
+  ): T;
+}
+
 declare module 'mathlive/fonts.css';
 declare module 'mathlive/static.css';
 
