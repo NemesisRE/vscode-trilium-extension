@@ -204,15 +204,34 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       return;
     }
 
-    const openVirtualDocs = vscode.workspace.textDocuments.filter((doc) => doc.uri.scheme === 'trilium-text');
-    await Promise.all(openVirtualDocs.map(async (doc) => {
-      const noteId = doc.uri.path.substring(1);
+    const openVirtualDocs = vscode.workspace.textDocuments
+      .filter((doc) => doc.uri.scheme === 'trilium-text')
+      .flatMap((doc) => {
+        const noteId = noteIdFromTriliumTextUri(doc.uri);
+        return noteId ? [{ uri: doc.uri, noteId }] : [];
+      });
+    const openEditorDocs = textEditorProvider.getOpenEditorMetadata()
+      .filter((entry) => entry.uri.scheme === 'trilium-text');
+
+    const refreshEntries = new Map<string, { uri: vscode.Uri; noteId: string }>();
+    for (const entry of [...openVirtualDocs, ...openEditorDocs]) {
+      refreshEntries.set(entry.uri.toString(), entry);
+    }
+
+    await Promise.all(Array.from(refreshEntries.values()).map(async (entry) => {
+      const { uri, noteId } = entry;
       if (!noteId) {
         return;
       }
       try {
+        const note = await client.getNote(noteId);
         const content = await client.getNoteContent(noteId);
-        virtualDocProvider.updateContent(doc.uri, content);
+        const targetUri = await migrateLegacyTriliumTextTabs(uri, noteId, note.title)
+          ?? uri;
+
+        textEditorProvider.setTitleForOpenEditor(targetUri, note.title);
+        virtualDocProvider.updateContent(targetUri, content);
+        textEditorProvider.pushContentToOpenEditor(targetUri, content);
       } catch {
         // Keep existing content for docs that still cannot be fetched.
       }
@@ -249,6 +268,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   void vscode.commands.executeCommand('setContext', 'trilium.connected', !!initialInfo);
   attributesProvider.setClient(treeProvider.getClient());
   ensureBacklinksView();
+  if (initialInfo) {
+    await refreshOpenVirtualEditorsAfterReconnect();
+  }
 
   context.subscriptions.push(
     treeView,
@@ -294,7 +316,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }),
 
     vscode.commands.registerCommand('trilium.revealInTree', async (item?: NoteItem) => {
-      const noteId = item?.note.noteId ?? getActiveNoteId(tempFileManager);
+      const noteId = item?.note?.noteId ?? getActiveNoteId(tempFileManager);
       if (!noteId) {
         void vscode.window.showWarningMessage(
           'Trilium: No active Trilium note found to reveal.',
@@ -321,7 +343,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return;
       }
 
-      const noteId = item?.note.noteId ?? getActiveNoteId(tempFileManager);
+      const noteId = item?.note?.noteId ?? getActiveNoteId(tempFileManager);
       if (!noteId) {
         void vscode.window.showWarningMessage(
           'Trilium: No active Trilium note found to open its parent.',
@@ -1919,8 +1941,7 @@ async function openNoteInEditor(
 
 function noteIdFromUri(uri: vscode.Uri, tempFileManager: TempFileManager): string | undefined {
   if (uri.scheme === 'trilium-text') {
-    const query = new URLSearchParams(uri.query);
-    return query.get('noteId') ?? undefined;
+    return noteIdFromTriliumTextUri(uri);
   }
 
   if (uri.scheme === 'file') {
@@ -1928,6 +1949,92 @@ function noteIdFromUri(uri: vscode.Uri, tempFileManager: TempFileManager): strin
   }
 
   return undefined;
+}
+
+function noteIdFromTriliumTextUri(uri: vscode.Uri): string | undefined {
+  const query = new URLSearchParams(uri.query);
+  const fromQuery = query.get('noteId');
+  if (fromQuery) {
+    return fromQuery;
+  }
+
+  if (uri.query.includes('%3D') || uri.query.includes('%26')) {
+    try {
+      const decodedQuery = decodeURIComponent(uri.query);
+      const decoded = new URLSearchParams(decodedQuery);
+      const decodedNoteId = decoded.get('noteId');
+      if (decodedNoteId) {
+        return decodedNoteId;
+      }
+    } catch {
+      // Fall through to path fallback.
+    }
+  }
+
+  const fromPath = uri.path.substring(1);
+  return fromPath || undefined;
+}
+
+async function migrateLegacyTriliumTextTabs(
+  oldUri: vscode.Uri,
+  noteId: string,
+  noteTitle: string,
+): Promise<vscode.Uri | undefined> {
+  if (oldUri.scheme !== 'trilium-text') {
+    return undefined;
+  }
+
+  const pathSegment = oldUri.path.substring(1);
+  if (!pathSegment || pathSegment !== noteId) {
+    return undefined;
+  }
+
+  const newUri = createVirtualDocumentUri(noteId, noteTitle);
+  if (newUri.toString() === oldUri.toString()) {
+    return undefined;
+  }
+
+  let migrated = false;
+  for (const group of vscode.window.tabGroups.all) {
+    for (const tab of group.tabs) {
+      if (!(tab.input instanceof vscode.TabInputCustom)) {
+        continue;
+      }
+      if (tab.input.uri.toString() !== oldUri.toString()) {
+        continue;
+      }
+
+      TriliumTextEditorProvider.setDocumentMetadata(newUri, {
+        noteId,
+        title: noteTitle,
+      });
+      await vscode.commands.executeCommand(
+        'vscode.openWith',
+        newUri,
+        TriliumTextEditorProvider.viewType,
+        { preview: tab.isPreview, preserveFocus: true, viewColumn: group.viewColumn },
+      );
+
+      try {
+        await vscode.window.tabGroups.close(tab);
+      } catch {
+        // Tab handle can become stale after openWith; close by URI lookup instead.
+        for (const fallbackGroup of vscode.window.tabGroups.all) {
+          for (const fallbackTab of fallbackGroup.tabs) {
+            if (
+              fallbackTab.input instanceof vscode.TabInputCustom
+              && fallbackTab.input.uri.toString() === oldUri.toString()
+            ) {
+              await vscode.window.tabGroups.close(fallbackTab);
+            }
+          }
+        }
+      }
+      migrated = true;
+    }
+  }
+
+  return migrated ? newUri : undefined;
 }
 
 function getActiveNoteId(tempFileManager: TempFileManager): string | undefined {

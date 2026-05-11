@@ -18,6 +18,7 @@
 
 - **Text notes** open in a full **CKEditor 5 WYSIWYG** editor embedded in a VS Code webview. The editor operates directly on Trilium's native HTML with native VS Code undo/redo and `Ctrl+S` save support.
 - The editor includes headings, inline formatting, lists, tables, inline code, code blocks, math, Mermaid diagrams, admonitions, footnotes, keyboard markers, find and replace, and full formatting controls.
+- Images inserted from the CKEditor toolbar are uploaded as Trilium attachments and persisted as native Trilium attachment URLs.
 - **Code notes** open with the correct language where possible, and changes save directly back to Trilium.
 - **Mermaid notes** open as `.mmd` files and can be rendered visually with Mermaid preview extensions.
 - **Canvas notes** open as `.excalidraw` JSON and can be rendered visually with the Excalidraw VS Code extension.
@@ -37,6 +38,7 @@ A breadcrumb bar above the CKEditor content area shows the full parent path of t
   - **Ours** (right) is your actual editable document.
 - Both sides are HTML-formatted for readable line-by-line comparison.
 - If a conflict remains unresolved, the tab stays dirty so VS Code still warns on close.
+- If the editor cannot apply a local change to the backing document, the extension shows an explicit error and skips save to avoid pushing stale content.
 
 ## Theme Integration
 
@@ -107,6 +109,5 @@ Right-click any note and choose **Export Subtree...** to export the note and all
 - **Protected notes** are not supported. Unlock them in Trilium first under **Options -> Protected Session**.
 - **Canvas notes** are opened as raw JSON unless you install the Excalidraw extension.
 - **Mind map notes** currently round-trip through Markdown, so MindElixir node properties such as colors, styles, and layout direction are not preserved.
-- **Image upload** from the WYSIWYG toolbar requires a server-side upload handler, so image attachments should currently be added from the sidebar instead.
 - ALT+click to open externally is not supported because of VS Code tree API limitations. Use the right-click **Open in External Browser** command instead.
 - Desktop only. Web extensions and Codespaces are not supported.
