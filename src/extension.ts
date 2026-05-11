@@ -25,6 +25,12 @@ import {
   formatNoteContextForLm,
   stripHtmlForLm,
 } from './triliumChatUtils';
+import {
+  buildRefreshFailureMessage,
+  classifyRefreshFailure,
+  shouldUntrackAfterFailure,
+  shouldWarnAfterFailure,
+} from './refreshPolicy';
 
 type Note = import('./etapiClient').Note;
 type Revision = import('./etapiClient').Revision;
@@ -88,6 +94,56 @@ function findWebViewUrl(note: Note): string | undefined {
   return undefined;
 }
 
+function resolveNoteBrowserUrl(note: Note, notePathOrId?: string): string {
+  const serverUrl = getServerUrl().replace(/\/$/, '');
+  const webViewUrl = note.type === 'webView' ? findWebViewUrl(note) : undefined;
+  return webViewUrl ?? `${serverUrl}/#${notePathOrId ?? note.noteId}`;
+}
+
+async function openNoteInBrowser(
+  note: Note,
+  notePathOrId?: string,
+  external = false,
+): Promise<void> {
+  const noteUrl = resolveNoteBrowserUrl(note, notePathOrId);
+  if (external) {
+    await vscode.env.openExternal(vscode.Uri.parse(noteUrl));
+    return;
+  }
+
+  try {
+    await vscode.commands.executeCommand('simpleBrowser.show', noteUrl);
+  } catch {
+    await vscode.env.openExternal(vscode.Uri.parse(noteUrl));
+  }
+}
+
+async function showProtectedNoteRecoveryActions(
+  note: Note,
+  notePathOrId?: string,
+): Promise<void> {
+  const action = await vscode.window.showWarningMessage(
+    protectedNoteWarningMessage(note.title),
+    'Open in Browser',
+    'Open in External Browser',
+    'Reconnect',
+  );
+
+  if (action === 'Open in Browser') {
+    await openNoteInBrowser(note, notePathOrId, false);
+    return;
+  }
+
+  if (action === 'Open in External Browser') {
+    await openNoteInBrowser(note, notePathOrId, true);
+    return;
+  }
+
+  if (action === 'Reconnect') {
+    await vscode.commands.executeCommand('trilium.reconnect');
+  }
+}
+
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   if (vscode.env.uiKind !== vscode.UIKind.Desktop) {
     void vscode.window.showWarningMessage(
@@ -133,6 +189,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     type: Note['type'];
     utcDateModified: string;
     tempFilePath: string;
+    consecutiveFailures: number;
+    lastWarnedFailureCount?: number;
   }
   const refreshRegistry = new Map<string, RefreshEntry>(); // noteId → entry
 
@@ -143,7 +201,34 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       type: note.type,
       utcDateModified: note.utcDateModified,
       tempFilePath,
+      consecutiveFailures: 0,
+      lastWarnedFailureCount: undefined,
     });
+  }
+
+  async function refreshTrackedEntry(
+    noteId: string,
+    entry: RefreshEntry,
+    client: EtapiClient,
+  ): Promise<void> {
+    const fresh = await client.getNote(noteId);
+    if (fresh.utcDateModified > entry.utcDateModified) {
+      entry.utcDateModified = fresh.utcDateModified;
+      const openDoc = vscode.workspace.textDocuments.find(
+        (d) => d.uri.scheme === 'file' && d.fileName === entry.tempFilePath,
+      );
+      if (openDoc && !openDoc.isDirty) {
+        const newContent = await client.getNoteContent(noteId);
+        const fileContent =
+          entry.type === 'mindMap'
+            ? tempFileManager.mindMapJsonToMarkdown(newContent)
+            : newContent;
+        fs.writeFileSync(entry.tempFilePath, fileContent, 'utf8');
+      }
+    }
+
+    entry.consecutiveFailures = 0;
+    entry.lastWarnedFailureCount = undefined;
   }
 
   // Register virtual document provider for trilium-text:// URIs
@@ -611,7 +696,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       try {
         const note = await client.getDayNote(date);
         if (note.isProtected) {
-          void vscode.window.showWarningMessage(protectedNoteWarningMessage(note.title));
+          await showProtectedNoteRecoveryActions(note, note.noteId);
           return;
         }
 
@@ -1105,21 +1190,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
 
     vscode.commands.registerCommand('trilium.openInBrowser', async (item: NoteItem) => {
-      const serverUrl = getServerUrl().replace(/\/$/, '');
-      const webViewUrl = item.note.type === 'webView' ? findWebViewUrl(item.note) : undefined;
-      const noteUrl = webViewUrl ?? `${serverUrl}/#${item.path}`;
-      try {
-        await vscode.commands.executeCommand('simpleBrowser.show', noteUrl);
-      } catch {
-        await vscode.env.openExternal(vscode.Uri.parse(noteUrl));
-      }
+      await openNoteInBrowser(item.note, item.path, false);
     }),
 
     vscode.commands.registerCommand('trilium.openInBrowserExternal', async (item: NoteItem) => {
-      const serverUrl = getServerUrl().replace(/\/$/, '');
-      const webViewUrl = item.note.type === 'webView' ? findWebViewUrl(item.note) : undefined;
-      const noteUrl = webViewUrl ?? `${serverUrl}/#${item.path}`;
-      await vscode.env.openExternal(vscode.Uri.parse(noteUrl));
+      await openNoteInBrowser(item.note, item.path, true);
     }),
 
     vscode.commands.registerCommand('trilium.openFile', async (item: NoteItem) => {
@@ -1277,7 +1352,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
 
       if (note.isProtected) {
-        void vscode.window.showWarningMessage(protectedNoteWarningMessage(note.title));
+        await showProtectedNoteRecoveryActions(note, item.path);
         return;
       }
 
@@ -1349,7 +1424,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
 
       if (note.isProtected) {
-        void vscode.window.showWarningMessage(protectedNoteWarningMessage(note.title));
+        await showProtectedNoteRecoveryActions(note, item.path);
         return;
       }
 
@@ -1911,6 +1986,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const intervalSecs = vscode.workspace
           .getConfiguration('trilium')
           .get<number>('autoRefreshIntervalSeconds', 30);
+        const maxConsecutiveFailures = vscode.workspace
+          .getConfiguration('trilium')
+          .get<number>('autoRefreshMaxConsecutiveFailures', 8);
+        const warnAfterFailures = vscode.workspace
+          .getConfiguration('trilium')
+          .get<number>('autoRefreshWarnAfterFailures', 3);
         if (intervalSecs <= 0 || refreshRegistry.size === 0) {
           return;
         }
@@ -1920,25 +2001,50 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
         for (const [noteId, entry] of Array.from(refreshRegistry)) {
           try {
-            const fresh = await client.getNote(noteId);
-            if (fresh.utcDateModified <= entry.utcDateModified) {
+            await refreshTrackedEntry(noteId, entry, client);
+          } catch (err) {
+            const kind = classifyRefreshFailure(err);
+            entry.consecutiveFailures += 1;
+
+            if (shouldUntrackAfterFailure(kind, entry.consecutiveFailures, maxConsecutiveFailures)) {
+              refreshRegistry.delete(noteId);
               continue;
             }
-            entry.utcDateModified = fresh.utcDateModified;
-            const openDoc = vscode.workspace.textDocuments.find(
-              (d) => d.uri.scheme === 'file' && d.fileName === entry.tempFilePath,
-            );
-            if (openDoc && !openDoc.isDirty) {
-              const newContent = await client.getNoteContent(noteId);
-              const fileContent =
-                entry.type === 'mindMap'
-                  ? tempFileManager.mindMapJsonToMarkdown(newContent)
-                  : newContent;
-              fs.writeFileSync(entry.tempFilePath, fileContent, 'utf8');
+
+            if (!shouldWarnAfterFailure(entry.consecutiveFailures, warnAfterFailures)) {
+              continue;
             }
-          } catch {
-            // Note deleted or unreachable — stop tracking
-            refreshRegistry.delete(noteId);
+
+            if (entry.lastWarnedFailureCount === entry.consecutiveFailures) {
+              continue;
+            }
+            entry.lastWarnedFailureCount = entry.consecutiveFailures;
+
+            const action = await vscode.window.showWarningMessage(
+              buildRefreshFailureMessage(
+                entry.title,
+                kind,
+                entry.consecutiveFailures,
+                maxConsecutiveFailures,
+              ),
+              'Retry Now',
+              'Reconnect',
+              'Disable Auto-Refresh',
+            );
+
+            if (action === 'Retry Now') {
+              try {
+                await refreshTrackedEntry(noteId, entry, client);
+              } catch {
+                // Leave the note tracked; normal polling/backoff will continue.
+              }
+            } else if (action === 'Reconnect') {
+              await vscode.commands.executeCommand('trilium.reconnect');
+            } else if (action === 'Disable Auto-Refresh') {
+              await vscode.workspace
+                .getConfiguration('trilium')
+                .update('autoRefreshIntervalSeconds', 0, vscode.ConfigurationTarget.Global);
+            }
           }
         }
       }, POLL_MS);
@@ -2090,6 +2196,7 @@ async function openNoteInEditor(
   client: EtapiClient,
   tempFileManager: TempFileManager,
   virtualDocProvider: VirtualDocumentProvider,
+  notePathOrId?: string,
 ): Promise<void> {
   const editableTypes: Note['type'][] = ['text', 'code', 'mermaid', 'canvas', 'mindMap'];
   if (!(editableTypes as string[]).includes(note.type)) {
@@ -2098,21 +2205,16 @@ async function openNoteInEditor(
       'Open in Browser',
       'Open in External Browser',
     );
-    const noteUrl = `${getServerUrl().replace(/\/$/, '')}/#${note.noteId}`;
     if (action === 'Open in Browser') {
-      try {
-        await vscode.commands.executeCommand('simpleBrowser.show', noteUrl);
-      } catch {
-        await vscode.env.openExternal(vscode.Uri.parse(noteUrl));
-      }
+      await openNoteInBrowser(note, notePathOrId, false);
     } else if (action === 'Open in External Browser') {
-      await vscode.env.openExternal(vscode.Uri.parse(noteUrl));
+      await openNoteInBrowser(note, notePathOrId, true);
     }
     return;
   }
 
   if (note.isProtected) {
-    void vscode.window.showWarningMessage(protectedNoteWarningMessage(note.title));
+    await showProtectedNoteRecoveryActions(note, notePathOrId);
     return;
   }
   if (note.type === 'text') {

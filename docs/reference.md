@@ -13,6 +13,8 @@ All settings are under the `trilium` namespace and can be changed in VS Code Set
 | `trilium.editor.highlightTheme` | `string` | `vscode` | Theme used for code-block syntax highlighting in the editor. |
 | `trilium.recentNotesMaxCount` | `number` (1-50) | `10` | Maximum number of notes shown in the Recent Notes view. |
 | `trilium.autoRefreshIntervalSeconds` | `number` (0-600) | `30` | Interval for polling external updates on open notes. Set `0` to disable. |
+| `trilium.autoRefreshMaxConsecutiveFailures` | `number` (1-100) | `8` | Maximum consecutive refresh failures before an open note is untracked from polling. |
+| `trilium.autoRefreshWarnAfterFailures` | `number` (1-50) | `3` | Show retry/reconnect warning after this many consecutive refresh failures (and every N failures after). |
 
 ## Commands
 

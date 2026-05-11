@@ -42,6 +42,8 @@ This roadmap is a working list of improvements and ideas, not a strict milestone
 - Fixed dirty-state regression for text notes: the editor now uses `CustomEditorProvider` so the tab dirty indicator (●) and native unsaved-close dialog are driven by content changes, not by the filesystem. Auto-save and Ctrl+S both push directly to Trilium via ETAPI; closing a dirty tab always triggers VS Code's native save prompt.
 - LM tools `trilium_searchNotes`, `trilium_readNote`, `trilium_listChildren`, `trilium_updateNoteContent`, and `trilium_appendToNote` are now registered and discovered automatically by Copilot Chat. `trilium_readNote` strips all HTML tags before returning content to prevent prompt injection from note content.
 - Protected-note warnings and LM tool error responses now use consistent, centralized messaging with clear guidance to unlock Protected Session in Trilium.
+- Protected-note open flows now provide guided recovery actions (`Open in Browser`, `Open in External Browser`, `Reconnect`) instead of warning-only dead ends.
+- Auto-refresh for open notes now keeps retrying through intermittent ETAPI/network failures, surfaces operation-specific recovery warnings, and supports configurable failure thresholds.
 
 ## Next Priorities
 
@@ -49,8 +51,6 @@ These are the most useful and needed improvements based on current capabilities 
 
 ### Near-Term Execution Order
 
-- Extend protected-note handling UX beyond warning text: add clearer editor/tree affordances and guided recovery actions when a note is blocked by Protected Session.
-- Improve refresh robustness for intermittent ETAPI/network failures with clearer retry UX and operation-specific recovery messages.
 - Improve large-tree responsiveness with incremental refreshes, fewer redundant note fetches, and reduced full-tree redraws.
 - Expand automated coverage for conflict resolution, auto-refresh behavior, drag-and-drop move/reorder, and network-retry flows to keep recent reliability work stable.
 
@@ -68,7 +68,6 @@ These are the most useful and needed improvements based on current capabilities 
 
 - Add a calendar note view for notes using `viewType=calendar`.
 - Continue improving visual parity with Trilium for icon, color, and note-type presentation details.
-- Improve protected-note handling UX: clearly communicate lock/protection state in editors and provide guided actions when protected sessions are required.
 
 ### Tree and Navigation Workflows
 

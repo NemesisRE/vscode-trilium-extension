@@ -1066,6 +1066,20 @@
           "minimum": 0,
           "maximum": 600,
           "description": "How often (in seconds) to check for external changes to open notes and refresh them. Set to 0 to disable."
+        },
+        "trilium.autoRefreshMaxConsecutiveFailures": {
+          "type": "number",
+          "default": 8,
+          "minimum": 1,
+          "maximum": 100,
+          "description": "Maximum consecutive auto-refresh failures before an open note is untracked from refresh polling."
+        },
+        "trilium.autoRefreshWarnAfterFailures": {
+          "type": "number",
+          "default": 3,
+          "minimum": 1,
+          "maximum": 50,
+          "description": "Show a retry/reconnect warning after this many consecutive auto-refresh failures (and every N failures after)."
         }
       }
     }
