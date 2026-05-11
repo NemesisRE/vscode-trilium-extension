@@ -420,8 +420,10 @@ export class NoteItem extends vscode.TreeItem {
     public readonly branchId: string | undefined = undefined,
     boxiconsSvgRoot?: string,
   ) {
+    const isProtected = note.isProtected;
+    const displayLabel = isProtected ? '[protected]' : note.title;
     super(
-      note.title,
+      displayLabel,
       note.childNoteIds.length > 0
         ? vscode.TreeItemCollapsibleState.Collapsed
         : vscode.TreeItemCollapsibleState.None,
@@ -430,7 +432,7 @@ export class NoteItem extends vscode.TreeItem {
     // Note IDs are not unique in the tree when notes are cloned.
     // Use a location-specific ID so VS Code can distinguish original/clone entries.
     this.id = branchId ? `${note.noteId}@${branchId}` : this.path;
-    this.tooltip = note.title;
+    this.tooltip = displayLabel;
 
     const { type } = note;
     if (type === 'text') {
@@ -445,9 +447,6 @@ export class NoteItem extends vscode.TreeItem {
 
     if (type !== 'text') {
       this.description = noteTypeToLabel(type);
-    }
-    if (note.isProtected) {
-      this.description = this.description ? `${this.description} · protected` : 'protected';
     }
 
     // Open all notes on click, including section notes with children.
@@ -471,7 +470,7 @@ export class NoteItem extends vscode.TreeItem {
     // Icon: use real Trilium Boxicons when available, recolored for current theme.
     // Fallback to codicons when no matching icon asset is present.
     const iconAttr = (note.attributes ?? []).find(a => a.type === 'label' && a.name === 'iconClass');
-    const effectiveIconClass = iconAttr?.value ?? defaultBoxiconClassForNote(note);
+    const effectiveIconClass = isProtected ? 'bx bxs-lock' : (iconAttr?.value ?? defaultBoxiconClassForNote(note));
     const themedBoxiconUri = boxiconToThemedSvgUri(effectiveIconClass, boxiconsSvgRoot, svgColor);
     if (themedBoxiconUri) {
       this.iconPath = themedBoxiconUri;
@@ -484,13 +483,10 @@ export class NoteItem extends vscode.TreeItem {
     }
 
     // Color/protected markers: FileDecoration applied via synthetic resourceUri
-    if (colorId || note.isProtected) {
+    if (colorId) {
       const query = new URLSearchParams();
       if (colorId) {
         query.set('color', colorId);
-      }
-      if (note.isProtected) {
-        query.set('protected', '1');
       }
       this.resourceUri = vscode.Uri.from({
         scheme: 'trilium-note',
@@ -920,12 +916,11 @@ export class NoteTreeDecorationProvider {
     if (uri.scheme !== 'trilium-note') { return undefined; }
     const params = new URLSearchParams(uri.query);
     const colorId = params.get('color');
-    const isProtected = params.get('protected') === '1';
-    if (!colorId && !isProtected) { return undefined; }
+    if (!colorId) { return undefined; }
     return {
       color: colorId ? new vscode.ThemeColor(colorId) : undefined,
-      badge: isProtected ? 'L' : undefined,
-      tooltip: isProtected ? 'Protected note' : undefined,
+      badge: undefined,
+      tooltip: undefined,
     };
   }
 }

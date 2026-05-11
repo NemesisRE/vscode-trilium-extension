@@ -13,6 +13,7 @@
 - Note type is shown as a description badge, for example `code`, `mermaid`, or `canvas`.
 - Note icons are resolved from the `#iconClass` label attribute. Each note type has a sensible default icon when no attribute is set.
 - Note colors are driven by the `#color` label attribute and shown as tree item color decorations.
+- Protected notes are shown as `[protected]` in the tree and use a lock icon to match Trilium's locked-note presentation.
 
 ## Open and Edit Notes
 
@@ -115,6 +116,7 @@ Right-click any note and choose **Export Subtree...** to export the note and all
 ## Known Limitations
 
 - **Protected notes** are not supported. Unlock them in Trilium first under **Options -> Protected Session**.
+- Protected notes are intentionally masked in the tree (`[protected]`) and cannot be opened or edited until you unlock Protected Session in Trilium.
 - **Canvas notes** are opened as raw JSON unless you install the Excalidraw extension.
 - **Mind map notes** currently round-trip through Markdown, so MindElixir node properties such as colors, styles, and layout direction are not preserved.
 - ALT+click to open externally is not supported because of VS Code tree API limitations. Use the right-click **Open in External Browser** command instead.

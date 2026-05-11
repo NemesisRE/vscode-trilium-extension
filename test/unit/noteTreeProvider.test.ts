@@ -90,6 +90,11 @@ describe('NoteItem', () => {
     assert.strictEqual(item.label, 'My Important Note');
   });
 
+  it('masks the label for protected notes', () => {
+    const item = new NoteItem(makeNote({ title: 'Secret', isProtected: true }));
+    assert.strictEqual(item.label, '[protected]');
+  });
+
   it('sets item id to path when branch is not provided', () => {
     const item = new NoteItem(makeNote({ noteId: 'abc123' }));
     assert.strictEqual(item.id, 'abc123');
@@ -110,9 +115,9 @@ describe('NoteItem', () => {
     assert.strictEqual(item.description, undefined);
   });
 
-  it('shows protected marker in description for protected notes', () => {
+  it('does not append protected marker to description for protected notes', () => {
     const item = new NoteItem(makeNote({ type: 'text', isProtected: true }));
-    assert.strictEqual(item.description, 'protected');
+    assert.strictEqual(item.description, undefined);
   });
 
   it('attaches an open command to notes', () => {
@@ -247,6 +252,15 @@ describe('NoteItem', () => {
     assert.strictEqual((item.iconPath as { id: string }).id, 'home');
   });
 
+  it('uses lock icon for protected notes regardless of iconClass attribute', () => {
+    const attr: Attribute = {
+      attributeId: 'a-protected', noteId: 'testId', type: 'label', name: 'iconClass',
+      value: 'bx bx-home', position: 0, isInheritable: false,
+    };
+    const item = new NoteItem(makeNote({ isProtected: true, attributes: [attr] }));
+    assert.strictEqual((item.iconPath as { id: string }).id, 'lock');
+  });
+
   it('uses a themed Boxicon SVG when icon assets are available', () => {
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'trilium-boxicons-test-'));
     const boxiconsRoot = path.join(tempRoot, 'svg');
@@ -336,21 +350,18 @@ describe('NoteItem', () => {
     assert.strictEqual(item.resourceUri, undefined);
   });
 
-  it('sets resourceUri when note is protected', () => {
+  it('does not set resourceUri for protected note without color', () => {
     const item = new NoteItem(makeNote({ isProtected: true }));
-    assert.ok(item.resourceUri, 'resourceUri should be set for protected note');
-    assert.ok((item.resourceUri as { query: string }).query.includes('protected=1'));
+    assert.strictEqual(item.resourceUri, undefined);
   });
 });
 
 describe('NoteTreeDecorationProvider', () => {
-  it('returns protected badge decoration', () => {
+  it('returns undefined when only protected flag is provided', () => {
     const provider = new NoteTreeDecorationProvider();
     const uri = { scheme: 'trilium-note', query: 'protected=1' } as unknown as import('vscode').Uri;
     const decoration = provider.provideFileDecoration(uri);
-    assert.ok(decoration);
-    assert.strictEqual(decoration?.badge, 'L');
-    assert.strictEqual(decoration?.tooltip, 'Protected note');
+    assert.strictEqual(decoration, undefined);
   });
 
   it('returns color-only decoration when only color is provided', () => {
