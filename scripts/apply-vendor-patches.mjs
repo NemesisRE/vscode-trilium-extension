@@ -53,12 +53,8 @@ export function applyVendorPatches(vendorDir, logPrefix = '[patch-plugins]') {
       "\t\t\tconst debouncedListener = debounce( ( event: Event ) => {",
     );
     src = src.replace(
-      "\t\t\t\teditor.model.change( writer => {",
-      "\t\t\t\tconst target = event.target as HTMLInputElement | null;\n\t\t\t\tif ( !target ) {\n\t\t\t\t\treturn;\n\t\t\t\t}\n\n\t\t\t\teditor.model.change( writer => {",
-    );
-    src = src.replace(
-      "\t\t\t\t\twriter.setAttribute( 'source', event.target.value, data.item as ModelNode );",
-      "\t\t\t\t\twriter.setAttribute( 'source', target.value, data.item as ModelNode );",
+      "\t\t\t\teditor.model.change( writer => {\n\t\t\t\t\twriter.setAttribute( 'source', event.target.value, data.item as ModelNode );\n\t\t\t\t} );",
+      "\t\t\t\tconst target = event.target as HTMLInputElement | null;\n\t\t\t\tif ( !target ) {\n\t\t\t\t\treturn;\n\t\t\t\t}\n\n\t\t\t\teditor.model.change( writer => {\n\t\t\t\t\twriter.setAttribute( 'source', target.value, data.item as ModelNode );\n\t\t\t\t} );",
     );
     if (src !== before) {
       fs.writeFileSync(mermaidEditingPath, src, 'utf8');
