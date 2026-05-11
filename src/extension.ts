@@ -19,6 +19,7 @@ import { openReorderChildrenPanel } from './reorderChildrenPanel';
 import { RecentNotesProvider } from './recentNotesProvider';
 import { BacklinksProvider } from './backlinksProvider';
 import { DraftNoteManager } from './draftNoteManager';
+import { protectedNoteToolError, protectedNoteWarningMessage } from './protectedNoteUtils';
 import {
   buildNoteContext,
   formatNoteContextForLm,
@@ -610,9 +611,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       try {
         const note = await client.getDayNote(date);
         if (note.isProtected) {
-          void vscode.window.showWarningMessage(
-            `Trilium: Today's journal note is protected. Unlock it in Trilium first (Options → Protected Session).`,
-          );
+          void vscode.window.showWarningMessage(protectedNoteWarningMessage(note.title));
           return;
         }
 
@@ -964,7 +963,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           const note = await client.getNote(noteId);
           if (note.isProtected) {
             return new vscode.LanguageModelToolResult([
-              new vscode.LanguageModelTextPart(`Error: Note "${noteId}" is protected and cannot be read.`),
+              new vscode.LanguageModelTextPart(protectedNoteToolError(noteId, 'read')),
             ]);
           }
           const raw = await client.getNoteContent(noteId);
@@ -1041,7 +1040,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           const note = await client.getNote(noteId);
           if (note.isProtected) {
             return new vscode.LanguageModelToolResult([
-              new vscode.LanguageModelTextPart(`Error: Note "${noteId}" is protected and cannot be modified.`),
+              new vscode.LanguageModelTextPart(protectedNoteToolError(noteId, 'modified')),
             ]);
           }
 
@@ -1081,7 +1080,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           const note = await client.getNote(noteId);
           if (note.isProtected) {
             return new vscode.LanguageModelToolResult([
-              new vscode.LanguageModelTextPart(`Error: Note "${noteId}" is protected and cannot be modified.`),
+              new vscode.LanguageModelTextPart(protectedNoteToolError(noteId, 'modified')),
             ]);
           }
 
@@ -1278,9 +1277,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
 
       if (note.isProtected) {
-        void vscode.window.showWarningMessage(
-          `Trilium: "${note.title}" is a protected note. Unlock it in Trilium first (Options → Protected Session).`,
-        );
+        void vscode.window.showWarningMessage(protectedNoteWarningMessage(note.title));
         return;
       }
 
@@ -1352,9 +1349,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
 
       if (note.isProtected) {
-        void vscode.window.showWarningMessage(
-          `Trilium: "${note.title}" is a protected note. Unlock it in Trilium first (Options → Protected Session).`,
-        );
+        void vscode.window.showWarningMessage(protectedNoteWarningMessage(note.title));
         return;
       }
 
@@ -2117,9 +2112,7 @@ async function openNoteInEditor(
   }
 
   if (note.isProtected) {
-    void vscode.window.showWarningMessage(
-      `Trilium: Note is protected. Unlock it in Trilium first (Options → Protected Session).`,
-    );
+    void vscode.window.showWarningMessage(protectedNoteWarningMessage(note.title));
     return;
   }
   if (note.type === 'text') {

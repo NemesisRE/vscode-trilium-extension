@@ -9,7 +9,7 @@ This roadmap is a working list of improvements and ideas, not a strict milestone
 - Conflict resolution for text notes now includes **Compare**, **Keep Ours**, and **Use Theirs**.
 - Conflict diff now uses read-only **Theirs** and editable **Ours** with HTML pretty-printing for readable line-by-line comparison.
 - Closing tabs now cleans up managed virtual/temp note documents more reliably.
-- Tree notes that are locked/protected are now visually marked so status is obvious in the tree.
+- Tree protected-note presentation now follows Trilium more closely: protected entries are masked as `[protected]` and shown with a lock icon in the tree.
 - Unchecked task-list checkboxes are now more visible in dark themes.
 - Notes that cannot be rendered natively now offer clear browser fallback actions.
 - Attachment/file opening now uses more predictable MIME-aware filename and extension handling.
@@ -41,10 +41,18 @@ This roadmap is a working list of improvements and ideas, not a strict milestone
 - CKEditor image upload now routes inserted images through the extension host into Trilium attachments, then links them back into the note HTML automatically using Trilium's native attachment URL format.
 - Fixed dirty-state regression for text notes: the editor now uses `CustomEditorProvider` so the tab dirty indicator (●) and native unsaved-close dialog are driven by content changes, not by the filesystem. Auto-save and Ctrl+S both push directly to Trilium via ETAPI; closing a dirty tab always triggers VS Code's native save prompt.
 - LM tools `trilium_searchNotes`, `trilium_readNote`, `trilium_listChildren`, `trilium_updateNoteContent`, and `trilium_appendToNote` are now registered and discovered automatically by Copilot Chat. `trilium_readNote` strips all HTML tags before returning content to prevent prompt injection from note content.
+- Protected-note warnings and LM tool error responses now use consistent, centralized messaging with clear guidance to unlock Protected Session in Trilium.
 
 ## Next Priorities
 
 These are the most useful and needed improvements based on current capabilities and known limitations.
+
+### Near-Term Execution Order
+
+- Extend protected-note handling UX beyond warning text: add clearer editor/tree affordances and guided recovery actions when a note is blocked by Protected Session.
+- Improve refresh robustness for intermittent ETAPI/network failures with clearer retry UX and operation-specific recovery messages.
+- Improve large-tree responsiveness with incremental refreshes, fewer redundant note fetches, and reduced full-tree redraws.
+- Expand automated coverage for conflict resolution, auto-refresh behavior, drag-and-drop move/reorder, and network-retry flows to keep recent reliability work stable.
 
 ### Editing Fidelity and Format Safety
 
@@ -54,7 +62,6 @@ These are the most useful and needed improvements based on current capabilities 
 ### Reliability and Conflict Handling
 
 - Extend server-first save + conflict tooling beyond text notes to all editable note types where safe and applicable.
-- **Done (stale-cache reopen).** Restored editors no longer throw errors when disconnected; placeholder content is shown and auto-refreshed after reconnect with automatic content fetch and display update.
 - Improve refresh robustness for intermittent ETAPI/network failures with clearer retry UX and operation-specific recovery messages.
 
 ### Trilium Compatibility and UX Parity
@@ -65,31 +72,33 @@ These are the most useful and needed improvements based on current capabilities 
 
 ### Tree and Navigation Workflows
 
-- Add optional "Reveal in Tree" and "Open Parent" actions from editor context to speed up large-tree navigation.
-  - **Done.** `trilium.revealInTree` and `trilium.openParent` commands are registered and appear in the editor title bar (for CKEditor text notes), the editor tab context menu, and the tree's right-click context menu. Both commands also resolve the active note from temp-file-backed editors (code, canvas, mermaid, mind-map), so they work regardless of which editor type is in focus.
-
 - Improve large-tree responsiveness (incremental load/refresh strategy, reduced redundant note fetches, and fewer full-tree redraws).
+- Add optional auto-reveal/follow-active-note behavior so opening a note can focus and expand its location in the tree without forcing that behavior on everyone.
 - Extend recent-notes workflow with optional pinning and jump actions for frequently revisited notes.
 
 ### Copilot and Automation Tools
 
 #### Write-Safe Operations
+
 - Add `trilium_renameNote` LM tool: rename a note title with confirmation boundary.
 - Add `trilium_moveNote` LM tool: move a note to a new parent with cycle-safety check and explicit confirmation.
 - Add `trilium_deleteNote` LM tool: delete a note, gated behind a required `confirmed: true` input field so accidental deletion is not possible through an LM invocation.
 - Add `trilium_getAttributes` / `trilium_setAttributes` LM tools to read and write labels and relations on a note, enabling AI-driven tagging and linking workflows.
 
 #### Search and Context Gathering
+
 - Add optional search modes for LM tools: title-only vs. full-text, and scoped subtree search by `ancestorNoteId`.
 - Add a `trilium_getNoteContext` LM tool that returns a note's full ancestor path, its own attributes, and a summary of direct children in a single call — reducing the number of round-trips needed to ground LM context before generating or editing content.
 
 #### AI-Driven Workflows
+
 - AI-assisted note templating: allow Copilot to instantiate a structured note tree from a template note, filling placeholders from user-provided parameters.
 - Subtree summarization: use `trilium_listChildren` + `trilium_readNote` in sequence to let Copilot produce a structured summary or table-of-contents for a notebook section.
 - Batch label/attribute operations: expose a `trilium_batchSetAttributes` tool that accepts an array of `{ noteId, attributes }` records so LM-driven bulk-tagging workflows do not require a separate tool call per note.
 - Expose Trilium note-tree structure as VS Code `.instructions.md` context fragments so agents working in other workspaces can reference the user's knowledge base without requiring explicit search calls.
 
 #### Output Structure and Safety
+
 - Improve LM tool output structure for downstream automation: return stable IDs, parent-path metadata, and consistent result blocks across all tools.
 - Add per-tool `confirmationMessages` (VS Code LM tool `prepareInvocation` `confirmationMessages` field) to destructive write tools so Copilot Chat shows a confirmation dialog before executing delete or bulk-move operations.
 
