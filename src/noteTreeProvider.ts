@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { EtapiClient, Note } from './etapiClient';
+import { Branch, EtapiClient, Note } from './etapiClient';
 import { getRootNoteId } from './settings';
 
 // ---------------------------------------------------------------------------
@@ -158,9 +158,20 @@ interface ParsedBoxicon {
 const BOXICONS_SVG_RELATIVE_ROOT = path.join('node_modules', 'boxicons', 'svg');
 const THEMED_BOXICONS_CACHE_DIR = path.join(os.tmpdir(), 'vscode-trilium', 'themed-boxicons');
 const NOTE_TREE_MIME = 'application/vnd.code.tree.triliumnotetree';
+const TREE_FETCH_CACHE_TTL_MS = 15_000;
 
 interface DraggedNotePayload {
   noteId: string;
+  path: string;
+  branchId?: string;
+}
+
+interface CacheEntry<T> {
+  value: T;
+  expiresAt: number;
+}
+
+interface KnownItemLocation {
   path: string;
   branchId?: string;
 }
@@ -508,6 +519,9 @@ export class NoteTreeProvider implements vscode.TreeDataProvider<NoteItem>, vsco
   private _logger: ((msg: string) => void) | undefined;
   private filter = '';
   private boxiconsSvgRoot: string | undefined;
+  private readonly noteCache = new Map<string, CacheEntry<Note>>();
+  private readonly branchCache = new Map<string, CacheEntry<Branch>>();
+  private readonly knownItemsByNoteId = new Map<string, KnownItemLocation>();
 
   constructor(initialClient?: EtapiClient, extensionPath?: string) {
     this.client = initialClient;
@@ -528,19 +542,87 @@ export class NoteTreeProvider implements vscode.TreeDataProvider<NoteItem>, vsco
     this._logger?.(msg);
   }
 
+  private clearFetchCaches(): void {
+    this.noteCache.clear();
+    this.branchCache.clear();
+  }
+
+  private clearKnownItems(): void {
+    this.knownItemsByNoteId.clear();
+  }
+
+  private getCached<T>(cache: Map<string, CacheEntry<T>>, key: string): T | undefined {
+    const entry = cache.get(key);
+    if (!entry) {
+      return undefined;
+    }
+
+    if (entry.expiresAt <= Date.now()) {
+      cache.delete(key);
+      return undefined;
+    }
+
+    return entry.value;
+  }
+
+  private setCached<T>(cache: Map<string, CacheEntry<T>>, key: string, value: T): T {
+    cache.set(key, {
+      value,
+      expiresAt: Date.now() + TREE_FETCH_CACHE_TTL_MS,
+    });
+    return value;
+  }
+
+  private async getNoteCached(noteId: string): Promise<Note> {
+    if (!this.client) {
+      throw new Error('Trilium client not configured');
+    }
+
+    const cached = this.getCached(this.noteCache, noteId);
+    if (cached) {
+      return cached;
+    }
+
+    const note = await this.client.getNote(noteId);
+    return this.setCached(this.noteCache, noteId, note);
+  }
+
+  private async getBranchCached(branchId: string): Promise<Branch> {
+    if (!this.client) {
+      throw new Error('Trilium client not configured');
+    }
+
+    const cached = this.getCached(this.branchCache, branchId);
+    if (cached) {
+      return cached;
+    }
+
+    const branch = await this.client.getBranch(branchId);
+    return this.setCached(this.branchCache, branchId, branch);
+  }
+
+  private createItem(note: Note, itemPath: string, branchId?: string): NoteItem {
+    this.knownItemsByNoteId.set(note.noteId, { path: itemPath, branchId });
+    return new NoteItem(note, itemPath, branchId, this.boxiconsSvgRoot);
+  }
+
   setClient(client: EtapiClient): void {
     this.client = client;
     this.filter = '';
+    this.clearFetchCaches();
+    this.clearKnownItems();
     this._onDidChangeTreeData.fire();
   }
 
   setFilter(query: string): void {
     this.filter = query;
+    this.clearKnownItems();
     this._onDidChangeTreeData.fire();
   }
 
   clearFilter(): void {
     this.filter = '';
+    this.clearKnownItems();
     this._onDidChangeTreeData.fire();
   }
 
@@ -553,7 +635,45 @@ export class NoteTreeProvider implements vscode.TreeDataProvider<NoteItem>, vsco
   }
 
   refresh(): void {
+    this.clearFetchCaches();
+    this.clearKnownItems();
     this._onDidChangeTreeData.fire();
+  }
+
+  refreshRoot(): void {
+    this.refresh();
+  }
+
+  refreshItem(item: NoteItem): void {
+    this.noteCache.delete(item.note.noteId);
+    this.knownItemsByNoteId.set(item.note.noteId, {
+      path: item.path,
+      branchId: item.branchId,
+    });
+    this._onDidChangeTreeData.fire(item);
+  }
+
+  async refreshNoteById(noteId: string): Promise<void> {
+    if (!this.client) {
+      this.refresh();
+      return;
+    }
+
+    this.noteCache.delete(noteId);
+
+    const known = this.knownItemsByNoteId.get(noteId);
+    if (known) {
+      try {
+        const note = await this.getNoteCached(noteId);
+        this._onDidChangeTreeData.fire(this.createItem(note, known.path, known.branchId));
+        return;
+      } catch {
+        // Fall through to best-effort tree lookup.
+      }
+    }
+
+    const item = await this.findItemByNoteId(noteId);
+    this._onDidChangeTreeData.fire(item);
   }
 
   async findItemByNoteId(noteId: string): Promise<NoteItem | undefined> {
@@ -566,9 +686,9 @@ export class NoteTreeProvider implements vscode.TreeDataProvider<NoteItem>, vsco
       return undefined;
     }
 
-    const note = await this.client.getNote(noteId);
+    const note = await this.getNoteCached(noteId);
     const branchId = await this.resolveBranchIdForPath(pathParts);
-    return new NoteItem(note, pathParts.join('/'), branchId, this.boxiconsSvgRoot);
+    return this.createItem(note, pathParts.join('/'), branchId);
   }
 
   private async pathPartsFromRoot(noteId: string): Promise<string[] | undefined> {
@@ -592,7 +712,7 @@ export class NoteTreeProvider implements vscode.TreeDataProvider<NoteItem>, vsco
         return reversedPath.reverse();
       }
 
-      const current = await this.client.getNote(currentId);
+      const current = await this.getNoteCached(currentId);
       const parentId = current.parentNoteIds[0];
       if (!parentId) {
         return undefined;
@@ -608,7 +728,7 @@ export class NoteTreeProvider implements vscode.TreeDataProvider<NoteItem>, vsco
 
     const noteId = pathParts[pathParts.length - 1];
     const parentId = pathParts[pathParts.length - 2];
-    const parent = await this.client.getNote(parentId);
+    const parent = await this.getNoteCached(parentId);
     const childIndex = parent.childNoteIds.indexOf(noteId);
     return childIndex >= 0 ? parent.childBranchIds[childIndex] : undefined;
   }
@@ -757,10 +877,10 @@ export class NoteTreeProvider implements vscode.TreeDataProvider<NoteItem>, vsco
 
     const parentPathParts = pathParts.slice(0, -1);
     const parentId = parentPathParts[parentPathParts.length - 1];
-    const parent = await this.client.getNote(parentId);
+    const parent = await this.getNoteCached(parentId);
     const parentBranchId = await this.resolveBranchIdForPath(parentPathParts);
 
-    return new NoteItem(parent, parentPathParts.join('/'), parentBranchId, this.boxiconsSvgRoot);
+    return this.createItem(parent, parentPathParts.join('/'), parentBranchId);
   }
 
   async resolveTreeItem(
@@ -835,7 +955,7 @@ export class NoteTreeProvider implements vscode.TreeDataProvider<NoteItem>, vsco
       try {
         const { results } = await this.client.searchNotes(this.filter, { limit: 100 });
         return results.map((n) => {
-          const item = new NoteItem(n, n.noteId, undefined, this.boxiconsSvgRoot);
+          const item = this.createItem(n, n.noteId, undefined);
           item.collapsibleState = vscode.TreeItemCollapsibleState.None;
           return item;
         });
@@ -848,8 +968,8 @@ export class NoteTreeProvider implements vscode.TreeDataProvider<NoteItem>, vsco
     const rootNoteId = getRootNoteId();
     if (!element) {
       try {
-        const root = await this.client.getNote(rootNoteId);
-        const rootItem = new NoteItem(root, rootNoteId, undefined, this.boxiconsSvgRoot);
+        const root = await this.getNoteCached(rootNoteId);
+        const rootItem = this.createItem(root, rootNoteId, undefined);
         if (root.childNoteIds.length > 0) {
           rootItem.collapsibleState = vscode.TreeItemCollapsibleState.Expanded;
         }
@@ -866,7 +986,7 @@ export class NoteTreeProvider implements vscode.TreeDataProvider<NoteItem>, vsco
     const parentPath = element.path;
 
     try {
-      const parent = await this.client.getNote(noteId);
+      const parent = await this.getNoteCached(noteId);
 
       if (parent.childNoteIds.length === 0) {
         return [];
@@ -876,8 +996,8 @@ export class NoteTreeProvider implements vscode.TreeDataProvider<NoteItem>, vsco
         parent.childNoteIds.map(async (childNoteId, index) => {
           const branchId = parent.childBranchIds[index];
           const [note, branch] = await Promise.all([
-            this.client!.getNote(childNoteId),
-            branchId ? this.client!.getBranch(branchId) : Promise.resolve(undefined),
+            this.getNoteCached(childNoteId),
+            branchId ? this.getBranchCached(branchId) : Promise.resolve(undefined),
           ]);
 
           return {
@@ -898,7 +1018,7 @@ export class NoteTreeProvider implements vscode.TreeDataProvider<NoteItem>, vsco
       });
 
       const items = childEntries.map(({ note, branchId }) =>
-        new NoteItem(note, `${parentPath}/${note.noteId}`, branchId, this.boxiconsSvgRoot));
+        this.createItem(note, `${parentPath}/${note.noteId}`, branchId));
       this.log(`getChildren(${noteId}): ${items.length} items`);
       items.forEach((item) =>
         this.log(`  ${item.note.noteId} "${item.note.title}" type=${item.note.type} contextValue="${item.contextValue}"`),

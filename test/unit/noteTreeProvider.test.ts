@@ -632,6 +632,62 @@ describe('NoteTreeProvider', () => {
     assert.ok(fired, 'onDidChangeTreeData should have fired');
   });
 
+  it('reuses cached note and branch fetches across repeated child loads', async () => {
+    const parent = makeNote({ noteId: 'parent', childNoteIds: ['c1'], childBranchIds: ['b1'] });
+    const child = makeNote({ noteId: 'c1', title: 'Child' });
+    const branch = makeBranch({ branchId: 'b1', noteId: 'c1', parentNoteId: 'parent', notePosition: 0 });
+
+    let noteCalls = 0;
+    let branchCalls = 0;
+    const client = {
+      getNote: async (id: string) => {
+        noteCalls += 1;
+        if (id === 'parent') { return parent; }
+        if (id === 'c1') { return child; }
+        throw new Error(`Note not found: ${id}`);
+      },
+      getBranch: async (id: string) => {
+        branchCalls += 1;
+        if (id === 'b1') { return branch; }
+        throw new Error(`Branch not found: ${id}`);
+      },
+    } as unknown as EtapiClient;
+
+    const provider = new NoteTreeProvider(client);
+    const parentItem = new NoteItem(parent, 'root/parent', 'bp');
+
+    const first = await provider.getChildren(parentItem);
+    const second = await provider.getChildren(parentItem);
+
+    assert.strictEqual(first.length, 1);
+    assert.strictEqual(second.length, 1);
+    assert.strictEqual(noteCalls, 2, 'parent and child should be fetched once each');
+    assert.strictEqual(branchCalls, 1, 'branch should be fetched once');
+  });
+
+  it('refreshes a known note id without full-tree invalidation', async () => {
+    const root = makeNote({ noteId: 'root', childNoteIds: ['c1'], childBranchIds: ['b1'] });
+    const child = makeNote({ noteId: 'c1', title: 'Child One' });
+    const branch = makeBranch({ branchId: 'b1', noteId: 'c1', parentNoteId: 'root', notePosition: 0 });
+
+    const provider = new NoteTreeProvider(makeClient({ root, c1: child }, { b1: branch }));
+
+    const top = await provider.getChildren();
+    assert.strictEqual(top.length, 1);
+    const children = await provider.getChildren(top[0]);
+    assert.strictEqual(children.length, 1);
+
+    let firedElement: NoteItem | undefined;
+    provider.onDidChangeTreeData((element) => {
+      firedElement = element as NoteItem | undefined;
+    });
+
+    await provider.refreshNoteById('c1');
+
+    assert.ok(firedElement, 'expected targeted tree element refresh');
+    assert.strictEqual(firedElement?.note.noteId, 'c1');
+  });
+
   it('moves a note to a different parent on drop', async () => {
     const calls: string[] = [];
     const client = {

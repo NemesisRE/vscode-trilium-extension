@@ -44,6 +44,7 @@ This roadmap is a working list of improvements and ideas, not a strict milestone
 - Protected-note warnings and LM tool error responses now use consistent, centralized messaging with clear guidance to unlock Protected Session in Trilium.
 - Protected-note open flows now provide guided recovery actions (`Open in Browser`, `Open in External Browser`, `Reconnect`) instead of warning-only dead ends.
 - Auto-refresh for open notes now keeps retrying through intermittent ETAPI/network failures, surfaces operation-specific recovery warnings, and supports configurable failure thresholds.
+- Large-tree performance improved with short-lived note/branch fetch caching plus targeted subtree refresh calls for create/rename/delete/clone/move/reorder flows, reducing redundant ETAPI requests and full-tree redraws.
 
 ## Next Priorities
 
@@ -51,7 +52,6 @@ These are the most useful and needed improvements based on current capabilities 
 
 ### Near-Term Execution Order
 
-- Improve large-tree responsiveness with incremental refreshes, fewer redundant note fetches, and reduced full-tree redraws.
 - Expand automated coverage for conflict resolution, auto-refresh behavior, drag-and-drop move/reorder, and network-retry flows to keep recent reliability work stable.
 
 ### Editing Fidelity and Format Safety
@@ -62,7 +62,6 @@ These are the most useful and needed improvements based on current capabilities 
 ### Reliability and Conflict Handling
 
 - Extend server-first save + conflict tooling beyond text notes to all editable note types where safe and applicable.
-- Improve refresh robustness for intermittent ETAPI/network failures with clearer retry UX and operation-specific recovery messages.
 
 ### Trilium Compatibility and UX Parity
 
@@ -71,7 +70,6 @@ These are the most useful and needed improvements based on current capabilities 
 
 ### Tree and Navigation Workflows
 
-- Improve large-tree responsiveness (incremental load/refresh strategy, reduced redundant note fetches, and fewer full-tree redraws).
 - Add optional auto-reveal/follow-active-note behavior so opening a note can focus and expand its location in the tree without forcing that behavior on everyone.
 - Extend recent-notes workflow with optional pinning and jump actions for frequently revisited notes.
 

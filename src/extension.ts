@@ -428,7 +428,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   });
 
   const themeChangeDisposable = vscode.window.onDidChangeActiveColorTheme(() => {
-    treeProvider.refresh();
+    treeProvider.refreshRoot();
   });
 
   // Attempt to restore a previously stored connection on activation.
@@ -467,7 +467,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       for (const entry of drafts) {
         await textEditorProvider.confirmDraftSave(entry.noteId);
       }
-      treeProvider.refresh();
+      await treeProvider.refreshNoteById(session.parentNoteId);
       void vscode.window.showInformationMessage(
         `Trilium: Saved ${drafts.length} draft note(s) under "${session.parentTitle}".`,
       );
@@ -493,7 +493,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
       }
       draftNoteManager.removeSession(sessionId);
-      treeProvider.refresh();
+      await treeProvider.refreshNoteById(session.parentNoteId);
       void vscode.window.showInformationMessage(
         `Trilium: Discarded ${drafts.length} staged draft note(s).`,
       );
@@ -583,7 +583,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     vscode.commands.registerCommand('trilium.refresh', () => {
       virtualDocProvider.clearAllCache();
-      treeProvider.refresh();
+      treeProvider.refreshRoot();
     }),
 
     vscode.commands.registerCommand('trilium.connect', async () => {
@@ -752,8 +752,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const noteType = (validTypes as readonly string[]).includes(type)
           ? (type as typeof validTypes[number])
           : 'text';
-        const result = await client.createNote(parentNoteId ?? 'root', title, noteType, content, mime);
-        treeProvider.refresh();
+        const normalizedParentId = parentNoteId ?? 'root';
+        const result = await client.createNote(normalizedParentId, title, noteType, content, mime);
+        await treeProvider.refreshNoteById(normalizedParentId);
         return { noteId: result.note.noteId };
       },
     ),
@@ -805,7 +806,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const rootId = parentNoteId ?? 'root';
         try {
           const count = await importNotesRecursive(client, rootId, specs);
-          treeProvider.refresh();
+          await treeProvider.refreshNoteById(rootId);
           void vscode.window.showInformationMessage(`Trilium: Imported ${count} note(s).`);
           return { created: count };
         } catch (err) {
@@ -841,8 +842,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           ? (type as typeof validTypes[number])
           : 'text';
         try {
-          const result = await client.createNote(parentNoteId ?? 'root', title, noteType, content, mime);
-          treeProvider.refresh();
+          const normalizedParentId = parentNoteId ?? 'root';
+          const result = await client.createNote(normalizedParentId, title, noteType, content, mime);
+          await treeProvider.refreshNoteById(normalizedParentId);
           return new vscode.LanguageModelToolResult([
             new vscode.LanguageModelTextPart(
               `Created note "${title}" with id "${result.note.noteId}" under parent "${parentNoteId ?? 'root'}".`,
@@ -878,8 +880,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           ]);
         }
         try {
-          const count = await importNotesRecursive(client, parentNoteId ?? 'root', notes);
-          treeProvider.refresh();
+          const normalizedParentId = parentNoteId ?? 'root';
+          const count = await importNotesRecursive(client, normalizedParentId, notes);
+          await treeProvider.refreshNoteById(normalizedParentId);
           return new vscode.LanguageModelToolResult([
             new vscode.LanguageModelTextPart(
               `Successfully created ${count} note(s) under parent "${parentNoteId ?? 'root'}".`,
@@ -932,7 +935,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             textEditorProvider,
             draftNoteManager,
           );
-          treeProvider.refresh();
+          await treeProvider.refreshNoteById(parentNoteId);
           const summary = createdEntries
             .map((entry) => `- ${entry.title} (${entry.noteId})`)
             .join('\n');
@@ -1130,7 +1133,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           }
 
           await client.putNoteContent(noteId, content);
-          treeProvider.refresh();
+          await treeProvider.refreshNoteById(noteId);
           return new vscode.LanguageModelToolResult([
             new vscode.LanguageModelTextPart(
               `Updated note "${note.title}" (${noteId}) with ${content.length} characters of content.`,
@@ -1175,7 +1178,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           const merged = existing.length === 0 ? content : `${existing}${joiner}${content}`;
 
           await client.putNoteContent(noteId, merged);
-          treeProvider.refresh();
+          await treeProvider.refreshNoteById(noteId);
           return new vscode.LanguageModelToolResult([
             new vscode.LanguageModelTextPart(
               `Appended content to note "${note.title}" (${noteId}). New content length: ${merged.length} characters.`,
@@ -1276,7 +1279,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
       try {
         await client.patchNote(target.note.noteId, { title: newTitle });
-        treeProvider.refresh();
+        await treeProvider.refreshNoteById(target.note.noteId);
       } catch (err) {
         void vscode.window.showErrorMessage(`Trilium: Failed to rename note: ${err}`);
       }
@@ -1320,7 +1323,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
           }
         }
-        treeProvider.refresh();
+        const pathParts = target.path.split('/').filter(Boolean);
+        const parentNoteId = pathParts.length >= 2 ? pathParts[pathParts.length - 2] : 'root';
+        await treeProvider.refreshNoteById(parentNoteId);
       } catch (err) {
         void vscode.window.showErrorMessage(`Trilium: Failed to delete note: ${err}`);
       }
@@ -1782,7 +1787,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       try {
         await client.createBranch(target.note.noteId, destination.noteId);
         await client.refreshNoteOrdering(destination.noteId);
-        treeProvider.refresh();
+        await treeProvider.refreshNoteById(destination.noteId);
         void vscode.window.showInformationMessage(
           `Cloned "${target.note.title}" into "${destination.title}".`,
         );
@@ -1822,8 +1827,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         await client.refreshNoteOrdering(destination.noteId);
         if (oldParentNoteId) {
           await client.refreshNoteOrdering(oldParentNoteId);
+          await treeProvider.refreshNoteById(oldParentNoteId);
         }
-        treeProvider.refresh();
+        await treeProvider.refreshNoteById(destination.noteId);
         void vscode.window.showInformationMessage(
           `Moved "${target.note.title}" to "${destination.title}".`,
         );
@@ -1840,7 +1846,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
       try {
         await openReorderChildrenPanel(context, client, target, () => {
-          treeProvider.refresh();
+          void treeProvider.refreshNoteById(target.note.noteId);
         });
       } catch (err) {
         void vscode.window.showErrorMessage(`Trilium: Reorder window failed: ${err}`);
@@ -2583,7 +2589,7 @@ async function createNoteOfType(
 
   try {
     const result = await client.createNote(parentId, title, type, defaultContent, mime);
-    treeProvider.refresh();
+    await treeProvider.refreshNoteById(parentId);
 
     const newNote = result.note;
 
