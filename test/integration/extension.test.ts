@@ -22,6 +22,8 @@ const EXPECTED_COMMANDS = [
   'trilium.createNoteMermaid',
   'trilium.createNoteCanvas',
   'trilium.createNoteMindMap',
+  'trilium.confirmDraftSession',
+  'trilium.discardDraftSession',
   'trilium.openTodayNote',
   'trilium.openInBrowser',
   'trilium.openInBrowserExternal',
@@ -45,9 +47,13 @@ const EXPECTED_COMMANDS = [
 const EXPECTED_LM_TOOLS = [
   'trilium_createNote',
   'trilium_importNotes',
+  'trilium_stageDraftNotes',
   'trilium_searchNotes',
+  'trilium_getNoteContext',
   'trilium_readNote',
   'trilium_listChildren',
+  'trilium_updateNoteContent',
+  'trilium_appendToNote',
 ];
 
 suite('Extension activation', () => {
