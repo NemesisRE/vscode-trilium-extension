@@ -206,11 +206,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     const openVirtualDocs = vscode.workspace.textDocuments
       .filter((doc) => doc.uri.scheme === 'trilium-text')
-      .map((doc) => {
-        return {
-          uri: doc.uri,
-          noteId: noteIdFromTriliumTextUri(doc.uri),
-        };
+      .flatMap((doc) => {
+        const noteId = noteIdFromTriliumTextUri(doc.uri);
+        return noteId ? [{ uri: doc.uri, noteId }] : [];
       });
     const openEditorDocs = textEditorProvider.getOpenEditorMetadata()
       .filter((entry) => entry.uri.scheme === 'trilium-text');
