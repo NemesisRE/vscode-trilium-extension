@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { DraftNoteManager } from './draftNoteManager';
 import { EtapiClient } from './etapiClient';
 import { getEditorFontSize, getEditorHighlightTheme, getEditorSpellcheck } from './settings';
 
@@ -53,6 +54,7 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
   public readonly onDidChangeCustomDocument = this._onDidChangeCustomDocument.event;
 
   private readonly openDocumentsByUri = new Map<string, TriliumCustomDocument>();
+  private readonly allowedDraftSaves = new Set<string>();
   private readonly conflictTheirsByPath = new Map<string, string>();
   private readonly conflictOursByPath = new Map<string, string>();
 
@@ -61,6 +63,7 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
   constructor(
     private readonly context: vscode.ExtensionContext,
     private readonly getClient: () => EtapiClient | undefined,
+    private readonly draftNoteManager: DraftNoteManager,
   ) {
     this.context.subscriptions.push(
       vscode.workspace.registerTextDocumentContentProvider('trilium-theirs', {
@@ -119,6 +122,34 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
       uri: doc.uri,
       noteId: doc.noteId,
     }));
+  }
+
+  public async confirmDraftSave(noteId: string): Promise<boolean> {
+    const draft = this.draftNoteManager.getDraft(noteId);
+    if (!draft) {
+      return false;
+    }
+
+    const openDocument = Array.from(this.openDocumentsByUri.values()).find((doc) => doc.noteId === noteId);
+    if (!openDocument) {
+      const client = this.getClient();
+      if (!client) {
+        throw new Error('Not connected');
+      }
+      await client.putNoteContent(noteId, draft.localContent);
+      this.draftNoteManager.removeDraft(noteId);
+      return true;
+    }
+
+    this.allowedDraftSaves.add(noteId);
+    try {
+      await vscode.commands.executeCommand('vscode.openWith', openDocument.uri, TriliumTextEditorProvider.viewType);
+      await vscode.commands.executeCommand('workbench.action.files.save');
+      this.draftNoteManager.removeDraft(noteId);
+      return true;
+    } finally {
+      this.allowedDraftSaves.delete(noteId);
+    }
   }
 
   /**
@@ -214,7 +245,8 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
     webviewPanel.title = document.title;
     document.registerPanel(webviewPanel);
 
-    if (document.noteId) {
+    const draftState = document.noteId ? this.draftNoteManager.getDraft(document.noteId) : undefined;
+    if (document.noteId && !draftState) {
       void (async () => {
         try {
           const client = this.getClient();
@@ -233,6 +265,14 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
           // Keep the restored placeholder if the note cannot be loaded yet.
         }
       })();
+    } else if (draftState) {
+      document.content = draftState.localContent;
+      document.syncedContent = draftState.serverContent;
+      document.title = draftState.title;
+      webviewPanel.title = draftState.title;
+      if (document.content !== document.syncedContent) {
+        this._onDidChangeCustomDocument.fire({ document });
+      }
     }
 
     // Set initial HTML
@@ -265,6 +305,9 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
         case 'contentChanged':
           // CKEditor content changed — update the document model and mark dirty.
           document.content = message.content as string;
+          if (document.noteId) {
+            this.draftNoteManager.updateDraftContent(document.noteId, document.content);
+          }
           this._onDidChangeCustomDocument.fire({ document });
           break;
 
@@ -327,6 +370,13 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
       throw new Error('Not connected');
     }
 
+    if (this.draftNoteManager.isDraft(document.noteId) && !this.allowedDraftSaves.has(document.noteId)) {
+      void vscode.window.showInformationMessage(
+        'Trilium: This generated draft is staged locally. Use "Trilium: Confirm Draft Notes" to save it to Trilium.',
+      );
+      throw new Error('Draft: awaiting explicit confirmation');
+    }
+
     try {
       const localContent = document.content;
       const serverContent = await client.getNoteContent(document.noteId);
@@ -370,6 +420,9 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
       vscode.window.setStatusBarMessage('$(check) Trilium: Note saved', 3000);
     } catch (err) {
       if (err instanceof Error && err.message.startsWith('Conflict:')) {
+        throw err;
+      }
+      if (err instanceof Error && err.message.startsWith('Draft:')) {
         throw err;
       }
       void vscode.window.showErrorMessage(`Trilium: Failed to save note: ${err}`);

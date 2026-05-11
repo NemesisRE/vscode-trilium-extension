@@ -39,9 +39,12 @@
   "main": "./out/extension.js",
   "activationEvents": [
     "onStartupFinished",
+    "onChatParticipant:trilium-notes.trilium",
     "onLanguageModelTool:trilium_createNote",
     "onLanguageModelTool:trilium_importNotes",
     "onLanguageModelTool:trilium_searchNotes",
+    "onLanguageModelTool:trilium_stageDraftNotes",
+    "onLanguageModelTool:trilium_getNoteContext",
     "onLanguageModelTool:trilium_readNote",
     "onLanguageModelTool:trilium_listChildren",
     "onLanguageModelTool:trilium_updateNoteContent",
@@ -98,6 +101,32 @@
         }
       ]
     },
+    "chatParticipants": [
+      {
+        "id": "trilium-notes.trilium",
+        "name": "trilium",
+        "fullName": "Trilium Notes",
+        "description": "Research with your Trilium notes, draft documentation, and write note trees back into Trilium.",
+        "isSticky": true,
+        "commands": [
+          {
+            "name": "document",
+            "description": "Create or extend Trilium documentation from existing notes and the current chat request."
+          }
+        ],
+        "disambiguation": [
+          {
+            "category": "trilium-documentation",
+            "description": "The user wants Copilot to inspect existing Trilium notes, synthesize new material, and create one or more notes inside a Trilium subtree.",
+            "examples": [
+              "Write documentation on how to build a local AI and add it to my Homelab section",
+              "Use my Trilium notes to create a docs tree under Infrastructure for local LLM hosting",
+              "Summarize these homelab notes and turn them into a cleaner documentation set in Trilium"
+            ]
+          }
+        ]
+      }
+    ],
     "commands": [
       {
         "command": "trilium.refresh",
@@ -203,6 +232,16 @@
       {
         "command": "trilium.createNoteWithContent",
         "title": "Create Note With Content (programmatic)",
+        "category": "Trilium"
+      },
+      {
+        "command": "trilium.confirmDraftSession",
+        "title": "Confirm Draft Notes",
+        "category": "Trilium"
+      },
+      {
+        "command": "trilium.discardDraftSession",
+        "title": "Discard Draft Notes",
         "category": "Trilium"
       },
       {
@@ -624,7 +663,7 @@
         "displayName": "Create Trilium Note",
         "toolReferenceName": "createTriliumNote",
         "canBeReferencedInPrompt": true,
-        "modelDescription": "Creates a single note in Trilium Notes under parentNoteId. If parentNoteId is unknown, first use trilium_searchNotes and/or trilium_listChildren to locate the desired parent (for example an Inbox note), then call this tool with that parentNoteId. Supports types: text (rich HTML), code (source code with language), mermaid (diagram), canvas (Excalidraw drawing). Returns the new noteId.",
+        "modelDescription": "Creates a single note in Trilium Notes under parentNoteId. If parentNoteId is unknown, first use trilium_searchNotes, trilium_getNoteContext, and/or trilium_listChildren to locate the desired parent. Use this for single-note results. For documentation sets or multiple related pages, prefer trilium_importNotes instead. Supports types: text (rich HTML), code (source code with language), mermaid (diagram), canvas (Excalidraw drawing). Returns the new noteId.",
         "tags": [
           "trilium",
           "notes",
@@ -672,7 +711,7 @@
         "displayName": "Import Notes Tree to Trilium",
         "toolReferenceName": "importTriliumNotes",
         "canBeReferencedInPrompt": true,
-        "modelDescription": "Recursively creates an entire hierarchy of notes in Trilium Notes from a JSON spec. Use this when the user asks to create documentation, a set of notes, or any multi-level note structure. Returns the total number of notes created.",
+        "modelDescription": "Recursively creates an entire hierarchy of notes in Trilium Notes from a JSON spec. Use this when the user asks to create documentation, a set of notes, or any multi-level note structure such as a homelab guide with overview and sub-pages. Resolve the destination first with trilium_searchNotes and/or trilium_getNoteContext. Returns the total number of notes created.",
         "tags": [
           "trilium",
           "notes",
@@ -739,11 +778,70 @@
         }
       },
       {
+        "name": "trilium_stageDraftNotes",
+        "displayName": "Stage Trilium Draft Notes",
+        "toolReferenceName": "stageTriliumDraftNotes",
+        "canBeReferencedInPrompt": true,
+        "modelDescription": "Creates new notes in Trilium with placeholder server content, opens them as dirty local drafts in VS Code, and defers saving generated content until the user explicitly confirms. Use this for documentation-generation workflows where the target section defines the subtree boundary. Notes may be created directly under that section or deeper within its subsections, and nested child notes are supported.",
+        "tags": [
+          "trilium",
+          "notes",
+          "draft",
+          "documentation"
+        ],
+        "inputSchema": {
+          "type": "object",
+          "required": [
+            "parentNoteId",
+            "notes"
+          ],
+          "properties": {
+            "parentNoteId": {
+              "type": "string",
+              "description": "The Trilium note ID that defines the target subtree boundary for the new draft notes."
+            },
+            "notes": {
+              "type": "array",
+              "description": "Array of staged draft note specs to create recursively within the target subtree. All content must be valid HTML for text notes.",
+              "items": {
+                "$ref": "#/$defs/DraftNoteSpec"
+              }
+            }
+          },
+          "$defs": {
+            "DraftNoteSpec": {
+              "type": "object",
+              "required": [
+                "title",
+                "content"
+              ],
+              "properties": {
+                "title": {
+                  "type": "string",
+                  "description": "Child note title."
+                },
+                "content": {
+                  "type": "string",
+                  "description": "Draft HTML content for this child note."
+                },
+                "children": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/DraftNoteSpec"
+                  },
+                  "description": "Nested child notes to stage under this new note."
+                }
+              }
+            }
+          }
+        }
+      },
+      {
         "name": "trilium_searchNotes",
         "displayName": "Search Trilium Notes",
         "toolReferenceName": "searchTriliumNotes",
         "canBeReferencedInPrompt": true,
-        "modelDescription": "Searches notes in Trilium by a text query. Returns a list of matching notes with their noteId, title, type, and parent note title. Use this to find relevant notes before reading or linking them.",
+        "modelDescription": "Searches notes in Trilium by a text query. Returns a list of matching notes with noteId, title, type, full path, and parent noteId. Use this to find likely destination notes or related context before reading or writing.",
         "tags": [
           "trilium",
           "notes",
@@ -771,11 +869,40 @@
         }
       },
       {
+        "name": "trilium_getNoteContext",
+        "displayName": "Get Trilium Note Context",
+        "toolReferenceName": "getTriliumNoteContext",
+        "canBeReferencedInPrompt": true,
+        "modelDescription": "Returns structured context for a Trilium note: full ancestor path, note IDs along that path, attributes, and a summary of direct children. Use this after resolving a destination note to understand where new content should be written and how the subtree is organized.",
+        "tags": [
+          "trilium",
+          "notes",
+          "context",
+          "navigation"
+        ],
+        "inputSchema": {
+          "type": "object",
+          "required": [
+            "noteId"
+          ],
+          "properties": {
+            "noteId": {
+              "type": "string",
+              "description": "The ID of the note whose Trilium context should be returned."
+            },
+            "childLimit": {
+              "type": "number",
+              "description": "Maximum number of direct child notes to include in the summary (default: 12)."
+            }
+          }
+        }
+      },
+      {
         "name": "trilium_readNote",
         "displayName": "Read Trilium Note Content",
         "toolReferenceName": "readTriliumNote",
         "canBeReferencedInPrompt": true,
-        "modelDescription": "Reads the content of a specific Trilium note by its noteId. Returns the note title, type, and content as plain text (HTML stripped). Use this to inspect, summarise, or answer questions about a specific note.",
+        "modelDescription": "Reads the content of a specific Trilium note by its noteId. Returns the note title, type, path, and content as plain text (HTML stripped). Use this after trilium_searchNotes or trilium_getNoteContext to inspect the destination note or nearby notes before creating documentation.",
         "tags": [
           "trilium",
           "notes",

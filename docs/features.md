@@ -69,6 +69,14 @@ Right-click a **file** or **image** note and choose **Download File** to save th
 - Right-click any note and choose **New Note...** to create one of the supported note types.
 - Right-click empty space in the panel to create a new note at the root level.
 
+## Copilot Draft Documentation
+
+- Use `@trilium` in Copilot Chat to generate documentation from your Trilium notes and Copilot context.
+- When you target a section such as `Homelab`, the extension treats that note as the subtree boundary and stages the result somewhere below it instead of appending to the section note itself.
+- The generated structure can include deeper subsections and notes with their own children when that organization is a better fit.
+- Those generated notes open as dirty draft tabs so you can review and edit them before saving.
+- Confirm the draft session to save the content to Trilium, or discard it to remove the staged notes entirely.
+
 ## Rename and Delete
 
 - Right-click any note and choose **Rename Note**, or press **F2** while the tree has focus.
