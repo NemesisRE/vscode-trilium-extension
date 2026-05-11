@@ -10,7 +10,7 @@ import {
   noteTypeToLabel,
   preferredCodiconForNote,
 } from './noteTreeProvider';
-import { getServerUrl, getToken, storeToken } from './settings';
+import { getAutoRevealInTreeOnOpen, getServerUrl, getToken, storeToken } from './settings';
 import { TempFileManager } from './tempFileManager';
 import { AttributesViewProvider } from './attributesViewProvider';
 import { TriliumTextEditorProvider } from './triliumTextEditorProvider';
@@ -509,7 +509,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
       try {
         const note = await client.getNote(noteId);
-        await openNoteInEditor(note, client, tempFileManager, virtualDocProvider);
+        await openNoteInEditor(
+          note,
+          client,
+          tempFileManager,
+          virtualDocProvider,
+          treeProvider,
+          treeView,
+        );
       } catch (err) {
         void vscode.window.showErrorMessage(`Trilium: Failed to open breadcrumb note: ${err}`);
       }
@@ -523,7 +530,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
         try {
           const note = await client.getNote(noteId);
-          await openNoteInEditor(note, client, tempFileManager, virtualDocProvider);
+          await openNoteInEditor(
+            note,
+            client,
+            tempFileManager,
+            virtualDocProvider,
+            treeProvider,
+            treeView,
+          );
           if (backlinksProvider) {
             backlinksProvider.updateBacklinks(noteId);
           }
@@ -577,7 +591,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
 
         const parent = await client.getNote(parentId);
-        await openNoteInEditor(parent, client, tempFileManager, virtualDocProvider);
+        await openNoteInEditor(
+          parent,
+          client,
+          tempFileManager,
+          virtualDocProvider,
+          treeProvider,
+          treeView,
+        );
       } catch (err) {
         void vscode.window.showErrorMessage(`Trilium: Failed to open parent note: ${err}`);
       }
@@ -638,7 +659,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           ignoreFocusOut: true,
         });
         if (!langPick) { return; }
-        await createNoteOfType('code', langPick.mime, item, treeProvider, tempFileManager);
+        await createNoteOfType('code', langPick.mime, item, treeProvider, treeView, tempFileManager);
         return;
       }
 
@@ -647,12 +668,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         canvas: JSON.stringify({ type: 'excalidraw', version: 2, elements: [], appState: {} }),
         mindMap: JSON.stringify({ nodeData: { id: 'root', topic: 'Mind Map', children: [] } }),
       };
-      await createNoteOfType(typePick.type, undefined, item, treeProvider, tempFileManager,
+      await createNoteOfType(typePick.type, undefined, item, treeProvider, treeView, tempFileManager,
         defaults[typePick.type] ?? '');
     }),
 
     vscode.commands.registerCommand('trilium.createNoteText', async (item?: NoteItem) => {
-      await createNoteOfType('text', undefined, item, treeProvider, tempFileManager);
+      await createNoteOfType('text', undefined, item, treeProvider, treeView, tempFileManager);
     }),
 
     vscode.commands.registerCommand('trilium.createNoteCode', async (item?: NoteItem) => {
@@ -662,21 +683,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         ignoreFocusOut: true,
       });
       if (!langPick) { return; }
-      await createNoteOfType('code', langPick.mime, item, treeProvider, tempFileManager);
+      await createNoteOfType('code', langPick.mime, item, treeProvider, treeView, tempFileManager);
     }),
 
     vscode.commands.registerCommand('trilium.createNoteMermaid', async (item?: NoteItem) => {
-      await createNoteOfType('mermaid', undefined, item, treeProvider, tempFileManager,
+      await createNoteOfType('mermaid', undefined, item, treeProvider, treeView, tempFileManager,
         'graph TD\n    A[Start] --> B[End]');
     }),
 
     vscode.commands.registerCommand('trilium.createNoteCanvas', async (item?: NoteItem) => {
-      await createNoteOfType('canvas', undefined, item, treeProvider, tempFileManager,
+      await createNoteOfType('canvas', undefined, item, treeProvider, treeView, tempFileManager,
         JSON.stringify({ type: 'excalidraw', version: 2, elements: [], appState: {} }));
     }),
 
     vscode.commands.registerCommand('trilium.createNoteMindMap', async (item?: NoteItem) => {
-      await createNoteOfType('mindMap', undefined, item, treeProvider, tempFileManager,
+      await createNoteOfType('mindMap', undefined, item, treeProvider, treeView, tempFileManager,
         JSON.stringify({ nodeData: { id: 'root', topic: 'Mind Map', children: [] } }));
     }),
 
@@ -718,6 +739,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             uri,
             TriliumTextEditorProvider.viewType,
           );
+          await maybeAutoRevealOpenedNote(note.noteId, treeProvider, treeView);
           return;
         }
 
@@ -731,6 +753,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const doc = await vscode.workspace.openTextDocument(filePath);
         await vscode.languages.setTextDocumentLanguage(doc, tempFileManager.getLanguageId(note));
         await vscode.window.showTextDocument(doc, { preview: false });
+        await maybeAutoRevealOpenedNote(note.noteId, treeProvider, treeView);
       } catch (err) {
         void vscode.window.showErrorMessage(`Trilium: Failed to open today's note: ${err}`);
       }
@@ -1379,6 +1402,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             uri,
             TriliumTextEditorProvider.viewType,
           );
+          await maybeAutoRevealOpenedNote(note.noteId, treeProvider, treeView);
           recentNotesProvider.trackNote(note);
             if (backlinksProvider) {
               backlinksProvider.updateBacklinks(note.noteId);
@@ -1403,6 +1427,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           tempFileManager.getLanguageId(note),
         );
         await vscode.window.showTextDocument(doc, { preview: false });
+        await maybeAutoRevealOpenedNote(note.noteId, treeProvider, treeView);
         recentNotesProvider.trackNote(note);
           if (backlinksProvider) {
             backlinksProvider.updateBacklinks(note.noteId);
@@ -1516,7 +1541,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (!item) { return; }
         qp.hide();
         try {
-          await openNoteInEditor(item.note, client, tempFileManager, virtualDocProvider);
+          await openNoteInEditor(
+            item.note,
+            client,
+            tempFileManager,
+            virtualDocProvider,
+            treeProvider,
+            treeView,
+          );
         } catch (err) {
           void vscode.window.showErrorMessage(`Trilium: Failed to open note: ${err}`);
         }
@@ -1615,7 +1647,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           case 'year':  note = await client.getYearNote(String(year)); break;
           default: return;
         }
-        await openNoteInEditor(note, client, tempFileManager, virtualDocProvider);
+        await openNoteInEditor(
+          note,
+          client,
+          tempFileManager,
+          virtualDocProvider,
+          treeProvider,
+          treeView,
+        );
       } catch (err) {
         void vscode.window.showErrorMessage(`Trilium: Failed to open calendar note: ${err}`);
       }
@@ -1631,7 +1670,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
       try {
         const note = await client.getInboxNote(date);
-        await openNoteInEditor(note, client, tempFileManager, virtualDocProvider);
+        await openNoteInEditor(
+          note,
+          client,
+          tempFileManager,
+          virtualDocProvider,
+          treeProvider,
+          treeView,
+        );
       } catch (err) {
         void vscode.window.showErrorMessage(`Trilium: Failed to open inbox note: ${err}`);
       }
@@ -1649,7 +1695,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const week = `${year}-W${String(weekNum).padStart(2, '0')}`;
       try {
         const note = await client.getWeekNote(week);
-        await openNoteInEditor(note, client, tempFileManager, virtualDocProvider);
+        await openNoteInEditor(
+          note,
+          client,
+          tempFileManager,
+          virtualDocProvider,
+          treeProvider,
+          treeView,
+        );
       } catch (err) {
         void vscode.window.showErrorMessage(`Trilium: Failed to open week note: ${err}`);
       }
@@ -1662,7 +1715,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
       try {
         const note = await client.getMonthNote(month);
-        await openNoteInEditor(note, client, tempFileManager, virtualDocProvider);
+        await openNoteInEditor(
+          note,
+          client,
+          tempFileManager,
+          virtualDocProvider,
+          treeProvider,
+          treeView,
+        );
       } catch (err) {
         void vscode.window.showErrorMessage(`Trilium: Failed to open month note: ${err}`);
       }
@@ -1673,7 +1733,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (!client) { void vscode.window.showErrorMessage('Trilium: Not connected.'); return; }
       try {
         const note = await client.getYearNote(String(new Date().getFullYear()));
-        await openNoteInEditor(note, client, tempFileManager, virtualDocProvider);
+        await openNoteInEditor(
+          note,
+          client,
+          tempFileManager,
+          virtualDocProvider,
+          treeProvider,
+          treeView,
+        );
       } catch (err) {
         void vscode.window.showErrorMessage(`Trilium: Failed to open year note: ${err}`);
       }
@@ -2205,6 +2272,8 @@ async function openNoteInEditor(
   client: EtapiClient,
   tempFileManager: TempFileManager,
   virtualDocProvider: VirtualDocumentProvider,
+  treeProvider: NoteTreeProvider,
+  treeView: vscode.TreeView<NoteItem>,
   notePathOrId?: string,
 ): Promise<void> {
   const editableTypes: Note['type'][] = ['text', 'code', 'mermaid', 'canvas', 'mindMap'];
@@ -2235,6 +2304,7 @@ async function openNoteInEditor(
       title: note.title,
     });
     await vscode.commands.executeCommand('vscode.openWith', uri, TriliumTextEditorProvider.viewType);
+    await maybeAutoRevealOpenedNote(note.noteId, treeProvider, treeView);
     return;
   }
   const rawContent = await client.getNoteContent(note.noteId);
@@ -2246,6 +2316,7 @@ async function openNoteInEditor(
   const doc = await vscode.workspace.openTextDocument(filePath);
   await vscode.languages.setTextDocumentLanguage(doc, tempFileManager.getLanguageId(note));
   await vscode.window.showTextDocument(doc, { preview: false });
+  await maybeAutoRevealOpenedNote(note.noteId, treeProvider, treeView);
 }
 
 function noteIdFromUri(uri: vscode.Uri, tempFileManager: TempFileManager): string | undefined {
@@ -2534,6 +2605,22 @@ async function revealNoteInTree(
   return true;
 }
 
+async function maybeAutoRevealOpenedNote(
+  noteId: string,
+  treeProvider: NoteTreeProvider,
+  treeView: vscode.TreeView<NoteItem>,
+): Promise<void> {
+  if (!getAutoRevealInTreeOnOpen()) {
+    return;
+  }
+
+  try {
+    await revealNoteInTree(noteId, treeProvider, treeView);
+  } catch {
+    // Best-effort only. Opening the note should not fail if the tree cannot reveal it.
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Note creation helpers
 // ---------------------------------------------------------------------------
@@ -2569,6 +2656,7 @@ async function createNoteOfType(
   mime: string | undefined,
   item: NoteItem | undefined,
   treeProvider: NoteTreeProvider,
+  treeView: vscode.TreeView<NoteItem>,
   tempFileManager: TempFileManager,
   defaultContent = '',
 ): Promise<void> {
@@ -2606,6 +2694,7 @@ async function createNoteOfType(
         title: newNote.title,
       });
       await vscode.commands.executeCommand('vscode.openWith', uri, TriliumTextEditorProvider.viewType);
+      await maybeAutoRevealOpenedNote(newNote.noteId, treeProvider, treeView);
       return;
     }
 
@@ -2616,6 +2705,7 @@ async function createNoteOfType(
     const langId = tempFileManager.getLanguageId(newNote);
     await vscode.languages.setTextDocumentLanguage(doc, langId);
     await vscode.window.showTextDocument(doc, { preview: false });
+    await maybeAutoRevealOpenedNote(newNote.noteId, treeProvider, treeView);
   } catch (err) {
     void vscode.window.showErrorMessage(`Trilium: Failed to create note: ${err}`);
   }

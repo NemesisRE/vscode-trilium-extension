@@ -46,6 +46,7 @@ This roadmap is a working list of improvements and ideas, not a strict milestone
 - Auto-refresh for open notes now keeps retrying through intermittent ETAPI/network failures, surfaces operation-specific recovery warnings, and supports configurable failure thresholds.
 - Large-tree performance improved with short-lived note/branch fetch caching plus targeted subtree refresh calls for create/rename/delete/clone/move/reorder flows, reducing redundant ETAPI requests and full-tree redraws.
 - Automated coverage now includes targeted tests for conflict-resolution save flows, reorder-panel validation/save behavior, tree refresh caching, and network-retry policy branches.
+- Opening notes can now optionally auto-reveal and focus their location in the tree via `trilium.autoRevealInTreeOnOpen`.
 
 ## Next Priorities
 
@@ -69,7 +70,6 @@ These are the most useful and needed improvements based on current capabilities 
 
 ### Tree and Navigation Workflows
 
-- Add optional auto-reveal/follow-active-note behavior so opening a note can focus and expand its location in the tree without forcing that behavior on everyone.
 - Extend recent-notes workflow with optional pinning and jump actions for frequently revisited notes.
 
 ### Copilot and Automation Tools

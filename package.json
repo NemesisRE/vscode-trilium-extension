@@ -1060,6 +1060,11 @@
           "maximum": 50,
           "description": "Maximum number of recently opened notes to show in the Recent Notes view."
         },
+        "trilium.autoRevealInTreeOnOpen": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically reveal and focus a note in the tree after opening it in an editor."
+        },
         "trilium.autoRefreshIntervalSeconds": {
           "type": "number",
           "default": 30,

@@ -38,3 +38,9 @@ export function getEditorHighlightTheme(): string {
 export function getRootNoteId(): string {
   return vscode.workspace.getConfiguration('trilium').get<string>('rootNoteId', 'root');
 }
+
+export function getAutoRevealInTreeOnOpen(): boolean {
+  return vscode.workspace
+    .getConfiguration('trilium')
+    .get<boolean>('autoRevealInTreeOnOpen', false);
+}
