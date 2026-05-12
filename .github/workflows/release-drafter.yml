@@ -30,6 +30,7 @@ jobs:
   update_release_draft:
     name: Update Release Draft
     runs-on: ubuntu-latest
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref_name == 'main'
     steps:
       - uses: release-drafter/release-drafter@v7
         with:
