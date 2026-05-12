@@ -91,17 +91,14 @@ jobs:
           path: ${{ steps.package_vsix.outputs.vsix_path }}
           if-no-files-found: error
 
-      - name: Publish to Visual Studio Marketplace
-        env:
-          VSCE_PAT: ${{ secrets.VSCE_PAT }}
-        run: npx @vscode/vsce publish --packagePath "${{ steps.package_vsix.outputs.vsix_path }}" --pat "$VSCE_PAT"
-
       - name: Publish to Open VSX
+        if: ${{ always() && steps.package_vsix.outcome == 'success' }}
         env:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
         run: npx ovsx@0.10.12 publish "${{ steps.package_vsix.outputs.vsix_path }}"
 
       - name: Attach VSIX to GitHub Release
+        if: ${{ always() && steps.package_vsix.outcome == 'success' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release upload "${{ github.event.release.tag_name }}" "${{ steps.package_vsix.outputs.vsix_path }}" --clobber
