@@ -91,6 +91,12 @@ jobs:
           path: ${{ steps.package_vsix.outputs.vsix_path }}
           if-no-files-found: error
 
+      - name: Publish to Visual Studio Marketplace
+        if: ${{ always() && steps.package_vsix.outcome == 'success' }}
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: npx @vscode/vsce publish --packagePath "${{ steps.package_vsix.outputs.vsix_path }}" --pat "$VSCE_PAT"
+
       - name: Publish to Open VSX
         if: ${{ always() && steps.package_vsix.outcome == 'success' }}
         env:
