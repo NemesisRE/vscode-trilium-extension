@@ -51,9 +51,9 @@ describe('TempFileManager', () => {
       assert.ok(p.endsWith('.excalidraw'), `Expected .excalidraw extension, got: ${p}`);
     });
 
-    it('returns a .md path for mindMap notes', () => {
+    it('returns a .json path for mindMap notes', () => {
       const p = manager.getTempPath(makeNote({ type: 'mindMap' }));
-      assert.ok(p.endsWith('.md'), `Expected .md extension, got: ${p}`);
+      assert.ok(p.endsWith('.json'), `Expected .json extension, got: ${p}`);
     });
 
     it('returns a .js path for javascript code notes', () => {
@@ -129,8 +129,8 @@ describe('TempFileManager', () => {
       assert.strictEqual(manager.getLanguageId(makeNote({ type: 'canvas' })), 'json');
     });
 
-    it('returns markdown for mindMap notes', () => {
-      assert.strictEqual(manager.getLanguageId(makeNote({ type: 'mindMap' })), 'markdown');
+    it('returns json for mindMap notes', () => {
+      assert.strictEqual(manager.getLanguageId(makeNote({ type: 'mindMap' })), 'json');
     });
 
     it('returns python for text/x-python code notes', () => {
@@ -188,6 +188,13 @@ describe('TempFileManager', () => {
 
     it('returns false for an unknown noteId', () => {
       assert.strictEqual(manager.isMindMapNote('does-not-exist'), false);
+    });
+  });
+
+  describe('mind map temp files', () => {
+    it('returns a .json path for mindMap notes', () => {
+      const p = manager.getTempPath(makeNote({ noteId: 'mm-path', type: 'mindMap' }));
+      assert.ok(p.endsWith('.json'), `Expected .json extension, got: ${p}`);
     });
   });
 
@@ -264,64 +271,5 @@ describe('TempFileManager', () => {
     });
   });
 
-  describe('mindMapJsonToMarkdown', () => {
-    it('converts a root node to a level-1 heading', () => {
-      const json = JSON.stringify({ nodeData: { id: 'root', topic: 'Root', children: [] } });
-      const md = manager.mindMapJsonToMarkdown(json);
-      assert.ok(md.includes('# Root'), `Expected "# Root" in: ${md}`);
-    });
-
-    it('converts children to deeper headings', () => {
-      const json = JSON.stringify({
-        nodeData: {
-          id: 'root', topic: 'Root',
-          children: [
-            { id: 'c1', topic: 'Child', children: [
-              { id: 'c2', topic: 'Grandchild', children: [] }
-            ] }
-          ],
-        },
-      });
-      const md = manager.mindMapJsonToMarkdown(json);
-      assert.ok(md.includes('## Child'), `Expected "## Child" in: ${md}`);
-      assert.ok(md.includes('### Grandchild'), `Expected "### Grandchild" in: ${md}`);
-    });
-
-    it('falls back to "# Mind Map" for invalid JSON', () => {
-      const md = manager.mindMapJsonToMarkdown('not json');
-      assert.strictEqual(md, '# Mind Map\n');
-    });
-  });
-
-  describe('markdownToMindMapJson', () => {
-    it('converts a level-1 heading to the root node topic', () => {
-      const data = JSON.parse(manager.markdownToMindMapJson('# My Root\n'));
-      assert.strictEqual(data.nodeData.topic, 'My Root');
-    });
-
-    it('converts nested headings to child nodes', () => {
-      const md = '# Root\n## Child\n### Grandchild\n';
-      const data = JSON.parse(manager.markdownToMindMapJson(md));
-      assert.strictEqual(data.nodeData.children[0].topic, 'Child');
-      assert.strictEqual(data.nodeData.children[0].children[0].topic, 'Grandchild');
-    });
-
-    it('round-trips topics through JSON→MD→JSON', () => {
-      const original = JSON.stringify({
-        nodeData: {
-          id: 'root', topic: 'Project',
-          children: [
-            { id: 'a1', topic: 'Area 1', children: [] },
-            { id: 'a2', topic: 'Area 2', children: [] },
-          ],
-        },
-      });
-      const md = manager.mindMapJsonToMarkdown(original);
-      const back = JSON.parse(manager.markdownToMindMapJson(md));
-      assert.strictEqual(back.nodeData.topic, 'Project');
-      assert.strictEqual(back.nodeData.children[0].topic, 'Area 1');
-      assert.strictEqual(back.nodeData.children[1].topic, 'Area 2');
-    });
-  });
 });
 

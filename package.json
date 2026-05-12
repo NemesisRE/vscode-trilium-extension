@@ -379,6 +379,18 @@
         "title": "Open Parent Note",
         "icon": "$(arrow-up)",
         "category": "Trilium"
+      },
+      {
+        "command": "trilium.openMindMap",
+        "title": "Open Mind Map",
+        "icon": "$(open-preview)",
+        "category": "Trilium"
+      },
+      {
+        "command": "trilium.openMindMapJson",
+        "title": "Open Mind Map JSON",
+        "icon": "$(json)",
+        "category": "Trilium"
       }
     ],
     "submenus": [
@@ -487,6 +499,16 @@
           "group": "inline"
         },
         {
+          "command": "trilium.openMindMap",
+          "when": "viewItem == noteMindMap",
+          "group": "inline"
+        },
+        {
+          "command": "trilium.openMindMapJson",
+          "when": "viewItem == noteMindMap",
+          "group": "inline"
+        },
+        {
           "command": "trilium.openFile",
           "when": "viewItem == noteFile",
           "group": "inline"
@@ -510,6 +532,16 @@
           "command": "trilium.openNote",
           "when": "viewItem == noteCode",
           "group": "navigation@1"
+        },
+        {
+          "command": "trilium.openMindMap",
+          "when": "viewItem == noteMindMap",
+          "group": "navigation@1"
+        },
+        {
+          "command": "trilium.openMindMapJson",
+          "when": "viewItem == noteMindMap",
+          "group": "navigation@2"
         },
         {
           "command": "trilium.openFile",
@@ -563,12 +595,12 @@
         },
         {
           "command": "trilium.viewAttributes",
-          "when": "viewItem =~ /^note(Text|Code|File|External)$/",
+          "when": "viewItem =~ /^note(Text|Code|MindMap|File|External)$/",
           "group": "navigation@9"
         },
         {
           "submenu": "trilium.newNoteSubmenu",
-          "when": "viewItem =~ /^note(Text|Code|File|External)$/",
+          "when": "viewItem =~ /^note(Text|Code|MindMap|File|External)$/",
           "group": "1_modification@1"
         },
         {
@@ -592,43 +624,48 @@
           "group": "1_modification@2"
         },
         {
+          "command": "trilium.renameNote",
+          "when": "viewItem == noteMindMap",
+          "group": "1_modification@2"
+        },
+        {
           "command": "trilium.deleteNote",
-          "when": "viewItem =~ /^note(Text|Code|File|External)$/",
+          "when": "viewItem =~ /^note(Text|Code|MindMap|File|External)$/",
           "group": "2_delete@1"
         },
         {
           "command": "trilium.copyNoteId",
-          "when": "viewItem =~ /^note(Text|Code|File|External)$/",
+          "when": "viewItem =~ /^note(Text|Code|MindMap|File|External)$/",
           "group": "9_copy@1"
         },
         {
           "command": "trilium.copyNoteUrl",
-          "when": "viewItem =~ /^note(Text|Code|File|External)$/",
+          "when": "viewItem =~ /^note(Text|Code|MindMap|File|External)$/",
           "group": "9_copy@2"
         },
         {
           "command": "trilium.showRevisions",
-          "when": "viewItem =~ /^note(Text|Code|File|External)$/",
+          "when": "viewItem =~ /^note(Text|Code|MindMap|File|External)$/",
           "group": "3_history@1"
         },
         {
           "command": "trilium.cloneNote",
-          "when": "viewItem =~ /^note(Text|Code|File|External)$/",
+          "when": "viewItem =~ /^note(Text|Code|MindMap|File|External)$/",
           "group": "3_history@2"
         },
         {
           "command": "trilium.moveNote",
-          "when": "viewItem =~ /^note(Text|Code|File|External)$/",
+          "when": "viewItem =~ /^note(Text|Code|MindMap|File|External)$/",
           "group": "3_history@3"
         },
         {
           "command": "trilium.reorderChildren",
-          "when": "viewItem =~ /^note(Text|Code|File|External)$/",
+          "when": "viewItem =~ /^note(Text|Code|MindMap|File|External)$/",
           "group": "3_history@3.5"
         },
         {
           "command": "trilium.exportSubtree",
-          "when": "viewItem =~ /^note(Text|Code|File|External)$/",
+          "when": "viewItem =~ /^note(Text|Code|MindMap|File|External)$/",
           "group": "3_history@4"
         }
       ],
@@ -654,6 +691,11 @@
           "command": "trilium.openParent",
           "when": "resourceScheme == trilium-text",
           "group": "navigation@21"
+        },
+        {
+          "command": "trilium.openMindMap",
+          "when": "trilium.activeNoteType == 'mindMap'",
+          "group": "navigation@10"
         }
       ]
     },
@@ -1060,12 +1102,31 @@
           "maximum": 50,
           "description": "Maximum number of recently opened notes to show in the Recent Notes view."
         },
+        "trilium.autoRevealInTreeOnOpen": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically reveal and focus a note in the tree after opening it in an editor."
+        },
         "trilium.autoRefreshIntervalSeconds": {
           "type": "number",
           "default": 30,
           "minimum": 0,
           "maximum": 600,
           "description": "How often (in seconds) to check for external changes to open notes and refresh them. Set to 0 to disable."
+        },
+        "trilium.autoRefreshMaxConsecutiveFailures": {
+          "type": "number",
+          "default": 8,
+          "minimum": 1,
+          "maximum": 100,
+          "description": "Maximum consecutive auto-refresh failures before an open note is untracked from refresh polling."
+        },
+        "trilium.autoRefreshWarnAfterFailures": {
+          "type": "number",
+          "default": 3,
+          "minimum": 1,
+          "maximum": 50,
+          "description": "Show a retry/reconnect warning after this many consecutive auto-refresh failures (and every N failures after)."
         }
       }
     }

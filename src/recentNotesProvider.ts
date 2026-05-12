@@ -1,6 +1,7 @@
+import * as path from 'path';
 import * as vscode from 'vscode';
 import { Note } from './etapiClient';
-import { NoteItem } from './noteTreeProvider';
+import { BOXICONS_SVG_RELATIVE_ROOT, NoteItem } from './noteTreeProvider';
 
 const GLOBAL_STATE_KEY = 'trilium.recentNotes';
 
@@ -16,11 +17,14 @@ interface StoredNote {
 export class RecentNotesProvider implements vscode.TreeDataProvider<NoteItem> {
   private readonly _onDidChangeTreeData = new vscode.EventEmitter<void>();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
+  private readonly boxiconsSvgRoot: string | undefined;
 
   constructor(
     private readonly context: vscode.ExtensionContext,
-    private readonly boxiconsSvgRoot?: string,
-  ) {}
+    extensionPath?: string,
+  ) {
+    this.boxiconsSvgRoot = extensionPath ? path.join(extensionPath, BOXICONS_SVG_RELATIVE_ROOT) : undefined;
+  }
 
   trackNote(note: Note): void {
     const maxCount = vscode.workspace

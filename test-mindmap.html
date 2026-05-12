@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Mind Elixir Custom Test</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/mind-elixir@5.11.0/dist/style.css">
+  <style>
+    html, body { margin: 0; padding: 0; height: 100%; }
+    #map { height: 100%; width: 100%; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <script type="module">
+    import MindElixir from 'https://cdn.jsdelivr.net/npm/mind-elixir@5.11.0/dist/MindElixir.js'\;
+    const data = {
+      nodeData: {
+        id: 'root',
+        topic: 'Root Node',
+        root: true,
+        children: [
+          { id: 'sub1', topic: 'Sub 1' },
+          { id: 'sub2', topic: 'Sub 2' }
+        ]
+      }
+    };
+    const options = {
+      el: '#map',
+      direction: MindElixir.RIGHT,
+      editable: false,
+      toolBar: true,
+      nodeMenu: false,
+      keypress: true,
+      theme: { name: 'Latte' },
+    };
+    const mind = new MindElixir(options);
+    mind.init(data);
+  </script>
+</body>
+</html>

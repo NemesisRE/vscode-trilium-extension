@@ -44,6 +44,15 @@ Never rely on recalled API shapes for a package you haven't verified at the reso
 - If two valid implementation approaches exist with meaningful trade-offs, present them briefly and ask which to use.
 - Do not silently pick the "easier" or "faster" option without disclosure.
 
+### Conventional Commits and Branch Naming
+- Use Conventional Commit prefixes in commit messages and PR titles: `feat`, `fix`, `chore`, `docs`, and optional breaking marker `!` (for example `feat(api)!: remove legacy endpoint`).
+- Prefer branch names with matching prefixes, e.g. `feat/<topic>`, `fix/<topic>`, `chore/<topic>`, `docs/<topic>`, `breaking-change/<topic>`.
+- Keep commit type aligned with actual change intent to support release automation:
+  - `feat` increments minor releases.
+  - `fix` increments patch releases.
+  - `!` or `BREAKING CHANGE:` marks major-release intent.
+- When commit type is ambiguous, ask before choosing a prefix.
+
 ---
 
 ## VS Code Extension Specific Rules

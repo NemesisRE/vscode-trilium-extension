@@ -37,11 +37,17 @@ This roadmap is a working list of improvements and ideas, not a strict milestone
 - The text-note editor breadcrumb is now clickable, so parent-path navigation can open any ancestor note directly from the editor header.
 - Added lightweight backlinks support: a dedicated Backlinks sidebar view for the currently selected/opened note plus an in-editor backlinks count badge in the breadcrumb header.
 - Added "Reveal in Tree" and "Open Parent" editor navigation actions (available in editor title bar, tab context menu, and tree context menu) to speed up large-tree navigation; both commands work with all editor types (CKEditor, code, canvas, mermaid, mind-map).
+- Mind-map notes now use native MindElixir JSON editing with an interactive native MindElixir preview command, including an editor-title action for quick preview from active mind-map tabs.
 - Fixed stale-cache reopen resilience: restored text-note editor tabs no longer throw errors on startup when disconnected. Instead, they show a safe placeholder and auto-refresh once reconnected, with automatic content fetch and update. Added unit test coverage for disconnected provider path.
 - CKEditor image upload now routes inserted images through the extension host into Trilium attachments, then links them back into the note HTML automatically using Trilium's native attachment URL format.
 - Fixed dirty-state regression for text notes: the editor now uses `CustomEditorProvider` so the tab dirty indicator (●) and native unsaved-close dialog are driven by content changes, not by the filesystem. Auto-save and Ctrl+S both push directly to Trilium via ETAPI; closing a dirty tab always triggers VS Code's native save prompt.
 - LM tools `trilium_searchNotes`, `trilium_readNote`, `trilium_listChildren`, `trilium_updateNoteContent`, and `trilium_appendToNote` are now registered and discovered automatically by Copilot Chat. `trilium_readNote` strips all HTML tags before returning content to prevent prompt injection from note content.
 - Protected-note warnings and LM tool error responses now use consistent, centralized messaging with clear guidance to unlock Protected Session in Trilium.
+- Protected-note open flows now provide guided recovery actions (`Open in Browser`, `Open in External Browser`, `Reconnect`) instead of warning-only dead ends.
+- Auto-refresh for open notes now keeps retrying through intermittent ETAPI/network failures, surfaces operation-specific recovery warnings, and supports configurable failure thresholds.
+- Large-tree performance improved with short-lived note/branch fetch caching plus targeted subtree refresh calls for create/rename/delete/clone/move/reorder flows, reducing redundant ETAPI requests and full-tree redraws.
+- Automated coverage now includes targeted tests for conflict-resolution save flows, reorder-panel validation/save behavior, tree refresh caching, and network-retry policy branches.
+- Opening notes can now optionally auto-reveal and focus their location in the tree via `trilium.autoRevealInTreeOnOpen`.
 
 ## Next Priorities
 
@@ -49,31 +55,21 @@ These are the most useful and needed improvements based on current capabilities 
 
 ### Near-Term Execution Order
 
-- Extend protected-note handling UX beyond warning text: add clearer editor/tree affordances and guided recovery actions when a note is blocked by Protected Session.
-- Improve refresh robustness for intermittent ETAPI/network failures with clearer retry UX and operation-specific recovery messages.
-- Improve large-tree responsiveness with incremental refreshes, fewer redundant note fetches, and reduced full-tree redraws.
-- Expand automated coverage for conflict resolution, auto-refresh behavior, drag-and-drop move/reorder, and network-retry flows to keep recent reliability work stable.
-
 ### Editing Fidelity and Format Safety
 
-- Implement true native mind-map editing for `mindMap` notes so the extension opens and saves MindElixir JSON directly (no Markdown round-trip and no metadata loss for node styles, colors, or layout).
 - Add visual math rendering in text notes while preserving stable source editing and save fidelity.
 
 ### Reliability and Conflict Handling
 
 - Extend server-first save + conflict tooling beyond text notes to all editable note types where safe and applicable.
-- Improve refresh robustness for intermittent ETAPI/network failures with clearer retry UX and operation-specific recovery messages.
 
 ### Trilium Compatibility and UX Parity
 
 - Add a calendar note view for notes using `viewType=calendar`.
 - Continue improving visual parity with Trilium for icon, color, and note-type presentation details.
-- Improve protected-note handling UX: clearly communicate lock/protection state in editors and provide guided actions when protected sessions are required.
 
 ### Tree and Navigation Workflows
 
-- Improve large-tree responsiveness (incremental load/refresh strategy, reduced redundant note fetches, and fewer full-tree redraws).
-- Add optional auto-reveal/follow-active-note behavior so opening a note can focus and expand its location in the tree without forcing that behavior on everyone.
 - Extend recent-notes workflow with optional pinning and jump actions for frequently revisited notes.
 
 ### Copilot and Automation Tools

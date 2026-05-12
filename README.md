@@ -21,6 +21,7 @@ Use it to:
 - Browse your full Trilium note tree in the sidebar.
 - Edit text notes in a rich CKEditor-powered WYSIWYG editor.
 - Open code, mermaid, canvas, and other note types with the right editor flow.
+- Open mind-map notes in an interactive MindElixir editor with a theme-aware node-menu for node styling and metadata edits.
 - Search notes quickly, manage attributes and attachments, and review revisions.
 - Resolve upstream edit conflicts with a built-in compare flow (Theirs vs Ours).
 - Clone, move, and export notes without leaving VS Code.
