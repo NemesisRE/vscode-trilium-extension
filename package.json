@@ -4,6 +4,7 @@
   "description": "Browse and edit Trilium Notes directly in VS Code via ETAPI",
   "version": "1.3.1",
   "publisher": "NemesisRE",
+  "icon": "media/icon.png",
   "license": "AGPL-3.0-or-later",
   "homepage": "https://github.com/NemesisRE/vscode-trilium-extension#readme",
   "bugs": {
@@ -16,6 +17,7 @@
   "files": [
     "out/extension.js",
     "out/ckeditor/**",
+    "out/boxicons/**",
     "media/**",
     "README.md",
     "LICENSE",

@@ -8,6 +8,7 @@ import {
   NoteTreeProvider,
   boxiconToCodeicon,
   cssColorToThemeColorId,
+  getBundledBoxiconsSvgRoot,
   noteTypeToLabel,
   parseBoxiconClass,
   preferredCodiconForNote,
@@ -423,6 +424,13 @@ describe('parseBoxiconClass', () => {
 
   it('returns undefined for icon classes without an icon token', () => {
     assert.strictEqual(parseBoxiconClass('bx'), undefined);
+  });
+});
+
+describe('getBundledBoxiconsSvgRoot', () => {
+  it('resolves the packaged boxicons asset directory under out/', () => {
+    const root = getBundledBoxiconsSvgRoot('/extension-root');
+    assert.strictEqual(root, path.join('/extension-root', 'out', 'boxicons', 'svg'));
   });
 });
 
