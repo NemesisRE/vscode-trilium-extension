@@ -448,8 +448,10 @@ export class NoteItem extends vscode.TreeItem {
     const { type } = note;
     if (type === 'text') {
       this.contextValue = 'noteText';
-    } else if (type === 'code' || type === 'mermaid' || type === 'canvas' || type === 'mindMap') {
+    } else if (type === 'code' || type === 'mermaid' || type === 'canvas') {
       this.contextValue = 'noteCode';
+    } else if (type === 'mindMap') {
+      this.contextValue = 'noteMindMap';
     } else if (type === 'file' || type === 'image') {
       this.contextValue = 'noteFile';
     } else {
@@ -463,8 +465,10 @@ export class NoteItem extends vscode.TreeItem {
     // Open all notes on click, including section notes with children.
     // Collapsing/expanding remains available via the disclosure arrow.
     let commandId: string;
-    if (type === 'text' || type === 'code' || type === 'mermaid' || type === 'canvas' || type === 'mindMap') {
+    if (type === 'text' || type === 'code' || type === 'mermaid' || type === 'canvas') {
       commandId = 'trilium.openNote';
+    } else if (type === 'mindMap') {
+      commandId = 'trilium.openMindMap';
     } else if (type === 'file' || type === 'image') {
       commandId = 'trilium.openFile';
     } else {

@@ -37,6 +37,7 @@ This roadmap is a working list of improvements and ideas, not a strict milestone
 - The text-note editor breadcrumb is now clickable, so parent-path navigation can open any ancestor note directly from the editor header.
 - Added lightweight backlinks support: a dedicated Backlinks sidebar view for the currently selected/opened note plus an in-editor backlinks count badge in the breadcrumb header.
 - Added "Reveal in Tree" and "Open Parent" editor navigation actions (available in editor title bar, tab context menu, and tree context menu) to speed up large-tree navigation; both commands work with all editor types (CKEditor, code, canvas, mermaid, mind-map).
+- Mind-map notes now use native MindElixir JSON editing with an interactive native MindElixir preview command, including an editor-title action for quick preview from active mind-map tabs.
 - Fixed stale-cache reopen resilience: restored text-note editor tabs no longer throw errors on startup when disconnected. Instead, they show a safe placeholder and auto-refresh once reconnected, with automatic content fetch and update. Added unit test coverage for disconnected provider path.
 - CKEditor image upload now routes inserted images through the extension host into Trilium attachments, then links them back into the note HTML automatically using Trilium's native attachment URL format.
 - Fixed dirty-state regression for text notes: the editor now uses `CustomEditorProvider` so the tab dirty indicator (●) and native unsaved-close dialog are driven by content changes, not by the filesystem. Auto-save and Ctrl+S both push directly to Trilium via ETAPI; closing a dirty tab always triggers VS Code's native save prompt.
@@ -56,7 +57,6 @@ These are the most useful and needed improvements based on current capabilities 
 
 ### Editing Fidelity and Format Safety
 
-- Implement true native mind-map editing for `mindMap` notes so the extension opens and saves MindElixir JSON directly (no Markdown round-trip and no metadata loss for node styles, colors, or layout).
 - Add visual math rendering in text notes while preserving stable source editing and save fidelity.
 
 ### Reliability and Conflict Handling

@@ -132,7 +132,7 @@ export class TempFileManager {
     } else if (note.type === 'canvas') {
       ext = '.excalidraw';
     } else if (note.type === 'mindMap') {
-      ext = '.md';
+      ext = '.json';
     } else {
       ext = MIME_TO_EXT.get(normalizeMime(note.mime)) ?? '.txt';
     }
@@ -154,9 +154,9 @@ export class TempFileManager {
   }
 
   getLanguageId(note: Note): string {
-    if (note.type === 'text' || note.type === 'mindMap') { return 'markdown'; }
+    if (note.type === 'text') { return 'markdown'; }
     if (note.type === 'mermaid') { return 'mermaid'; }
-    if (note.type === 'canvas') { return 'json'; }
+    if (note.type === 'canvas' || note.type === 'mindMap') { return 'json'; }
     return MIME_TO_LANGUAGE_ID.get(normalizeMime(note.mime)) ?? 'plaintext';
   }
 

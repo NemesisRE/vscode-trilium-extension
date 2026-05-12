@@ -35,6 +35,296 @@ import {
 type Note = import('./etapiClient').Note;
 type Revision = import('./etapiClient').Revision;
 
+interface MindMapNode {
+  id?: string;
+  topic?: string;
+  expanded?: boolean;
+  children?: MindMapNode[];
+  [key: string]: unknown;
+}
+
+interface MindMapData {
+  nodeData: MindMapNode;
+  [key: string]: unknown;
+}
+
+interface MindMapPreviewWebviewMessage {
+  type: 'refresh' | 'ready' | 'save';
+  data?: MindMapData;
+}
+
+function createNonce(): string {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  let out = '';
+  for (let i = 0; i < 24; i += 1) {
+    out += alphabet[Math.floor(Math.random() * alphabet.length)];
+  }
+  return out;
+}
+
+function escapeHtml(input: string): string {
+  return input
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function formatMindMapJsonForEditor(content: string): string {
+  try {
+    return JSON.stringify(JSON.parse(content), null, 2);
+  } catch {
+    return content;
+  }
+}
+
+function expandMindMapNode(node: MindMapNode): MindMapNode {
+  const children = Array.isArray(node.children)
+    ? node.children.map((child) => expandMindMapNode(child))
+    : [];
+  return {
+    ...node,
+    expanded: true,
+    children,
+  };
+}
+
+function normalizeMindMapData(rawContent: string): MindMapData {
+  const parsed = JSON.parse(rawContent) as MindMapData | MindMapNode;
+  const nodeData = (parsed && typeof parsed === 'object' && 'nodeData' in parsed)
+    ? (parsed as MindMapData).nodeData
+    : parsed as MindMapNode;
+  return {
+    ...(parsed && typeof parsed === 'object' && 'nodeData' in parsed ? parsed : {}),
+    nodeData: {
+      ...expandMindMapNode(nodeData ?? { id: 'root', topic: 'Mind Map', children: [] }),
+      root: true,
+    },
+  };
+}
+
+function buildMindMapPreviewHtml(webview: vscode.Webview, noteTitle: string): string {
+  const nonce = createNonce();
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} https: 'unsafe-inline'; script-src 'nonce-${nonce}' https:; img-src ${webview.cspSource} https: data:; font-src https: data:;">
+  <title>Mind Map Preview</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/mind-elixir@5.11.0/dist/MindElixir.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@mind-elixir/node-menu@5.0.1/dist/style.css">
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      background: var(--vscode-editor-background);
+      color: var(--vscode-editor-foreground);
+      font-family: var(--vscode-font-family);
+      overflow: hidden;
+    }
+    button {
+      border: 1px solid var(--vscode-button-border, transparent);
+      background: var(--vscode-button-background);
+      color: var(--vscode-button-foreground);
+      border-radius: 4px;
+      padding: 5px 10px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    #map {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+    .overlay {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      z-index: 10;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .badge {
+      padding: 4px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      background: color-mix(in srgb, var(--vscode-editor-background) 80%, transparent);
+      border: 1px solid var(--vscode-panel-border);
+      color: var(--vscode-descriptionForeground);
+    }
+
+    /* Theme the extracted node-menu plugin using VS Code colors. */
+    .map-container .node-menu {
+      top: 52px;
+      background: var(--vscode-editorWidget-background);
+      color: var(--vscode-editorWidget-foreground, var(--vscode-editor-foreground));
+      border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border));
+      box-shadow: 0 1px 8px color-mix(in srgb, var(--vscode-editor-foreground) 15%, transparent);
+    }
+
+    .map-container .node-menu .nm-fontsize-container div {
+      background-color: var(--vscode-button-secondaryBackground);
+      color: var(--vscode-button-secondaryForeground);
+      box-shadow: none;
+      border: 1px solid var(--vscode-button-border, var(--vscode-editorWidget-border, transparent));
+    }
+
+    .map-container .node-menu input,
+    .map-container .node-menu textarea {
+      background: var(--vscode-input-background);
+      color: var(--vscode-input-foreground);
+      border-color: var(--vscode-input-border, var(--vscode-editorWidget-border, var(--vscode-panel-border)));
+    }
+
+    .map-container .node-menu input::placeholder,
+    .map-container .node-menu textarea::placeholder {
+      color: var(--vscode-input-placeholderForeground);
+    }
+
+    .map-container .node-menu .palette {
+      border-color: var(--vscode-contrastBorder, color-mix(in srgb, var(--vscode-editor-foreground) 18%, transparent));
+    }
+
+    .map-container .node-menu .nmenu-selected,
+    .map-container .node-menu .palette:hover {
+      box-shadow: var(--vscode-focusBorder) 0 0 0 2px;
+      background-color: color-mix(in srgb, var(--vscode-focusBorder) 22%, transparent);
+    }
+
+    .map-container .node-menu .size-selected {
+      background-color: var(--vscode-button-background) !important;
+      border-color: var(--vscode-button-background);
+      color: var(--vscode-button-foreground);
+      fill: var(--vscode-button-foreground);
+    }
+
+    .map-container .node-menu .size-selected svg,
+    .map-container .node-menu .bof .selected {
+      color: var(--vscode-button-foreground);
+      background-color: var(--vscode-button-background);
+    }
+  </style>
+</head>
+<body>
+  <div class="overlay">
+    <div id="status" class="badge">Loading…</div>
+    <button id="refreshBtn">Refresh</button>
+  </div>
+  <div id="map"></div>
+
+  <script type="module" nonce="${nonce}">
+    import MindElixir from 'https://cdn.jsdelivr.net/npm/mind-elixir@5.11.0/dist/MindElixir.js';
+    import nodeMenu from 'https://cdn.jsdelivr.net/npm/@mind-elixir/node-menu@5.0.1/dist/node-menu.js';
+
+    const vscode = acquireVsCodeApi();
+    const statusEl = document.getElementById('status');
+    const mapEl = document.getElementById('map');
+    const refreshBtn = document.getElementById('refreshBtn');
+    let mind = null;
+
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+    function setStatus(message) {
+      statusEl.textContent = message;
+    }
+
+    function renderMindMap(data) {
+      try {
+        const options = {
+          el: mapEl,
+          direction: MindElixir.RIGHT,
+          editable: true,
+          toolBar: true,
+          nodeMenu: true,
+          keypress: true,
+          contextMenu: true,
+          theme: prefersDark ? MindElixir.DARK_THEME : MindElixir.THEME,
+        };
+
+        if (!mind) {
+          mind = new MindElixir(options);
+          mind.install(nodeMenu);
+          mind.init(data);
+
+          let saveTimer = null;
+          mind.bus.addListener('operation', () => {
+            setStatus('Unsaved changes');
+            clearTimeout(saveTimer);
+            saveTimer = setTimeout(() => {
+              setStatus('Saving…');
+              vscode.postMessage({ type: 'save', data: mind.getData() });
+            }, 800);
+          });
+        } else {
+          mind.refresh(data);
+        }
+
+        requestAnimationFrame(() => {
+          try {
+            mind.toCenter();
+          } catch (err) {
+            console.warn('[mindMap][preview] center failed', err);
+          }
+        });
+        requestAnimationFrame(() => {
+          setStatus('Rendered');
+        });
+      } catch (err) {
+        setStatus('Failed to render');
+        console.error('[mindMap][preview] render failed', err);
+      }
+    }
+
+    window.addEventListener('message', (event) => {
+      const message = event.data;
+      if (!message || message.type === 'render') {
+        if (message && message.type === 'render') {
+          renderMindMap(message.data);
+        }
+        return;
+      }
+      if (message.type === 'saveResult') {
+        if (message.success) {
+          setStatus('Saved');
+        } else {
+          setStatus('Save failed');
+          console.error('[mindMap][preview] save failed:', message.error);
+        }
+        return;
+      }
+    });
+
+    refreshBtn.addEventListener('click', () => {
+      setStatus('Refreshing…');
+      vscode.postMessage({ type: 'refresh' });
+    });
+
+    // Let the extension know the webview is ready to receive render payloads.
+    vscode.postMessage({ type: 'ready' });
+
+    // If no render payload arrives, surface a clear status instead of staying on Loading…
+    setTimeout(() => {
+      if (statusEl.textContent === 'Loading…') {
+        setStatus('Waiting for preview data…');
+      }
+    }, 1500);
+  </script>
+</body>
+</html>`;
+}
+
+function summarizeContentForDebug(content: string): string {
+  const trimmed = content.trimStart();
+  const likelyJson = trimmed.startsWith('{') || trimmed.startsWith('[');
+  const firstLine = content.split('\n', 1)[0].slice(0, 120);
+  return `len=${content.length} likelyJson=${likelyJson} firstLine=${JSON.stringify(firstLine)}`;
+}
+
 const MIME_EXT_MAP: Record<string, string> = {
   'application/pdf': '.pdf',
   'image/png': '.png',
@@ -221,7 +511,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const newContent = await client.getNoteContent(noteId);
         const fileContent =
           entry.type === 'mindMap'
-            ? tempFileManager.mindMapJsonToMarkdown(newContent)
+            ? formatMindMapJsonForEditor(newContent)
             : newContent;
         fs.writeFileSync(entry.tempFilePath, fileContent, 'utf8');
       }
@@ -443,6 +733,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   if (initialInfo) {
     await refreshOpenVirtualEditorsAfterReconnect();
   }
+
+
+  const updateActiveNoteContext = () => {
+    const activeId = getActiveNoteId(tempFileManager);
+    if (activeId && tempFileManager.isMindMapNote(activeId)) {
+      void vscode.commands.executeCommand('setContext', 'trilium.activeNoteType', 'mindMap');
+    } else {
+      void vscode.commands.executeCommand('setContext', 'trilium.activeNoteType', '');
+    }
+  };
+  context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(updateActiveNoteContext));
+  updateActiveNoteContext();
 
   context.subscriptions.push(
     triliumChatParticipant,
@@ -666,7 +968,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const defaults: Partial<Record<NoteTypeOption['type'], string>> = {
         mermaid: 'graph TD\n    A[Start] --> B[End]',
         canvas: JSON.stringify({ type: 'excalidraw', version: 2, elements: [], appState: {} }),
-        mindMap: JSON.stringify({ nodeData: { id: 'root', topic: 'Mind Map', children: [] } }),
+        mindMap: formatMindMapJsonForEditor(
+          JSON.stringify({ nodeData: { id: 'root', topic: 'Mind Map', children: [] } }),
+        ),
       };
       await createNoteOfType(typePick.type, undefined, item, treeProvider, treeView, tempFileManager,
         defaults[typePick.type] ?? '');
@@ -698,7 +1002,122 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     vscode.commands.registerCommand('trilium.createNoteMindMap', async (item?: NoteItem) => {
       await createNoteOfType('mindMap', undefined, item, treeProvider, treeView, tempFileManager,
-        JSON.stringify({ nodeData: { id: 'root', topic: 'Mind Map', children: [] } }));
+        formatMindMapJsonForEditor(
+          JSON.stringify({ nodeData: { id: 'root', topic: 'Mind Map', children: [] } }),
+        ));
+    }),
+
+    vscode.commands.registerCommand('trilium.openMindMap', async (item?: NoteItem) => {
+      const client = treeProvider.getClient();
+      if (!client) {
+        void vscode.window.showErrorMessage('Trilium: Not connected.');
+        return;
+      }
+
+      let note = item?.note;
+      if (!note) {
+        const activeNoteId = getActiveNoteId(tempFileManager);
+        if (!activeNoteId) {
+          void vscode.window.showWarningMessage('Trilium: No active note found to preview.');
+          return;
+        }
+        note = await client.getNote(activeNoteId);
+      }
+
+      if (note.type !== 'mindMap') {
+        void vscode.window.showWarningMessage('Trilium: Mind map preview is only available for mindMap notes.');
+        return;
+      }
+
+      if (note.isProtected) {
+        await showProtectedNoteRecoveryActions(note, note.noteId);
+        return;
+      }
+
+      const panel = vscode.window.createWebviewPanel(
+        'triliumMindMapPreview',
+        note.title,
+        vscode.ViewColumn.Active,
+        { enableScripts: true, retainContextWhenHidden: true },
+      );
+      panel.webview.html = buildMindMapPreviewHtml(panel.webview, note.title);
+
+      let webviewReady = false;
+      let queuedRenderData: unknown;
+
+      const postRenderData = (data: unknown): void => {
+        if (webviewReady) {
+          panel.webview.postMessage({ type: 'render', data });
+          return;
+        }
+        queuedRenderData = data;
+      };
+
+      const pushPreviewData = async (): Promise<void> => {
+        const latestNote = await client.getNote(note.noteId);
+        const rawContent = await client.getNoteContent(note.noteId);
+        try {
+          const parsed = normalizeMindMapData(rawContent);
+
+          output.appendLine(
+            `[mindMap][preview] rendering noteId=${note.noteId} ${summarizeContentForDebug(rawContent)}`,
+          );
+
+          panel.title = latestNote.title;
+          postRenderData(parsed);
+        } catch {
+          throw new Error('Mind map content is not valid JSON.');
+        }
+      };
+
+      try {
+        await pushPreviewData();
+      } catch (err) {
+        panel.dispose();
+        void vscode.window.showErrorMessage(`Trilium: Failed to preview mind map: ${err}`);
+        return;
+      }
+
+      const messageDisposable = panel.webview.onDidReceiveMessage(async (msg: MindMapPreviewWebviewMessage) => {
+        if (msg?.type === 'ready') {
+          webviewReady = true;
+          if (queuedRenderData !== undefined) {
+            panel.webview.postMessage({ type: 'render', data: queuedRenderData });
+            queuedRenderData = undefined;
+          }
+          return;
+        }
+
+        if (msg?.type === 'save') {
+          try {
+            const payload = JSON.stringify(msg.data, null, 2);
+            await client.putNoteContent(note.noteId, payload);
+            // Sync the temp file on disk if it is open in a text editor
+            const tempPath = tempFileManager.getTempPath(note);
+            if (tempPath) {
+              fs.writeFileSync(tempPath, payload, 'utf8');
+            }
+            await treeProvider.refreshNoteById(note.noteId);
+            panel.webview.postMessage({ type: 'saveResult', success: true });
+          } catch (err) {
+            panel.webview.postMessage({ type: 'saveResult', success: false, error: String(err) });
+          }
+          return;
+        }
+
+        if (msg?.type !== 'refresh') {
+          return;
+        }
+        try {
+          await pushPreviewData();
+        } catch (err) {
+          void vscode.window.showErrorMessage(`Trilium: Failed to refresh mind map preview: ${err}`);
+        }
+      });
+
+      panel.onDidDispose(() => {
+        messageDisposable.dispose();
+      });
     }),
 
     vscode.commands.registerCommand('trilium.openTodayNote', async () => {
@@ -746,9 +1165,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // Other note types: use temp file approach
         const rawContent = await client.getNoteContent(note.noteId);
         const filePath = tempFileManager.getTempPath(note);
-        const fileContent =
-          note.type === 'mindMap' ? tempFileManager.mindMapJsonToMarkdown(rawContent) :
-          rawContent;
+        const fileContent = note.type === 'mindMap'
+          ? formatMindMapJsonForEditor(rawContent)
+          : rawContent;
         fs.writeFileSync(filePath, fileContent, 'utf8');
         const doc = await vscode.workspace.openTextDocument(filePath);
         await vscode.languages.setTextDocumentLanguage(doc, tempFileManager.getLanguageId(note));
@@ -1410,15 +1829,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           return;
         }
 
-        // Other note types: use temp file approach (code, mermaid, canvas, mindMap)
+        // Other note types: use temp file approach (code, mermaid, canvas)
+        // Mind map notes are handled by trilium.openMindMap (preview) by default.
+        if (note.type === 'mindMap') {
+          await vscode.commands.executeCommand('trilium.openMindMap', item);
+          return;
+        }
+
         const rawContent = await client.getNoteContent(note.noteId);
         const filePath = tempFileManager.getTempPath(note);
-
-        // Mind map notes: convert MindElixir JSON → Markdown for editing.
-        const fileContent =
-          note.type === 'mindMap' ? tempFileManager.mindMapJsonToMarkdown(rawContent) :
-          rawContent;
-
+        const fileContent = rawContent;
         fs.writeFileSync(filePath, fileContent, 'utf8');
 
         const doc = await vscode.workspace.openTextDocument(filePath);
@@ -1435,6 +1855,54 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         trackNoteForRefresh(note, filePath);
       } catch (err) {
         void vscode.window.showErrorMessage(`Trilium: Failed to open note: ${err}`);
+      }
+    }),
+
+    vscode.commands.registerCommand('trilium.openMindMapJson', async (item?: NoteItem) => {
+      const client = treeProvider.getClient();
+      if (!client) {
+        void vscode.window.showErrorMessage('Trilium: Not connected.');
+        return;
+      }
+
+      let note = item?.note;
+      if (!note) {
+        const activeNoteId = getActiveNoteId(tempFileManager);
+        if (!activeNoteId) {
+          void vscode.window.showWarningMessage('Trilium: No active mind map note found.');
+          return;
+        }
+        note = await client.getNote(activeNoteId);
+      }
+
+      if (note.type !== 'mindMap') {
+        void vscode.window.showWarningMessage('Trilium: This command is only available for mind map notes.');
+        return;
+      }
+
+      if (note.isProtected) {
+        await showProtectedNoteRecoveryActions(note, note.noteId);
+        return;
+      }
+
+      try {
+        const rawContent = await client.getNoteContent(note.noteId);
+        const filePath = tempFileManager.getTempPath(note);
+        output.appendLine(
+          `[mindMap][openJson] writing content noteId=${note.noteId} path=${filePath} ${summarizeContentForDebug(rawContent)}`,
+        );
+        fs.writeFileSync(filePath, formatMindMapJsonForEditor(rawContent), 'utf8');
+        const doc = await vscode.workspace.openTextDocument(filePath);
+        await vscode.languages.setTextDocumentLanguage(doc, 'json');
+        await vscode.window.showTextDocument(doc, { preview: false });
+        await maybeAutoRevealOpenedNote(note.noteId, treeProvider, treeView);
+        recentNotesProvider.trackNote(note);
+        if (backlinksProvider) {
+          backlinksProvider.updateBacklinks(note.noteId);
+        }
+        trackNoteForRefresh(note, filePath);
+      } catch (err) {
+        void vscode.window.showErrorMessage(`Trilium: Failed to open mind map JSON: ${err}`);
       }
     }),
 
@@ -1997,16 +2465,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       try {
         // Text notes are stored as Markdown locally; convert back to HTML for Trilium.
         // Raw HTML temp files are already HTML and must be uploaded as-is.
-        // Mind map notes are stored as Markdown locally; convert back to MindElixir JSON.
         let payload: string;
         if (tempFileManager.isHtmlTempPath(doc.fileName)) {
           payload = doc.getText();
         } else if (tempFileManager.isTextNote(noteId)) {
           payload = tempFileManager.markdownToHtml(doc.getText());
-        } else if (tempFileManager.isMindMapNote(noteId)) {
-          payload = tempFileManager.markdownToMindMapJson(doc.getText());
         } else {
           payload = doc.getText();
+        }
+
+        if (tempFileManager.isMindMapNote(noteId)) {
+          output.appendLine(
+            `[mindMap][save] uploading content noteId=${noteId} path=${doc.fileName} ${summarizeContentForDebug(payload)}`,
+          );
         }
 
         await client.putNoteContent(noteId, payload);
@@ -2310,7 +2781,7 @@ async function openNoteInEditor(
   const rawContent = await client.getNoteContent(note.noteId);
   const filePath = tempFileManager.getTempPath(note);
   const fileContent = note.type === 'mindMap'
-    ? tempFileManager.mindMapJsonToMarkdown(rawContent)
+    ? formatMindMapJsonForEditor(rawContent)
     : rawContent;
   fs.writeFileSync(filePath, fileContent, 'utf8');
   const doc = await vscode.workspace.openTextDocument(filePath);
@@ -2694,6 +3165,16 @@ async function createNoteOfType(
         title: newNote.title,
       });
       await vscode.commands.executeCommand('vscode.openWith', uri, TriliumTextEditorProvider.viewType);
+      await maybeAutoRevealOpenedNote(newNote.noteId, treeProvider, treeView);
+      return;
+    }
+
+    if (newNote.type === 'mindMap') {
+      const filePath = tempFileManager.getTempPath(newNote);
+      fs.writeFileSync(filePath, formatMindMapJsonForEditor(defaultContent), 'utf8');
+      const doc = await vscode.workspace.openTextDocument(filePath);
+      await vscode.languages.setTextDocumentLanguage(doc, tempFileManager.getLanguageId(newNote));
+      await vscode.window.showTextDocument(doc, { preview: false });
       await maybeAutoRevealOpenedNote(newNote.noteId, treeProvider, treeView);
       return;
     }

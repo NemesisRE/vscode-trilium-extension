@@ -35,7 +35,7 @@ All commands are available via the Command Palette under the **Trilium** categor
 | `Trilium: New Code Note` | Create a code note and choose the language from a list. |
 | `Trilium: New Mermaid Diagram` | Create a Mermaid diagram note with a starter template. |
 | `Trilium: New Canvas (Excalidraw)` | Create an Excalidraw canvas note. |
-| `Trilium: New Mind Map Note` | Create a mind map note. |
+| `Trilium: New Mind Map Note` | Create a mind map note (opens the interactive preview immediately). |
 | `Trilium: Create Note With Content (programmatic)` | Programmatic command for creating one note without interactive prompts. |
 | `Trilium: Import Notes from JSON` | Bulk-import a JSON tree of notes. |
 | `Trilium: Rename Note` | Rename the selected note. |
@@ -46,6 +46,8 @@ All commands are available via the Command Palette under the **Trilium** categor
 | `Trilium: Open This Week's Note` | Open the current ISO week note. |
 | `Trilium: Open This Month's Note` | Open the current month note. |
 | `Trilium: Open This Year's Note` | Open the current year note. |
+| `Trilium: Open Mind Map` | Open the interactive MindElixir editor for a mind-map note in the active editor group (default when clicking a mind-map note in the tree; also available as an editor title action when a mind-map JSON file is active). |
+| `Trilium: Open Mind Map JSON` | Open the raw MindElixir JSON for a mind-map note in the text editor for manual editing or advanced/manual fixes. |
 | `Trilium: Search Notes...` | Live full-text search with a debounced QuickPick. |
 | `Trilium: Filter Tree...` | Filter the note tree by keyword using server-side search. |
 | `Trilium: Clear Tree Filter` | Reset the tree to its normal hierarchical view. |

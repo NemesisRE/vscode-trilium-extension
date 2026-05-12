@@ -166,8 +166,8 @@ describe('NoteItem', () => {
     assert.strictEqual(new NoteItem(makeNote({ type: 'canvas' })).contextValue, 'noteCode');
   });
 
-  it('contextValue is noteCode for mindMap notes', () => {
-    assert.strictEqual(new NoteItem(makeNote({ type: 'mindMap' })).contextValue, 'noteCode');
+  it('contextValue is noteMindMap for mindMap notes', () => {
+    assert.strictEqual(new NoteItem(makeNote({ type: 'mindMap' })).contextValue, 'noteMindMap');
   });
 
   it('contextValue is noteFile for file notes', () => {
