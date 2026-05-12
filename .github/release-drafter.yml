@@ -1,6 +1,45 @@
 name-template: 'v$RESOLVED_VERSION'
 tag-template: 'v$RESOLVED_VERSION'
 
+autolabeler:
+  - label: 'breaking-change'
+    branch:
+      - '/^breaking-change\/.+/'
+    title:
+      - '/^[a-z]+(\(.+\))?!:/'
+    body:
+      - '/BREAKING CHANGE:/i'
+  - label: 'feature'
+    branch:
+      - '/^feat\/.+/'
+      - '/^feature\/.+/'
+    title:
+      - '/^feat(\(.+\))?!?:/i'
+    body:
+      - '/^feat(\(.+\))?!?:/im'
+  - label: 'fix'
+    branch:
+      - '/^fix\/.+/'
+      - '/^bugfix\/.+/'
+    title:
+      - '/^fix(\(.+\))?!?:/i'
+    body:
+      - '/^fix(\(.+\))?!?:/im'
+  - label: 'chore'
+    branch:
+      - '/^chore\/.+/'
+    title:
+      - '/^chore(\(.+\))?!?:/i'
+    body:
+      - '/^chore(\(.+\))?!?:/im'
+  - label: 'documentation'
+    branch:
+      - '/^docs?\/.+/'
+    title:
+      - '/^docs?(\(.+\))?!?:/i'
+    body:
+      - '/^docs?(\(.+\))?!?:/im'
+
 categories:
   - title: '🚀 Features'
     labels:
