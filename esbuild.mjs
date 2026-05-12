@@ -4,6 +4,9 @@ import * as path from 'path';
 
 const production = process.argv.includes('--production');
 const watch = process.argv.includes('--watch');
+const workspaceRoot = process.cwd();
+const boxiconsSvgSourceDir = path.join(workspaceRoot, 'node_modules', 'boxicons', 'svg');
+const boxiconsSvgTargetDir = path.join(workspaceRoot, 'out', 'boxicons', 'svg');
 
 /**
  * Plugin to handle SVG imports with ?raw suffix.
@@ -66,6 +69,10 @@ const ckeditorBuildOptions = {
   treeShaking: true,
 };
 
+async function copyBundledBoxicons() {
+  await fs.promises.cp(boxiconsSvgSourceDir, boxiconsSvgTargetDir, { recursive: true });
+}
+
 /**
  * Build both extension and CKEditor.
  */
@@ -78,6 +85,9 @@ async function buildAll() {
   console.log('[esbuild] Building CKEditor...');
   await esbuild.build(ckeditorBuildOptions);
 
+  console.log('[esbuild] Copying Boxicons assets...');
+  await copyBundledBoxicons();
+
   console.log('[esbuild] Build complete!');
 }
 
@@ -86,6 +96,8 @@ async function buildAll() {
  */
 async function watchAll() {
   console.log('[esbuild] Starting watch mode...');
+
+  await copyBundledBoxicons();
 
   const extensionCtx = await esbuild.context(extensionBuildOptions);
   const ckeditorCtx = await esbuild.context(ckeditorBuildOptions);

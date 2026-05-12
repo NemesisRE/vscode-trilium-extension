@@ -155,7 +155,7 @@ interface ParsedBoxicon {
   iconName: string;
 }
 
-export const BOXICONS_SVG_RELATIVE_ROOT = path.join('node_modules', 'boxicons', 'svg');
+export const BOXICONS_SVG_RELATIVE_ROOT = path.join('out', 'boxicons', 'svg');
 const THEMED_BOXICONS_CACHE_DIR = path.join(os.tmpdir(), 'vscode-trilium', 'themed-boxicons');
 const NOTE_TREE_MIME = 'application/vnd.code.tree.triliumnotetree';
 const TREE_FETCH_CACHE_TTL_MS = 15_000;
@@ -174,6 +174,10 @@ interface CacheEntry<T> {
 interface KnownItemLocation {
   path: string;
   branchId?: string;
+}
+
+export function getBundledBoxiconsSvgRoot(extensionPath: string): string {
+  return path.join(extensionPath, BOXICONS_SVG_RELATIVE_ROOT);
 }
 
 function defaultThemeIconColor(kind: vscode.ColorThemeKind): string {
@@ -530,12 +534,12 @@ export class NoteTreeProvider implements vscode.TreeDataProvider<NoteItem>, vsco
   constructor(initialClient?: EtapiClient, extensionPath?: string) {
     this.client = initialClient;
     if (extensionPath) {
-      this.boxiconsSvgRoot = path.join(extensionPath, BOXICONS_SVG_RELATIVE_ROOT);
+      this.boxiconsSvgRoot = getBundledBoxiconsSvgRoot(extensionPath);
     }
   }
 
   setExtensionPath(extensionPath: string): void {
-    this.boxiconsSvgRoot = path.join(extensionPath, BOXICONS_SVG_RELATIVE_ROOT);
+    this.boxiconsSvgRoot = getBundledBoxiconsSvgRoot(extensionPath);
   }
 
   setLogger(fn: (msg: string) => void): void {

@@ -1,5 +1,9 @@
 # Trilium Notes for VS Code
 
+<p align="center">
+  <img src="media/logo.svg" alt="Trilium Notes logo" width="160" />
+</p>
+
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 [![VS Code Engine](https://img.shields.io/badge/VS%20Code-%5E1.118.0-007ACC?logo=visualstudiocode&logoColor=white)](https://code.visualstudio.com)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
