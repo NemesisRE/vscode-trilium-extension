@@ -155,7 +155,7 @@ interface ParsedBoxicon {
   iconName: string;
 }
 
-const BOXICONS_SVG_RELATIVE_ROOT = path.join('node_modules', 'boxicons', 'svg');
+export const BOXICONS_SVG_RELATIVE_ROOT = path.join('node_modules', 'boxicons', 'svg');
 const THEMED_BOXICONS_CACHE_DIR = path.join(os.tmpdir(), 'vscode-trilium', 'themed-boxicons');
 const NOTE_TREE_MIME = 'application/vnd.code.tree.triliumnotetree';
 const TREE_FETCH_CACHE_TTL_MS = 15_000;
