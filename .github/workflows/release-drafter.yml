@@ -12,6 +12,18 @@ permissions:
   pull-requests: write
 
 jobs:
+  auto_label:
+    name: Auto Label PR
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: release-drafter/release-drafter/autolabeler@v7
+        with:
+          config-name: release-drafter.yml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   update_release_draft:
     name: Update Release Draft
     runs-on: ubuntu-latest
