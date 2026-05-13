@@ -48,10 +48,42 @@ interface MindMapData {
   [key: string]: unknown;
 }
 
-interface MindMapPreviewWebviewMessage {
-  type: 'refresh' | 'ready' | 'save';
-  data?: MindMapData;
+interface BreadcrumbPart {
+  noteId: string;
+  title: string;
 }
+
+interface MindMapPreviewWebviewMessage {
+  type: 'refresh' | 'ready' | 'save' | 'openBreadcrumbNote';
+  data?: MindMapData;
+  noteId?: string;
+}
+
+interface MermaidEditorWebviewMessage {
+  type: 'refresh' | 'ready' | 'save' | 'openBreadcrumbNote';
+  content?: string;
+  noteId?: string;
+}
+
+interface ExcalidrawPayload {
+  type: 'excalidraw';
+  version: number;
+  source?: string;
+  elements: unknown[];
+  appState?: Record<string, unknown>;
+  files?: Record<string, unknown>;
+}
+
+interface ExcalidrawEditorWebviewMessage {
+  type: 'refresh' | 'ready' | 'save' | 'openBreadcrumbNote';
+  content?: string;
+  noteId?: string;
+}
+
+type WebviewNoteType = 'mindMap' | 'mermaid' | 'canvas';
+
+const noteWebviewPanels = new Map<string, vscode.WebviewPanel>();
+let activeWebviewNoteId: string | undefined;
 
 function createNonce(): string {
   const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
@@ -77,6 +109,66 @@ function formatMindMapJsonForEditor(content: string): string {
   } catch {
     return content;
   }
+}
+
+function formatJsonForEditor(content: string): string {
+  try {
+    return JSON.stringify(JSON.parse(content), null, 2);
+  } catch {
+    return content;
+  }
+}
+
+async function getBreadcrumbData(client: EtapiClient, noteId: string): Promise<{ parts: BreadcrumbPart[]; backlinksCount: number }> {
+  const parts: BreadcrumbPart[] = [];
+  const visited = new Set<string>();
+  let currentId: string = noteId;
+
+  while (currentId && !visited.has(currentId)) {
+    visited.add(currentId);
+    try {
+      const note = await client.getNote(currentId);
+      parts.unshift({ noteId: currentId, title: note.title });
+      if (currentId === 'root' || note.parentNoteIds.length === 0) {
+        break;
+      }
+      currentId = note.parentNoteIds[0];
+    } catch {
+      break;
+    }
+  }
+
+  const backlinksCount = await countBacklinks(client, noteId);
+  return { parts, backlinksCount };
+}
+
+async function countBacklinks(client: EtapiClient, noteId: string): Promise<number> {
+  try {
+    const { results } = await client.searchNotes('note.targetRelationCount > 0', { limit: 100 });
+    const checks = await Promise.all(results.map(async (candidate) => {
+      try {
+        const fullNote = await client.getNote(candidate.noteId);
+        return fullNote.attributes?.some(
+          (attr) => attr.type === 'relation' && attr.value === noteId,
+        ) ?? false;
+      } catch {
+        return false;
+      }
+    }));
+
+    return checks.filter(Boolean).length;
+  } catch {
+    return 0;
+  }
+}
+
+async function sendBreadcrumbToPanel(
+  panel: vscode.WebviewPanel,
+  client: EtapiClient,
+  noteId: string,
+): Promise<void> {
+  const breadcrumb = await getBreadcrumbData(client, noteId);
+  panel.webview.postMessage({ type: 'breadcrumb', ...breadcrumb });
 }
 
 function expandMindMapNode(node: MindMapNode): MindMapNode {
@@ -112,7 +204,7 @@ function buildMindMapPreviewHtml(webview: vscode.Webview, noteTitle: string): st
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} https: 'unsafe-inline'; script-src 'nonce-${nonce}' https:; img-src ${webview.cspSource} https: data:; font-src https: data:;">
-  <title>Mind Map Preview</title>
+  <title>${escapeHtml(noteTitle)}</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/mind-elixir@5.11.0/dist/MindElixir.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@mind-elixir/node-menu@5.0.1/dist/style.css">
   <style>
@@ -125,6 +217,10 @@ function buildMindMapPreviewHtml(webview: vscode.Webview, noteTitle: string): st
       font-family: var(--vscode-font-family);
       overflow: hidden;
     }
+    body {
+      display: flex;
+      flex-direction: column;
+    }
     button {
       border: 1px solid var(--vscode-button-border, transparent);
       background: var(--vscode-button-background);
@@ -133,6 +229,56 @@ function buildMindMapPreviewHtml(webview: vscode.Webview, noteTitle: string): st
       padding: 5px 10px;
       cursor: pointer;
       font-size: 12px;
+    }
+    #breadcrumb {
+      flex-shrink: 0;
+      font-size: 0.78em;
+      padding: 3px 12px;
+      color: var(--vscode-descriptionForeground);
+      background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+      border-bottom: 1px solid var(--vscode-editorWidget-border, #444);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      user-select: none;
+    }
+    #breadcrumb .crumb {
+      appearance: none;
+      border: 0;
+      background: transparent;
+      color: var(--vscode-textLink-foreground, #3794ff);
+      cursor: pointer;
+      font: inherit;
+      margin: 0;
+      padding: 0;
+    }
+    #breadcrumb .crumb:hover {
+      color: var(--vscode-textLink-activeForeground, #4daafc);
+      text-decoration: underline;
+    }
+    #breadcrumb .crumb:focus-visible {
+      outline: 1px solid var(--vscode-focusBorder, #007fd4);
+      outline-offset: 2px;
+      border-radius: 2px;
+    }
+    #breadcrumb .separator {
+      color: var(--vscode-descriptionForeground);
+      margin: 0 0.4ch;
+    }
+    #breadcrumb .backlinks-badge {
+      margin-left: 1ch;
+      padding: 0 0.6ch;
+      border-radius: 999px;
+      border: 1px solid var(--vscode-badge-background, #4d4d4d);
+      color: var(--vscode-badge-foreground, #ffffff);
+      background: var(--vscode-badge-background, #4d4d4d);
+      font-size: 0.92em;
+      vertical-align: middle;
+    }
+    .content {
+      position: relative;
+      flex: 1;
+      min-height: 0;
     }
     #map {
       position: absolute;
@@ -158,7 +304,6 @@ function buildMindMapPreviewHtml(webview: vscode.Webview, noteTitle: string): st
       color: var(--vscode-descriptionForeground);
     }
 
-    /* Theme the extracted node-menu plugin using VS Code colors. */
     .map-container .node-menu {
       top: 52px;
       background: var(--vscode-editorWidget-background);
@@ -211,11 +356,14 @@ function buildMindMapPreviewHtml(webview: vscode.Webview, noteTitle: string): st
   </style>
 </head>
 <body>
-  <div class="overlay">
-    <div id="status" class="badge">Loading…</div>
-    <button id="refreshBtn">Refresh</button>
+  <div id="breadcrumb"></div>
+  <div class="content">
+    <div class="overlay">
+      <div id="status" class="badge">Loading…</div>
+      <button id="refreshBtn">Refresh</button>
+    </div>
+    <div id="map"></div>
   </div>
-  <div id="map"></div>
 
   <script type="module" nonce="${nonce}">
     import MindElixir from 'https://cdn.jsdelivr.net/npm/mind-elixir@5.11.0/dist/MindElixir.js';
@@ -225,12 +373,42 @@ function buildMindMapPreviewHtml(webview: vscode.Webview, noteTitle: string): st
     const statusEl = document.getElementById('status');
     const mapEl = document.getElementById('map');
     const refreshBtn = document.getElementById('refreshBtn');
+    const breadcrumbEl = document.getElementById('breadcrumb');
     let mind = null;
 
     const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
 
     function setStatus(message) {
       statusEl.textContent = message;
+    }
+
+    function renderBreadcrumb(parts, backlinksCount) {
+      breadcrumbEl.replaceChildren();
+
+      parts.forEach((part, index) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'crumb';
+        button.textContent = part.title;
+        button.title = part.title;
+        button.addEventListener('click', () => {
+          vscode.postMessage({ type: 'openBreadcrumbNote', noteId: part.noteId });
+        });
+        breadcrumbEl.appendChild(button);
+
+        if (index < parts.length - 1) {
+          const separator = document.createElement('span');
+          separator.className = 'separator';
+          separator.textContent = '›';
+          breadcrumbEl.appendChild(separator);
+        }
+      });
+
+      const badge = document.createElement('span');
+      badge.className = 'backlinks-badge';
+      badge.textContent = 'Backlinks ' + (Number.isFinite(backlinksCount) ? backlinksCount : 0);
+      badge.title = 'Number of notes that link to this note via relations';
+      breadcrumbEl.appendChild(badge);
     }
 
     function renderMindMap(data) {
@@ -297,6 +475,10 @@ function buildMindMapPreviewHtml(webview: vscode.Webview, noteTitle: string): st
         }
         return;
       }
+      if (message.type === 'breadcrumb') {
+        renderBreadcrumb(message.parts, message.backlinksCount);
+        return;
+      }
     });
 
     refreshBtn.addEventListener('click', () => {
@@ -304,10 +486,8 @@ function buildMindMapPreviewHtml(webview: vscode.Webview, noteTitle: string): st
       vscode.postMessage({ type: 'refresh' });
     });
 
-    // Let the extension know the webview is ready to receive render payloads.
     vscode.postMessage({ type: 'ready' });
 
-    // If no render payload arrives, surface a clear status instead of staying on Loading…
     setTimeout(() => {
       if (statusEl.textContent === 'Loading…') {
         setStatus('Waiting for preview data…');
@@ -318,11 +498,372 @@ function buildMindMapPreviewHtml(webview: vscode.Webview, noteTitle: string): st
 </html>`;
 }
 
+function buildMermaidEditorHtml(
+  webview: vscode.Webview,
+  scriptUri: vscode.Uri,
+): string {
+  const nonce = createNonce();
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}'; img-src ${webview.cspSource} data:;">
+  <title>Mermaid Editor</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      background: var(--vscode-editor-background);
+      color: var(--vscode-editor-foreground);
+      font-family: var(--vscode-font-family);
+      overflow: hidden;
+    }
+    body {
+      display: flex;
+      flex-direction: column;
+    }
+    #breadcrumb {
+      flex-shrink: 0;
+      font-size: 0.78em;
+      padding: 3px 12px;
+      color: var(--vscode-descriptionForeground);
+      background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+      border-bottom: 1px solid var(--vscode-editorWidget-border, #444);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      user-select: none;
+    }
+    #breadcrumb .crumb {
+      appearance: none;
+      border: 0;
+      background: transparent;
+      color: var(--vscode-textLink-foreground, #3794ff);
+      cursor: pointer;
+      font: inherit;
+      margin: 0;
+      padding: 0;
+    }
+    #breadcrumb .crumb:hover {
+      color: var(--vscode-textLink-activeForeground, #4daafc);
+      text-decoration: underline;
+    }
+    #breadcrumb .crumb:focus-visible {
+      outline: 1px solid var(--vscode-focusBorder, #007fd4);
+      outline-offset: 2px;
+      border-radius: 2px;
+    }
+    #breadcrumb .separator {
+      color: var(--vscode-descriptionForeground);
+      margin: 0 0.4ch;
+    }
+    #breadcrumb .backlinks-badge {
+      margin-left: 1ch;
+      padding: 0 0.6ch;
+      border-radius: 999px;
+      border: 1px solid var(--vscode-badge-background, #4d4d4d);
+      color: var(--vscode-badge-foreground, #ffffff);
+      background: var(--vscode-badge-background, #4d4d4d);
+      font-size: 0.92em;
+      vertical-align: middle;
+    }
+    .content {
+      position: relative;
+      flex: 1;
+      min-height: 0;
+    }
+    .overlay {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      z-index: 10;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    button {
+      border: 1px solid var(--vscode-button-border, transparent);
+      background: var(--vscode-button-background);
+      color: var(--vscode-button-foreground);
+      border-radius: 4px;
+      padding: 5px 10px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    #status {
+      padding: 4px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      background: color-mix(in srgb, var(--vscode-editor-background) 80%, transparent);
+      border: 1px solid var(--vscode-panel-border);
+      color: var(--vscode-descriptionForeground);
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(260px, 42%) 1fr;
+      height: 100%;
+    }
+    #source {
+      width: 100%;
+      height: 100%;
+      border: none;
+      border-right: 1px solid var(--vscode-panel-border);
+      resize: none;
+      outline: none;
+      background: var(--vscode-input-background);
+      color: var(--vscode-input-foreground);
+      font-family: var(--vscode-editor-font-family);
+      font-size: var(--vscode-editor-font-size);
+      line-height: 1.45;
+      padding: 14px;
+      box-sizing: border-box;
+    }
+    #preview {
+      padding: 12px;
+      overflow: auto;
+      background: var(--vscode-editor-background);
+    }
+    #preview svg {
+      max-width: 100%;
+      height: auto;
+    }
+    .placeholder {
+      color: var(--vscode-descriptionForeground);
+      padding: 10px;
+    }
+    .error {
+      color: var(--vscode-errorForeground);
+      white-space: pre-wrap;
+      word-break: break-word;
+      margin: 0;
+      padding: 10px;
+      border: 1px solid color-mix(in srgb, var(--vscode-errorForeground) 35%, transparent);
+      border-radius: 6px;
+      background: color-mix(in srgb, var(--vscode-editor-background) 80%, var(--vscode-errorForeground) 20%);
+    }
+  </style>
+</head>
+<body>
+  <div id="breadcrumb"></div>
+  <div class="content">
+    <div class="overlay">
+      <div id="status">Loading...</div>
+      <button id="refreshBtn">Refresh</button>
+    </div>
+    <div class="layout">
+      <textarea id="source" spellcheck="false" aria-label="Mermaid source"></textarea>
+      <div id="preview" aria-live="polite"></div>
+    </div>
+  </div>
+  <script type="module" nonce="${nonce}" src="${scriptUri}"></script>
+</body>
+</html>`;
+}
+
+function buildExcalidrawEditorHtml(
+  webview: vscode.Webview,
+  scriptUri: vscode.Uri,
+  styleUri: vscode.Uri,
+  assetBaseUri: vscode.Uri,
+): string {
+  const nonce = createNonce();
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}'; img-src ${webview.cspSource} data: blob:; font-src ${webview.cspSource} https: data:;">
+  <title>Excalidraw Editor</title>
+  <link rel="stylesheet" href="${styleUri}">
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      background: var(--vscode-editor-background);
+      color: var(--vscode-editor-foreground);
+      font-family: var(--vscode-font-family);
+      overflow: hidden;
+    }
+    body {
+      display: flex;
+      flex-direction: column;
+    }
+    #breadcrumb {
+      flex-shrink: 0;
+      font-size: 0.78em;
+      padding: 3px 12px;
+      color: var(--vscode-descriptionForeground);
+      background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+      border-bottom: 1px solid var(--vscode-editorWidget-border, #444);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      user-select: none;
+    }
+    #breadcrumb .crumb {
+      appearance: none;
+      border: 0;
+      background: transparent;
+      color: var(--vscode-textLink-foreground, #3794ff);
+      cursor: pointer;
+      font: inherit;
+      margin: 0;
+      padding: 0;
+    }
+    #breadcrumb .crumb:hover {
+      color: var(--vscode-textLink-activeForeground, #4daafc);
+      text-decoration: underline;
+    }
+    #breadcrumb .crumb:focus-visible {
+      outline: 1px solid var(--vscode-focusBorder, #007fd4);
+      outline-offset: 2px;
+      border-radius: 2px;
+    }
+    #breadcrumb .separator {
+      color: var(--vscode-descriptionForeground);
+      margin: 0 0.4ch;
+    }
+    #breadcrumb .backlinks-badge {
+      margin-left: 1ch;
+      padding: 0 0.6ch;
+      border-radius: 999px;
+      border: 1px solid var(--vscode-badge-background, #4d4d4d);
+      color: var(--vscode-badge-foreground, #ffffff);
+      background: var(--vscode-badge-background, #4d4d4d);
+      font-size: 0.92em;
+      vertical-align: middle;
+    }
+    .content {
+      position: relative;
+      flex: 1;
+      min-height: 0;
+    }
+    .overlay {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      z-index: 10;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    button {
+      border: 1px solid var(--vscode-button-border, transparent);
+      background: var(--vscode-button-background);
+      color: var(--vscode-button-foreground);
+      border-radius: 4px;
+      padding: 5px 10px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    #status {
+      padding: 4px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      background: color-mix(in srgb, var(--vscode-editor-background) 80%, transparent);
+      border: 1px solid var(--vscode-panel-border);
+      color: var(--vscode-descriptionForeground);
+    }
+    .canvas-shell {
+      position: relative;
+      width: 100%;
+      height: 100%;
+    }
+    #app {
+      position: absolute;
+      inset: 0;
+    }
+    #error {
+      display: none;
+      margin: 8px;
+      padding: 10px 12px;
+      border-radius: 6px;
+      border: 1px solid color-mix(in srgb, var(--vscode-errorForeground) 35%, transparent);
+      background: color-mix(in srgb, var(--vscode-editor-background) 82%, var(--vscode-errorForeground) 18%);
+      color: var(--vscode-errorForeground);
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: var(--vscode-editor-font-family);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+  </style>
+</head>
+<body>
+  <div id="breadcrumb"></div>
+  <div class="content">
+    <div class="overlay">
+      <div id="status">Loading...</div>
+      <button id="refreshBtn">Refresh</button>
+    </div>
+    <div class="canvas-shell">
+      <div id="app"></div>
+    </div>
+    <pre id="error" aria-live="polite"></pre>
+  </div>
+  <script nonce="${nonce}">window.EXCALIDRAW_ASSET_PATH = ${JSON.stringify(`${assetBaseUri.toString()}/`)};</script>
+  <script type="module" nonce="${nonce}" src="${scriptUri}"></script>
+</body>
+</html>`;
+}
+
 function summarizeContentForDebug(content: string): string {
   const trimmed = content.trimStart();
   const likelyJson = trimmed.startsWith('{') || trimmed.startsWith('[');
   const firstLine = content.split('\n', 1)[0].slice(0, 120);
   return `len=${content.length} likelyJson=${likelyJson} firstLine=${JSON.stringify(firstLine)}`;
+}
+
+function setActiveWebviewNoteContext(noteId: string, noteType: WebviewNoteType): void {
+  activeWebviewNoteId = noteId;
+  void vscode.commands.executeCommand('setContext', 'trilium.activeNoteId', noteId);
+  void vscode.commands.executeCommand('setContext', 'trilium.activeNoteType', noteType);
+}
+
+function clearActiveWebviewNoteContext(noteId?: string): void {
+  if (noteId && activeWebviewNoteId !== noteId) {
+    return;
+  }
+
+  activeWebviewNoteId = undefined;
+  void vscode.commands.executeCommand('setContext', 'trilium.activeNoteId', '');
+  void vscode.commands.executeCommand('setContext', 'trilium.activeNoteType', '');
+}
+
+function createOrRevealWebviewPanel(note: Note, viewType: string): { panel: vscode.WebviewPanel; isNew: boolean } {
+  const existing = noteWebviewPanels.get(note.noteId);
+  if (existing) {
+    existing.reveal(vscode.ViewColumn.Active);
+    return { panel: existing, isNew: false };
+  }
+
+  const panel = vscode.window.createWebviewPanel(
+    viewType,
+    note.title,
+    vscode.ViewColumn.Active,
+    {
+      enableScripts: true,
+      retainContextWhenHidden: true,
+    },
+  );
+
+  noteWebviewPanels.set(note.noteId, panel);
+  panel.onDidDispose(() => {
+    noteWebviewPanels.delete(note.noteId);
+    clearActiveWebviewNoteContext(note.noteId);
+  });
+  panel.onDidChangeViewState((event) => {
+    if (event.webviewPanel.active) {
+      setActiveWebviewNoteContext(note.noteId, note.type as WebviewNoteType);
+    } else {
+      clearActiveWebviewNoteContext(note.noteId);
+    }
+  });
+
+  return { panel, isNew: true };
 }
 
 const MIME_EXT_MAP: Record<string, string> = {
@@ -736,15 +1277,303 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 
   const updateActiveNoteContext = () => {
-    const activeId = getActiveNoteId(tempFileManager);
-    if (activeId && tempFileManager.isMindMapNote(activeId)) {
-      void vscode.commands.executeCommand('setContext', 'trilium.activeNoteType', 'mindMap');
-    } else {
+    const activeDoc = vscode.window.activeTextEditor?.document;
+    if (!activeDoc) {
+      void vscode.commands.executeCommand('setContext', 'trilium.activeNoteId', '');
       void vscode.commands.executeCommand('setContext', 'trilium.activeNoteType', '');
+      return;
     }
+
+    const noteId = noteIdFromUri(activeDoc.uri, tempFileManager);
+    if (!noteId) {
+      void vscode.commands.executeCommand('setContext', 'trilium.activeNoteId', '');
+      void vscode.commands.executeCommand('setContext', 'trilium.activeNoteType', '');
+      return;
+    }
+
+    const activeType = tempFileManager.getNoteType(noteId) ?? '';
+    void vscode.commands.executeCommand('setContext', 'trilium.activeNoteId', noteId);
+    void vscode.commands.executeCommand('setContext', 'trilium.activeNoteType', activeType);
   };
   context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(updateActiveNoteContext));
   updateActiveNoteContext();
+
+  const openNoteAsSource = async (
+    note: Note,
+    languageId: string,
+    formatContent?: (content: string) => string,
+  ): Promise<void> => {
+    if (note.isProtected) {
+      await showProtectedNoteRecoveryActions(note, note.noteId);
+      return;
+    }
+
+    const client = treeProvider.getClient();
+    if (!client) {
+      void vscode.window.showErrorMessage('Trilium: Not connected.');
+      return;
+    }
+
+    const rawContent = await client.getNoteContent(note.noteId);
+    const filePath = tempFileManager.getTempPath(note);
+    const fileContent = formatContent ? formatContent(rawContent) : rawContent;
+    fs.writeFileSync(filePath, fileContent, 'utf8');
+    const doc = await vscode.workspace.openTextDocument(filePath);
+    await vscode.languages.setTextDocumentLanguage(doc, languageId);
+    await vscode.window.showTextDocument(doc, { preview: false });
+    await maybeAutoRevealOpenedNote(note.noteId, treeProvider, treeView);
+    recentNotesProvider.trackNote(note);
+    if (backlinksProvider) {
+      backlinksProvider.updateBacklinks(note.noteId);
+    }
+    trackNoteForRefresh(note, filePath);
+  };
+
+  const openMermaidWysiwyg = async (note: Note): Promise<void> => {
+    if (note.isProtected) {
+      await showProtectedNoteRecoveryActions(note, note.noteId);
+      return;
+    }
+
+    const client = treeProvider.getClient();
+    if (!client) {
+      void vscode.window.showErrorMessage('Trilium: Not connected.');
+      return;
+    }
+
+    const { panel, isNew } = createOrRevealWebviewPanel(note, 'triliumMermaidEditor');
+    setActiveWebviewNoteContext(note.noteId, 'mermaid');
+
+    const mermaidScriptUri = panel.webview.asWebviewUri(
+      vscode.Uri.joinPath(context.extensionUri, 'out', 'webviews', 'mermaidEditor.js'),
+    );
+
+    if (!isNew) {
+      panel.title = note.title;
+    }
+
+    let webviewReady = false;
+    let queuedContent: string | undefined;
+    let queuedBreadcrumb: { parts: BreadcrumbPart[]; backlinksCount: number } | undefined;
+
+    const postBreadcrumb = async (noteId: string): Promise<void> => {
+      const breadcrumb = await getBreadcrumbData(client, noteId);
+      if (webviewReady) {
+        panel.webview.postMessage({ type: 'breadcrumb', ...breadcrumb });
+      } else {
+        queuedBreadcrumb = breadcrumb;
+      }
+    };
+
+    const postContent = (content: string): void => {
+      if (!isNew) {
+        panel.webview.postMessage({ type: 'render', content });
+        return;
+      }
+
+      if (webviewReady) {
+        panel.webview.postMessage({ type: 'render', content });
+      } else {
+        queuedContent = content;
+      }
+    };
+
+    const pushLatest = async (): Promise<void> => {
+      const latest = await client.getNote(note.noteId);
+      const content = await client.getNoteContent(note.noteId);
+      panel.title = latest.title;
+      await postBreadcrumb(latest.noteId);
+      postContent(content);
+    };
+
+    if (isNew) {
+      panel.webview.html = buildMermaidEditorHtml(panel.webview, mermaidScriptUri);
+
+      const disposable = panel.webview.onDidReceiveMessage(async (msg: MermaidEditorWebviewMessage) => {
+        if (msg?.type === 'ready') {
+          webviewReady = true;
+          if (queuedContent !== undefined) {
+            panel.webview.postMessage({ type: 'render', content: queuedContent });
+            queuedContent = undefined;
+          }
+          if (queuedBreadcrumb !== undefined) {
+            panel.webview.postMessage({ type: 'breadcrumb', ...queuedBreadcrumb });
+            queuedBreadcrumb = undefined;
+          }
+          return;
+        }
+
+        if (msg?.type === 'refresh') {
+          try {
+            await pushLatest();
+          } catch (err) {
+            void vscode.window.showErrorMessage(`Trilium: Failed to refresh Mermaid note: ${err}`);
+          }
+          return;
+        }
+
+        if (msg?.type === 'openBreadcrumbNote' && msg.noteId) {
+          await vscode.commands.executeCommand('trilium.openNoteById', msg.noteId);
+          return;
+        }
+
+        if (msg?.type === 'save') {
+          try {
+            await client.putNoteContent(note.noteId, msg.content ?? '');
+            await treeProvider.refreshNoteById(note.noteId);
+            panel.webview.postMessage({ type: 'saveResult', success: true });
+          } catch (err) {
+            panel.webview.postMessage({ type: 'saveResult', success: false, error: String(err) });
+          }
+        }
+      });
+
+      panel.onDidDispose(() => disposable.dispose());
+    }
+
+    try {
+      await pushLatest();
+    } catch (err) {
+      if (isNew) {
+        panel.dispose();
+      }
+      void vscode.window.showErrorMessage(`Trilium: Failed to open Mermaid editor: ${err}`);
+      return;
+    }
+
+    recentNotesProvider.trackNote(note);
+    if (backlinksProvider) {
+      backlinksProvider.updateBacklinks(note.noteId);
+    }
+  };
+
+  const openCanvasWysiwyg = async (note: Note): Promise<void> => {
+    if (note.isProtected) {
+      await showProtectedNoteRecoveryActions(note, note.noteId);
+      return;
+    }
+
+    const client = treeProvider.getClient();
+    if (!client) {
+      void vscode.window.showErrorMessage('Trilium: Not connected.');
+      return;
+    }
+
+    const { panel, isNew } = createOrRevealWebviewPanel(note, 'triliumCanvasEditor');
+    setActiveWebviewNoteContext(note.noteId, 'canvas');
+
+    const excalidrawScriptUri = panel.webview.asWebviewUri(
+      vscode.Uri.joinPath(context.extensionUri, 'out', 'webviews', 'excalidrawEditor.js'),
+    );
+    const excalidrawStyleUri = panel.webview.asWebviewUri(
+      vscode.Uri.joinPath(context.extensionUri, 'out', 'webviews', 'excalidrawEditor.css'),
+    );
+    const excalidrawAssetBaseUri = panel.webview.asWebviewUri(
+      vscode.Uri.joinPath(context.extensionUri, 'out', 'webviews'),
+    );
+    if (isNew) {
+      panel.webview.html = buildExcalidrawEditorHtml(
+        panel.webview,
+        excalidrawScriptUri,
+        excalidrawStyleUri,
+        excalidrawAssetBaseUri,
+      );
+    } else {
+      panel.title = note.title;
+    }
+
+    let webviewReady = false;
+    let queuedContent: string | undefined;
+    let queuedBreadcrumb: { parts: BreadcrumbPart[]; backlinksCount: number } | undefined;
+
+    const postBreadcrumb = async (noteId: string): Promise<void> => {
+      const breadcrumb = await getBreadcrumbData(client, noteId);
+      if (webviewReady) {
+        panel.webview.postMessage({ type: 'breadcrumb', ...breadcrumb });
+      } else {
+        queuedBreadcrumb = breadcrumb;
+      }
+    };
+
+    const postContent = (content: string): void => {
+      if (!isNew) {
+        panel.webview.postMessage({ type: 'render', content });
+        return;
+      }
+
+      if (webviewReady) {
+        panel.webview.postMessage({ type: 'render', content });
+      } else {
+        queuedContent = content;
+      }
+    };
+
+    const pushLatest = async (): Promise<void> => {
+      const latest = await client.getNote(note.noteId);
+      const content = await client.getNoteContent(note.noteId);
+      panel.title = latest.title;
+      await postBreadcrumb(latest.noteId);
+      postContent(content);
+    };
+
+    if (isNew) {
+      const disposable = panel.webview.onDidReceiveMessage(async (msg: ExcalidrawEditorWebviewMessage) => {
+        if (msg?.type === 'ready') {
+          webviewReady = true;
+          if (queuedContent !== undefined) {
+            panel.webview.postMessage({ type: 'render', content: queuedContent });
+            queuedContent = undefined;
+          }
+          if (queuedBreadcrumb !== undefined) {
+            panel.webview.postMessage({ type: 'breadcrumb', ...queuedBreadcrumb });
+            queuedBreadcrumb = undefined;
+          }
+          return;
+        }
+
+        if (msg?.type === 'refresh') {
+          try {
+            await pushLatest();
+          } catch (err) {
+            void vscode.window.showErrorMessage(`Trilium: Failed to refresh canvas note: ${err}`);
+          }
+          return;
+        }
+
+        if (msg?.type === 'openBreadcrumbNote' && msg.noteId) {
+          await vscode.commands.executeCommand('trilium.openNoteById', msg.noteId);
+          return;
+        }
+
+        if (msg?.type === 'save') {
+          try {
+            await client.putNoteContent(note.noteId, msg.content ?? '');
+            await treeProvider.refreshNoteById(note.noteId);
+            panel.webview.postMessage({ type: 'saveResult', success: true });
+          } catch (err) {
+            panel.webview.postMessage({ type: 'saveResult', success: false, error: String(err) });
+          }
+        }
+      });
+
+      panel.onDidDispose(() => disposable.dispose());
+    }
+
+    try {
+      await pushLatest();
+    } catch (err) {
+      if (isNew) {
+        panel.dispose();
+      }
+      void vscode.window.showErrorMessage(`Trilium: Failed to open canvas editor: ${err}`);
+      return;
+    }
+
+    recentNotesProvider.trackNote(note);
+    if (backlinksProvider) {
+      backlinksProvider.updateBacklinks(note.noteId);
+    }
+  };
 
   context.subscriptions.push(
     triliumChatParticipant,
@@ -1034,18 +1863,33 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return;
       }
 
-      const panel = vscode.window.createWebviewPanel(
-        'triliumMindMapPreview',
-        note.title,
-        vscode.ViewColumn.Active,
-        { enableScripts: true, retainContextWhenHidden: true },
-      );
-      panel.webview.html = buildMindMapPreviewHtml(panel.webview, note.title);
+      const { panel, isNew } = createOrRevealWebviewPanel(note, 'triliumMindMapPreview');
+      setActiveWebviewNoteContext(note.noteId, 'mindMap');
+      if (isNew) {
+        panel.webview.html = buildMindMapPreviewHtml(panel.webview, note.title);
+      } else {
+        panel.title = note.title;
+      }
 
       let webviewReady = false;
       let queuedRenderData: unknown;
+      let queuedBreadcrumb: { parts: BreadcrumbPart[]; backlinksCount: number } | undefined;
+
+      const postBreadcrumb = async (noteId: string): Promise<void> => {
+        const breadcrumb = await getBreadcrumbData(client, noteId);
+        if (webviewReady) {
+          panel.webview.postMessage({ type: 'breadcrumb', ...breadcrumb });
+        } else {
+          queuedBreadcrumb = breadcrumb;
+        }
+      };
 
       const postRenderData = (data: unknown): void => {
+        if (!isNew) {
+          panel.webview.postMessage({ type: 'render', data });
+          return;
+        }
+
         if (webviewReady) {
           panel.webview.postMessage({ type: 'render', data });
           return;
@@ -1056,6 +1900,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const pushPreviewData = async (): Promise<void> => {
         const latestNote = await client.getNote(note.noteId);
         const rawContent = await client.getNoteContent(note.noteId);
+        await postBreadcrumb(latestNote.noteId);
         try {
           const parsed = normalizeMindMapData(rawContent);
 
@@ -1070,54 +1915,67 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
       };
 
+      if (isNew) {
+        const messageDisposable = panel.webview.onDidReceiveMessage(async (msg: MindMapPreviewWebviewMessage) => {
+          if (msg?.type === 'ready') {
+            webviewReady = true;
+            if (queuedRenderData !== undefined) {
+              panel.webview.postMessage({ type: 'render', data: queuedRenderData });
+              queuedRenderData = undefined;
+            }
+            if (queuedBreadcrumb !== undefined) {
+              panel.webview.postMessage({ type: 'breadcrumb', ...queuedBreadcrumb });
+              queuedBreadcrumb = undefined;
+            }
+            return;
+          }
+
+          if (msg?.type === 'save') {
+            try {
+              const payload = JSON.stringify(msg.data, null, 2);
+              await client.putNoteContent(note.noteId, payload);
+              // Sync the temp file on disk if it is open in a text editor
+              const tempPath = tempFileManager.getTempPath(note);
+              if (tempPath) {
+                fs.writeFileSync(tempPath, payload, 'utf8');
+              }
+              await treeProvider.refreshNoteById(note.noteId);
+              panel.webview.postMessage({ type: 'saveResult', success: true });
+            } catch (err) {
+              panel.webview.postMessage({ type: 'saveResult', success: false, error: String(err) });
+            }
+            return;
+          }
+
+          if (msg?.type === 'openBreadcrumbNote' && msg.noteId) {
+            await vscode.commands.executeCommand('trilium.openNoteById', msg.noteId);
+            return;
+          }
+
+          if (msg?.type !== 'refresh') {
+            return;
+          }
+          try {
+            await pushPreviewData();
+          } catch (err) {
+            void vscode.window.showErrorMessage(`Trilium: Failed to refresh mind map preview: ${err}`);
+          }
+        });
+
+        panel.onDidDispose(() => {
+          messageDisposable.dispose();
+        });
+      }
+
       try {
         await pushPreviewData();
       } catch (err) {
-        panel.dispose();
+        if (isNew) {
+          panel.dispose();
+        }
         void vscode.window.showErrorMessage(`Trilium: Failed to preview mind map: ${err}`);
         return;
       }
-
-      const messageDisposable = panel.webview.onDidReceiveMessage(async (msg: MindMapPreviewWebviewMessage) => {
-        if (msg?.type === 'ready') {
-          webviewReady = true;
-          if (queuedRenderData !== undefined) {
-            panel.webview.postMessage({ type: 'render', data: queuedRenderData });
-            queuedRenderData = undefined;
-          }
-          return;
-        }
-
-        if (msg?.type === 'save') {
-          try {
-            const payload = JSON.stringify(msg.data, null, 2);
-            await client.putNoteContent(note.noteId, payload);
-            // Sync the temp file on disk if it is open in a text editor
-            const tempPath = tempFileManager.getTempPath(note);
-            if (tempPath) {
-              fs.writeFileSync(tempPath, payload, 'utf8');
-            }
-            await treeProvider.refreshNoteById(note.noteId);
-            panel.webview.postMessage({ type: 'saveResult', success: true });
-          } catch (err) {
-            panel.webview.postMessage({ type: 'saveResult', success: false, error: String(err) });
-          }
-          return;
-        }
-
-        if (msg?.type !== 'refresh') {
-          return;
-        }
-        try {
-          await pushPreviewData();
-        } catch (err) {
-          void vscode.window.showErrorMessage(`Trilium: Failed to refresh mind map preview: ${err}`);
-        }
-      });
-
-      panel.onDidDispose(() => {
-        messageDisposable.dispose();
-      });
     }),
 
     vscode.commands.registerCommand('trilium.openTodayNote', async () => {
@@ -1162,7 +2020,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           return;
         }
 
-        // Other note types: use temp file approach
+        // Non-text notes can open in dedicated WYSIWYG panels when available.
+        if (note.type === 'mindMap') {
+          await vscode.commands.executeCommand('trilium.openMindMap', new NoteItem(note));
+          await maybeAutoRevealOpenedNote(note.noteId, treeProvider, treeView);
+          return;
+        }
+
+        if (note.type === 'mermaid') {
+          await vscode.commands.executeCommand('trilium.openMermaid', new NoteItem(note));
+          await maybeAutoRevealOpenedNote(note.noteId, treeProvider, treeView);
+          return;
+        }
+
+        if (note.type === 'canvas') {
+          await vscode.commands.executeCommand('trilium.openCanvas', new NoteItem(note));
+          await maybeAutoRevealOpenedNote(note.noteId, treeProvider, treeView);
+          return;
+        }
+
+        // Other note types: use temp file approach.
         const rawContent = await client.getNoteContent(note.noteId);
         const filePath = tempFileManager.getTempPath(note);
         const fileContent = note.type === 'mindMap'
@@ -1829,10 +2706,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           return;
         }
 
-        // Other note types: use temp file approach (code, mermaid, canvas)
-        // Mind map notes are handled by trilium.openMindMap (preview) by default.
+        // Non-text notes can open in dedicated WYSIWYG panels when available.
         if (note.type === 'mindMap') {
           await vscode.commands.executeCommand('trilium.openMindMap', item);
+          return;
+        }
+
+        if (note.type === 'mermaid') {
+          await vscode.commands.executeCommand('trilium.openMermaid', item);
+          return;
+        }
+
+        if (note.type === 'canvas') {
+          await vscode.commands.executeCommand('trilium.openCanvas', item);
           return;
         }
 
@@ -1903,6 +2789,114 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         trackNoteForRefresh(note, filePath);
       } catch (err) {
         void vscode.window.showErrorMessage(`Trilium: Failed to open mind map JSON: ${err}`);
+      }
+    }),
+
+    vscode.commands.registerCommand('trilium.openMermaid', async (item?: NoteItem) => {
+      const client = treeProvider.getClient();
+      if (!client) {
+        void vscode.window.showErrorMessage('Trilium: Not connected.');
+        return;
+      }
+
+      let note = item?.note;
+      if (!note) {
+        const activeNoteId = getActiveNoteId(tempFileManager);
+        if (!activeNoteId) {
+          void vscode.window.showWarningMessage('Trilium: No active Mermaid note found.');
+          return;
+        }
+        note = await client.getNote(activeNoteId);
+      }
+
+      if (note.type !== 'mermaid') {
+        void vscode.window.showWarningMessage('Trilium: This command is only available for Mermaid notes.');
+        return;
+      }
+
+      await openMermaidWysiwyg(note);
+    }),
+
+    vscode.commands.registerCommand('trilium.openMermaidSource', async (item?: NoteItem) => {
+      const client = treeProvider.getClient();
+      if (!client) {
+        void vscode.window.showErrorMessage('Trilium: Not connected.');
+        return;
+      }
+
+      let note = item?.note;
+      if (!note) {
+        const activeNoteId = getActiveNoteId(tempFileManager);
+        if (!activeNoteId) {
+          void vscode.window.showWarningMessage('Trilium: No active Mermaid note found.');
+          return;
+        }
+        note = await client.getNote(activeNoteId);
+      }
+
+      if (note.type !== 'mermaid') {
+        void vscode.window.showWarningMessage('Trilium: This command is only available for Mermaid notes.');
+        return;
+      }
+
+      try {
+        await openNoteAsSource(note, 'mermaid');
+      } catch (err) {
+        void vscode.window.showErrorMessage(`Trilium: Failed to open Mermaid source: ${err}`);
+      }
+    }),
+
+    vscode.commands.registerCommand('trilium.openCanvas', async (item?: NoteItem) => {
+      const client = treeProvider.getClient();
+      if (!client) {
+        void vscode.window.showErrorMessage('Trilium: Not connected.');
+        return;
+      }
+
+      let note = item?.note;
+      if (!note) {
+        const activeNoteId = getActiveNoteId(tempFileManager);
+        if (!activeNoteId) {
+          void vscode.window.showWarningMessage('Trilium: No active canvas note found.');
+          return;
+        }
+        note = await client.getNote(activeNoteId);
+      }
+
+      if (note.type !== 'canvas') {
+        void vscode.window.showWarningMessage('Trilium: This command is only available for canvas notes.');
+        return;
+      }
+
+      await openCanvasWysiwyg(note);
+    }),
+
+    vscode.commands.registerCommand('trilium.openCanvasJson', async (item?: NoteItem) => {
+      const client = treeProvider.getClient();
+      if (!client) {
+        void vscode.window.showErrorMessage('Trilium: Not connected.');
+        return;
+      }
+
+      let note = item?.note;
+      if (!note) {
+        const activeNoteId = getActiveNoteId(tempFileManager);
+        if (!activeNoteId) {
+          void vscode.window.showWarningMessage('Trilium: No active canvas note found.');
+          return;
+        }
+        note = await client.getNote(activeNoteId);
+      }
+
+      if (note.type !== 'canvas') {
+        void vscode.window.showWarningMessage('Trilium: This command is only available for canvas notes.');
+        return;
+      }
+
+      try {
+        await openNoteAsSource(note, 'json', formatJsonForEditor);
+      } catch (err) {
+        void vscode.window.showErrorMessage(`Trilium: Failed to open canvas JSON: ${err}`);
       }
     }),
 
@@ -2778,11 +3772,24 @@ async function openNoteInEditor(
     await maybeAutoRevealOpenedNote(note.noteId, treeProvider, treeView);
     return;
   }
+  if (note.type === 'mindMap') {
+    await vscode.commands.executeCommand('trilium.openMindMap', new NoteItem(note));
+    await maybeAutoRevealOpenedNote(note.noteId, treeProvider, treeView);
+    return;
+  }
+  if (note.type === 'mermaid') {
+    await vscode.commands.executeCommand('trilium.openMermaid', new NoteItem(note));
+    await maybeAutoRevealOpenedNote(note.noteId, treeProvider, treeView);
+    return;
+  }
+  if (note.type === 'canvas') {
+    await vscode.commands.executeCommand('trilium.openCanvas', new NoteItem(note));
+    await maybeAutoRevealOpenedNote(note.noteId, treeProvider, treeView);
+    return;
+  }
   const rawContent = await client.getNoteContent(note.noteId);
   const filePath = tempFileManager.getTempPath(note);
-  const fileContent = note.type === 'mindMap'
-    ? formatMindMapJsonForEditor(rawContent)
-    : rawContent;
+  const fileContent = rawContent;
   fs.writeFileSync(filePath, fileContent, 'utf8');
   const doc = await vscode.workspace.openTextDocument(filePath);
   await vscode.languages.setTextDocumentLanguage(doc, tempFileManager.getLanguageId(note));
@@ -3054,7 +4061,7 @@ function getActiveNoteId(tempFileManager: TempFileManager): string | undefined {
     return noteIdFromUri(activeTab.input.uri, tempFileManager);
   }
 
-  return undefined;
+  return activeWebviewNoteId;
 }
 
 async function revealNoteInTree(

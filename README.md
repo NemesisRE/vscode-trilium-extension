@@ -24,8 +24,9 @@ Use it to:
 
 - Browse your full Trilium note tree in the sidebar.
 - Edit text notes in a rich CKEditor-powered WYSIWYG editor.
-- Open code, mermaid, canvas, and other note types with the right editor flow.
-- Open mind-map notes in an interactive MindElixir editor with a theme-aware node-menu for node styling and metadata edits.
+- Edit Mermaid diagrams in a built-in WYSIWYG editor with live preview, auto-save, breadcrumbs, and optional raw `.mmd` source access.
+- Edit Excalidraw canvas notes in a built-in local editor with auto-save, breadcrumbs, and optional raw `.excalidraw` JSON access.
+- Open mind-map notes in an interactive MindElixir editor with a theme-aware node-menu, breadcrumbs, and optional raw JSON access.
 - Search notes quickly, manage attributes and attachments, and review revisions.
 - Resolve upstream edit conflicts with a built-in compare flow (Theirs vs Ours).
 - Clone, move, and export notes without leaving VS Code.
@@ -44,6 +45,8 @@ If you want a fast setup, you can be connected in about a minute.
 
 - Keyboard-first workflows using normal VS Code commands and save behavior.
 - Text-note editing now keeps native unsaved-close protection, so unresolved changes are not silently lost.
+- Mermaid, Canvas, and Mind Map notes open in native built-in editors instead of depending on third-party VS Code preview extensions.
+- Shared breadcrumb, reveal-in-tree, and open-parent actions make special note types behave more like normal editor tabs.
 - Theme-aware editor styling so notes blend with your current color theme.
 - Secure token storage through VS Code secret storage.
 - Deep command coverage for daily note management.

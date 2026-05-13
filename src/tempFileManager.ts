@@ -172,6 +172,10 @@ export class TempFileManager {
     return this.noteTypeByNoteId.get(noteId) === 'mindMap';
   }
 
+  getNoteType(noteId: string): string | undefined {
+    return this.noteTypeByNoteId.get(noteId);
+  }
+
   isHtmlTempPath(filePath: string): boolean {
     return this.htmlTempPaths.has(this.normalize(filePath));
   }

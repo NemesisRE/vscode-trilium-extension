@@ -21,16 +21,19 @@
 - The editor includes headings, inline formatting, lists, tables, inline code, code blocks, math, Mermaid diagrams, admonitions, footnotes, keyboard markers, find and replace, and full formatting controls.
 - Images inserted from the CKEditor toolbar are uploaded as Trilium attachments and persisted as native Trilium attachment URLs.
 - **Code notes** open with the correct language where possible, and changes save directly back to Trilium.
-- **Mermaid notes** open as `.mmd` files and can be rendered visually with Mermaid preview extensions.
-- **Canvas notes** open as `.excalidraw` JSON and can be rendered visually with the Excalidraw VS Code extension.
+- **Mermaid notes** open directly in a built-in native Mermaid editor with live rendered preview, auto-save back to Trilium, refresh control, and breadcrumb navigation.
+- Use **Trilium: Open Mermaid Source (.mmd)** from the tree context menu, editor title, or command palette to access the raw Mermaid source when needed.
+- **Canvas notes** open directly in a built-in local Excalidraw editor with auto-save back to Trilium, refresh control, and breadcrumb navigation.
+- Use **Trilium: Open Canvas JSON (.excalidraw)** from the tree context menu, editor title, or command palette to access pretty-printed raw Excalidraw JSON when needed.
 - **Mind Map notes** open directly in the interactive native MindElixir editor in the active editor group, using the note title as the tab title.
 - Mind-map editing includes node drag-to-reorder, right-click context menus (add child/sibling/parent), and auto-save back to Trilium on every change.
 - The extracted node menu is available when a single node is selected and supports node style and metadata edits such as font size, font color, background color, icons, URL, tags, and memo.
 - The node menu follows the active VS Code light/dark theme and is positioned to avoid overlap with the refresh controls.
+- Mind-map notes now also show the same breadcrumb header style used by Mermaid and Canvas notes, including ancestor navigation and backlinks count.
 - Use **Trilium: Open Mind Map JSON** from the right-click menu or command palette to access the raw JSON file instead.
 - Use **Trilium: Open Mind Map** from the editor title bar to jump from the JSON file back to the interactive view.
 
-A breadcrumb bar above the CKEditor content area shows the full parent path of the open note and updates automatically when the note loads.
+A breadcrumb bar above text, Mermaid, Canvas, and Mind Map editors shows the full parent path of the open note, supports direct ancestor navigation, and includes a backlinks count badge.
 
 ## Save Safety and Conflict Resolution
 
@@ -50,7 +53,7 @@ A breadcrumb bar above the CKEditor content area shows the full parent path of t
 
 The CKEditor webview follows the active VS Code theme automatically. Editor colors are mapped from VS Code CSS variables to CKEditor variables at runtime.
 
-The mind-map webview also follows the active VS Code theme, including the extracted node-menu panel used for per-node styling and metadata.
+The Mermaid, Canvas, and Mind Map webviews also follow the active VS Code theme. Mind Map additionally themes the extracted node-menu panel used for per-node styling and metadata.
 
 ## Open as Fallback Formats
 
@@ -124,7 +127,7 @@ Right-click any note and choose **Export Subtree...** to export the note and all
 
 - **Protected notes** are not supported. Unlock them in Trilium first under **Options -> Protected Session**.
 - Protected notes are intentionally masked in the tree (`[protected]`) and cannot be opened or edited until you unlock Protected Session in Trilium.
-- **Canvas notes** are opened as raw JSON unless you install the Excalidraw extension.
+- Mermaid, Canvas, and Mind Map editors use dedicated webviews, so they do not participate in the text-note server-first conflict flow yet.
 - **Mind map notes** open directly in the MindElixir interactive editor; use **Trilium: Open Mind Map JSON** for raw JSON editing.
 - ALT+click to open externally is not supported because of VS Code tree API limitations. Use the right-click **Open in External Browser** command instead.
 - Desktop only. Web extensions and Codespaces are not supported.

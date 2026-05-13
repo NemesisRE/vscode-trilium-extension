@@ -22,7 +22,9 @@ If you already use Trilium every day, this gives you a smoother flow without swi
 ## Notes
 
 - The ETAPI token is stored securely in VS Code's `SecretStorage` and is not written to your settings files.
-- Text notes open in the built-in CKEditor webview, while code and other note types open in the most appropriate editor available.
+- Text notes open in the built-in CKEditor webview.
+- Mermaid, Canvas, and Mind Map notes also open in built-in native editors, so no separate Mermaid or Excalidraw VS Code extension is required.
+- Mermaid, Canvas, and Mind Map notes can still be opened as raw source (`.mmd`, `.excalidraw`, or MindElixir JSON) from the tree context menu, editor title actions, or command palette when manual edits are needed.
 - When upstream and local content diverge, save shows conflict options (`Compare`, `Keep Ours`, `Use Theirs`) before any overwrite.
 - Unresolved conflicts keep the tab dirty, so VS Code close warnings still protect unsaved work.
 
@@ -30,7 +32,7 @@ If you already use Trilium every day, this gives you a smoother flow without swi
 
 - Connection fails: check server URL, ETAPI token, and whether Trilium is reachable from your machine.
 - Tree is empty: verify your root note setting and that the configured root exists.
-- Note type opens as plain text: check whether an optional companion extension is needed for that note type.
+- A special note type does not render correctly: reload the window after upgrading the extension so the latest built-in webview assets are loaded.
 
 ## More Documentation
 
