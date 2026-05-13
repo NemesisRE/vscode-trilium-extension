@@ -26,7 +26,7 @@ All commands are available via the Command Palette under the **Trilium** categor
 | `Trilium: Connect to Trilium Server` | Enter server URL and ETAPI token. |
 | `Trilium: Reconnect to Trilium Server` | Reconnect with current settings and token. |
 | `Trilium: Refresh` | Reload the note tree from the server. |
-| `Trilium: Open Note` | Open a text, code, mermaid, canvas, or mind-map note in the editor. |
+| `Trilium: Open Note` | Open a note in its default editor flow: CKEditor for text, VS Code text editor for code, built-in Mermaid/Canvas/Mind Map editors for those special note types, and appropriate fallback handling for file-like notes. |
 | `Trilium: Open as Markdown` | Open a text note converted to Markdown in the text editor and save it back as HTML. |
 | `Trilium: Open as HTML` | Open a text note's raw HTML in a read-only editor view. |
 | `Trilium: Open File` | Open a file note in a temporary local file for inspection. |
@@ -46,6 +46,10 @@ All commands are available via the Command Palette under the **Trilium** categor
 | `Trilium: Open This Week's Note` | Open the current ISO week note. |
 | `Trilium: Open This Month's Note` | Open the current month note. |
 | `Trilium: Open This Year's Note` | Open the current year note. |
+| `Trilium: Open Mermaid Diagram` | Open the built-in Mermaid editor for a Mermaid note, with live rendered preview, auto-save, and breadcrumb navigation. |
+| `Trilium: Open Mermaid Source (.mmd)` | Open the raw Mermaid source for a Mermaid note in VS Code's text editor. |
+| `Trilium: Open Canvas` | Open the built-in local Excalidraw editor for a canvas note, with auto-save and breadcrumb navigation. |
+| `Trilium: Open Canvas JSON (.excalidraw)` | Open the pretty-printed raw Excalidraw JSON for a canvas note in VS Code's text editor. |
 | `Trilium: Open Mind Map` | Open the interactive MindElixir editor for a mind-map note in the active editor group (default when clicking a mind-map note in the tree; also available as an editor title action when a mind-map JSON file is active). |
 | `Trilium: Open Mind Map JSON` | Open the raw MindElixir JSON for a mind-map note in the text editor for manual editing or advanced/manual fixes. |
 | `Trilium: Search Notes...` | Live full-text search with a debounced QuickPick. |

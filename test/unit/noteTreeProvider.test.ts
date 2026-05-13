@@ -159,12 +159,12 @@ describe('NoteItem', () => {
     assert.strictEqual(new NoteItem(makeNote({ type: 'code' })).contextValue, 'noteCode');
   });
 
-  it('contextValue is noteCode for mermaid notes', () => {
-    assert.strictEqual(new NoteItem(makeNote({ type: 'mermaid' })).contextValue, 'noteCode');
+  it('contextValue is noteMermaid for mermaid notes', () => {
+    assert.strictEqual(new NoteItem(makeNote({ type: 'mermaid' })).contextValue, 'noteMermaid');
   });
 
-  it('contextValue is noteCode for canvas notes', () => {
-    assert.strictEqual(new NoteItem(makeNote({ type: 'canvas' })).contextValue, 'noteCode');
+  it('contextValue is noteCanvas for canvas notes', () => {
+    assert.strictEqual(new NoteItem(makeNote({ type: 'canvas' })).contextValue, 'noteCanvas');
   });
 
   it('contextValue is noteMindMap for mindMap notes', () => {

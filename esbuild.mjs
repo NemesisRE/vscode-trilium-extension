@@ -7,6 +7,16 @@ const watch = process.argv.includes('--watch');
 const workspaceRoot = process.cwd();
 const boxiconsSvgSourceDir = path.join(workspaceRoot, 'node_modules', 'boxicons', 'svg');
 const boxiconsSvgTargetDir = path.join(workspaceRoot, 'out', 'boxicons', 'svg');
+const excalidrawFontsSourceDir = path.join(
+  workspaceRoot,
+  'node_modules',
+  '@excalidraw',
+  'excalidraw',
+  'dist',
+  'prod',
+  'fonts',
+);
+const excalidrawFontsTargetDir = path.join(workspaceRoot, 'out', 'webviews', 'fonts');
 
 /**
  * Plugin to handle SVG imports with ?raw suffix.
@@ -69,8 +79,37 @@ const ckeditorBuildOptions = {
   treeShaking: true,
 };
 
+/** @type {import('esbuild').BuildOptions} */
+const webviewBuildOptions = {
+  entryPoints: {
+    mermaidEditor: 'src/webviews/mermaidEditor.ts',
+    excalidrawEditor: 'src/webviews/excalidrawEditor.ts',
+  },
+  bundle: true,
+  outdir: 'out/webviews',
+  format: 'esm',
+  platform: 'browser',
+  conditions: ['production'],
+  sourcemap: false,
+  minify: production,
+  target: ['es2020'],
+  logLevel: 'info',
+  loader: {
+    '.css': 'css',
+    '.woff': 'dataurl',
+    '.woff2': 'dataurl',
+    '.ttf': 'dataurl',
+    '.eot': 'dataurl',
+  },
+  treeShaking: true,
+};
+
 async function copyBundledBoxicons() {
   await fs.promises.cp(boxiconsSvgSourceDir, boxiconsSvgTargetDir, { recursive: true });
+}
+
+async function copyBundledExcalidrawFonts() {
+  await fs.promises.cp(excalidrawFontsSourceDir, excalidrawFontsTargetDir, { recursive: true });
 }
 
 /**
@@ -85,8 +124,14 @@ async function buildAll() {
   console.log('[esbuild] Building CKEditor...');
   await esbuild.build(ckeditorBuildOptions);
 
+  console.log('[esbuild] Building webviews...');
+  await esbuild.build(webviewBuildOptions);
+
   console.log('[esbuild] Copying Boxicons assets...');
   await copyBundledBoxicons();
+
+  console.log('[esbuild] Copying Excalidraw font assets...');
+  await copyBundledExcalidrawFonts();
 
   console.log('[esbuild] Build complete!');
 }
@@ -98,13 +143,16 @@ async function watchAll() {
   console.log('[esbuild] Starting watch mode...');
 
   await copyBundledBoxicons();
+  await copyBundledExcalidrawFonts();
 
   const extensionCtx = await esbuild.context(extensionBuildOptions);
   const ckeditorCtx = await esbuild.context(ckeditorBuildOptions);
+  const webviewCtx = await esbuild.context(webviewBuildOptions);
 
   await Promise.all([
     extensionCtx.watch(),
     ckeditorCtx.watch(),
+    webviewCtx.watch(),
   ]);
 
   console.log('[esbuild] Watching for changes...');

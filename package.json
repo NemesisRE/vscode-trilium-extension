@@ -17,6 +17,7 @@
   "files": [
     "out/extension.js",
     "out/ckeditor/**",
+    "out/webviews/**",
     "out/boxicons/**",
     "media/**",
     "README.md",
@@ -393,6 +394,30 @@
         "title": "Open Mind Map JSON",
         "icon": "$(json)",
         "category": "Trilium"
+      },
+      {
+        "command": "trilium.openMermaid",
+        "title": "Open Mermaid Diagram",
+        "icon": "$(open-preview)",
+        "category": "Trilium"
+      },
+      {
+        "command": "trilium.openMermaidSource",
+        "title": "Open Mermaid Source (.mmd)",
+        "icon": "$(code)",
+        "category": "Trilium"
+      },
+      {
+        "command": "trilium.openCanvas",
+        "title": "Open Canvas",
+        "icon": "$(open-preview)",
+        "category": "Trilium"
+      },
+      {
+        "command": "trilium.openCanvasJson",
+        "title": "Open Canvas JSON (.excalidraw)",
+        "icon": "$(json)",
+        "category": "Trilium"
       }
     ],
     "submenus": [
@@ -501,6 +526,16 @@
           "group": "inline"
         },
         {
+          "command": "trilium.openMermaid",
+          "when": "viewItem == noteMermaid",
+          "group": "inline"
+        },
+        {
+          "command": "trilium.openCanvas",
+          "when": "viewItem == noteCanvas",
+          "group": "inline"
+        },
+        {
           "command": "trilium.openMindMap",
           "when": "viewItem == noteMindMap",
           "group": "inline"
@@ -536,6 +571,26 @@
           "group": "navigation@1"
         },
         {
+          "command": "trilium.openMermaid",
+          "when": "viewItem == noteMermaid",
+          "group": "navigation@2"
+        },
+        {
+          "command": "trilium.openMermaidSource",
+          "when": "viewItem == noteMermaid",
+          "group": "navigation@2.1"
+        },
+        {
+          "command": "trilium.openCanvas",
+          "when": "viewItem == noteCanvas",
+          "group": "navigation@2.2"
+        },
+        {
+          "command": "trilium.openCanvasJson",
+          "when": "viewItem == noteCanvas",
+          "group": "navigation@2.3"
+        },
+        {
           "command": "trilium.openMindMap",
           "when": "viewItem == noteMindMap",
           "group": "navigation@1"
@@ -558,26 +613,46 @@
         {
           "command": "trilium.openInBrowser",
           "when": "viewItem == noteText",
-          "group": "navigation@3"
+          "group": "navigation@3.9"
         },
         {
           "command": "trilium.openInBrowser",
           "when": "viewItem == noteCode",
-          "group": "navigation@3"
+          "group": "navigation@3.9"
+        },
+        {
+          "command": "trilium.openInBrowser",
+          "when": "viewItem == noteMermaid",
+          "group": "navigation@3.9"
+        },
+        {
+          "command": "trilium.openInBrowser",
+          "when": "viewItem == noteCanvas",
+          "group": "navigation@3.9"
         },
         {
           "command": "trilium.openInBrowser",
           "when": "viewItem == noteFile",
-          "group": "navigation@3"
-        },
-        {
-          "command": "trilium.openInBrowser",
-          "when": "viewItem == noteExternal",
-          "group": "navigation@1"
+          "group": "navigation@3.9"
         },
         {
           "command": "trilium.openInBrowserExternal",
-          "when": "viewItem == noteText",
+          "when": "viewItem == noteMermaid",
+          "group": "navigation@4"
+        },
+        {
+          "command": "trilium.openInBrowserExternal",
+          "when": "viewItem == noteCanvas",
+          "group": "navigation@4"
+        },
+        {
+          "command": "trilium.openInBrowser",
+          "when": "viewItem =~ /^note(Text|Code|Mermaid|Canvas|MindMap|File|External)$/",
+          "group": "navigation@3.9"
+        },
+        {
+          "command": "trilium.openInBrowserExternal",
+          "when": "viewItem =~ /^note(Text|Code|Mermaid|Canvas|MindMap|File|External)$/",
           "group": "navigation@4"
         },
         {
@@ -589,6 +664,16 @@
           "command": "trilium.openInBrowserExternal",
           "when": "viewItem == noteFile",
           "group": "navigation@4"
+        },
+        {
+          "command": "trilium.renameNote",
+          "when": "viewItem == noteMermaid",
+          "group": "1_modification@2"
+        },
+        {
+          "command": "trilium.renameNote",
+          "when": "viewItem == noteCanvas",
+          "group": "1_modification@2"
         },
         {
           "command": "trilium.openInBrowserExternal",
@@ -632,72 +717,92 @@
         },
         {
           "command": "trilium.deleteNote",
-          "when": "viewItem =~ /^note(Text|Code|MindMap|File|External)$/",
+          "when": "viewItem =~ /^note(Text|Code|Mermaid|Canvas|MindMap|File|External)$/",
           "group": "2_delete@1"
         },
         {
           "command": "trilium.copyNoteId",
-          "when": "viewItem =~ /^note(Text|Code|MindMap|File|External)$/",
+          "when": "viewItem =~ /^note(Text|Code|Mermaid|Canvas|MindMap|File|External)$/",
           "group": "9_copy@1"
         },
         {
           "command": "trilium.copyNoteUrl",
-          "when": "viewItem =~ /^note(Text|Code|MindMap|File|External)$/",
+          "when": "viewItem =~ /^note(Text|Code|Mermaid|Canvas|MindMap|File|External)$/",
           "group": "9_copy@2"
         },
         {
           "command": "trilium.showRevisions",
-          "when": "viewItem =~ /^note(Text|Code|MindMap|File|External)$/",
+          "when": "viewItem =~ /^note(Text|Code|Mermaid|Canvas|MindMap|File|External)$/",
           "group": "3_history@1"
         },
         {
           "command": "trilium.cloneNote",
-          "when": "viewItem =~ /^note(Text|Code|MindMap|File|External)$/",
+          "when": "viewItem =~ /^note(Text|Code|Mermaid|Canvas|MindMap|File|External)$/",
           "group": "3_history@2"
         },
         {
           "command": "trilium.moveNote",
-          "when": "viewItem =~ /^note(Text|Code|MindMap|File|External)$/",
+          "when": "viewItem =~ /^note(Text|Code|Mermaid|Canvas|MindMap|File|External)$/",
           "group": "3_history@3"
         },
         {
           "command": "trilium.reorderChildren",
-          "when": "viewItem =~ /^note(Text|Code|MindMap|File|External)$/",
+          "when": "viewItem =~ /^note(Text|Code|Mermaid|Canvas|MindMap|File|External)$/",
           "group": "3_history@3.5"
         },
         {
           "command": "trilium.exportSubtree",
-          "when": "viewItem =~ /^note(Text|Code|MindMap|File|External)$/",
+          "when": "viewItem =~ /^note(Text|Code|Mermaid|Canvas|MindMap|File|External)$/",
           "group": "3_history@4"
         }
       ],
       "editor/title/context": [
         {
           "command": "trilium.revealInTree",
-          "when": "resourceScheme == trilium-text",
+          "when": "resourceScheme == trilium-text || trilium.activeNoteType == 'mindMap' || trilium.activeNoteType == 'mermaid' || trilium.activeNoteType == 'canvas'",
           "group": "navigation@20"
         },
         {
           "command": "trilium.openParent",
-          "when": "resourceScheme == trilium-text",
+          "when": "resourceScheme == trilium-text || trilium.activeNoteType == 'mindMap' || trilium.activeNoteType == 'mermaid' || trilium.activeNoteType == 'canvas'",
           "group": "navigation@21"
         }
       ],
       "editor/title": [
         {
           "command": "trilium.revealInTree",
-          "when": "resourceScheme == trilium-text",
+          "when": "resourceScheme == trilium-text || trilium.activeNoteType == 'mindMap' || trilium.activeNoteType == 'mermaid' || trilium.activeNoteType == 'canvas'",
           "group": "navigation@20"
         },
         {
           "command": "trilium.openParent",
-          "when": "resourceScheme == trilium-text",
+          "when": "resourceScheme == trilium-text || trilium.activeNoteType == 'mindMap' || trilium.activeNoteType == 'mermaid' || trilium.activeNoteType == 'canvas'",
           "group": "navigation@21"
         },
         {
           "command": "trilium.openMindMap",
           "when": "trilium.activeNoteType == 'mindMap'",
           "group": "navigation@10"
+        },
+        {
+          "command": "trilium.openMermaid",
+          "when": "trilium.activeNoteType == 'mermaid'",
+          "group": "navigation@10"
+        },
+        {
+          "command": "trilium.openMermaidSource",
+          "when": "trilium.activeNoteType == 'mermaid'",
+          "group": "navigation@11"
+        },
+        {
+          "command": "trilium.openCanvas",
+          "when": "trilium.activeNoteType == 'canvas'",
+          "group": "navigation@10"
+        },
+        {
+          "command": "trilium.openCanvasJson",
+          "when": "trilium.activeNoteType == 'canvas'",
+          "group": "navigation@11"
         }
       ]
     },
@@ -1153,6 +1258,8 @@
   "devDependencies": {
     "@types/mocha": "^10.0.10",
     "@types/node": "^25.6.2",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
     "@types/turndown": "^5.0.6",
     "@types/vscode": "^1.118.0",
     "@vscode/test-cli": "^0.0.12",
@@ -1165,12 +1272,15 @@
     "typescript": "^6.0.3"
   },
   "dependencies": {
+    "@excalidraw/excalidraw": "^0.18.1",
     "boxicons": "^2.1.4",
     "highlight.js": "^11.11.1",
     "katex": "^0.16.45",
     "marked": "^18.0.3",
     "mathlive": "^0.109.2",
     "mermaid": "^11.14.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
     "turndown": "^7.2.4"
   }
 }

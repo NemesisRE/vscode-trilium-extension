@@ -452,8 +452,12 @@ export class NoteItem extends vscode.TreeItem {
     const { type } = note;
     if (type === 'text') {
       this.contextValue = 'noteText';
-    } else if (type === 'code' || type === 'mermaid' || type === 'canvas') {
+    } else if (type === 'code') {
       this.contextValue = 'noteCode';
+    } else if (type === 'mermaid') {
+      this.contextValue = 'noteMermaid';
+    } else if (type === 'canvas') {
+      this.contextValue = 'noteCanvas';
     } else if (type === 'mindMap') {
       this.contextValue = 'noteMindMap';
     } else if (type === 'file' || type === 'image') {

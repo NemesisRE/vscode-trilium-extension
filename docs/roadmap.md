@@ -48,6 +48,9 @@ This roadmap is a working list of improvements and ideas, not a strict milestone
 - Large-tree performance improved with short-lived note/branch fetch caching plus targeted subtree refresh calls for create/rename/delete/clone/move/reorder flows, reducing redundant ETAPI requests and full-tree redraws.
 - Automated coverage now includes targeted tests for conflict-resolution save flows, reorder-panel validation/save behavior, tree refresh caching, and network-retry policy branches.
 - Opening notes can now optionally auto-reveal and focus their location in the tree via `trilium.autoRevealInTreeOnOpen`.
+- Mermaid notes now open in a built-in native editor with live preview, auto-save, breadcrumbs, and raw `.mmd` source access.
+- Canvas notes now open in a built-in local Excalidraw editor with auto-save, breadcrumbs, and pretty-printed raw `.excalidraw` JSON access.
+- Mind-map notes now reuse editor tabs correctly, expose the same breadcrumb/navigation affordances as other special note types, and retain raw JSON access alongside the interactive MindElixir editor.
 
 ## Next Priorities
 
@@ -61,12 +64,12 @@ These are the most useful and needed improvements based on current capabilities 
 
 ### Reliability and Conflict Handling
 
-- Extend server-first save + conflict tooling beyond text notes to all editable note types where safe and applicable.
+- Extend server-first save + conflict tooling beyond text notes to Mermaid, Canvas, and Mind Map editors where safe and applicable.
 
 ### Trilium Compatibility and UX Parity
 
 - Add a calendar note view for notes using `viewType=calendar`.
-- Continue improving visual parity with Trilium for icon, color, and note-type presentation details.
+- Continue improving visual parity with Trilium for icon, color, and note-type presentation details, especially across special webview editors.
 
 ### Tree and Navigation Workflows
 
@@ -100,6 +103,6 @@ These are the most useful and needed improvements based on current capabilities 
 
 ### Quality, Tests, and Documentation
 
-- Expand automated coverage for conflict resolution, auto-refresh behavior, drag-and-drop move/reorder, and code-note MIME/extension mapping.
+- Expand automated coverage for conflict resolution, auto-refresh behavior, drag-and-drop move/reorder, code-note MIME/extension mapping, and special-note webview flows.
 - Add regression tests for stale-cache reopen and network-retry flows.
-- Keep docs synchronized with shipped settings/commands (including new refresh, recent-notes, and backlinks behaviors) and call out compatibility caveats clearly.
+- Keep docs synchronized with shipped settings/commands (including Mermaid/Canvas/Mind Map editor flows, refresh, recent-notes, and backlinks behaviors) and call out compatibility caveats clearly.
