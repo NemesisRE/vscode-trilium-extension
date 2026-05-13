@@ -2042,10 +2042,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // Other note types: use temp file approach.
         const rawContent = await client.getNoteContent(note.noteId);
         const filePath = tempFileManager.getTempPath(note);
-        const fileContent = note.type === 'mindMap'
-          ? formatMindMapJsonForEditor(rawContent)
-          : rawContent;
-        fs.writeFileSync(filePath, fileContent, 'utf8');
+        fs.writeFileSync(filePath, rawContent, 'utf8');
         const doc = await vscode.workspace.openTextDocument(filePath);
         await vscode.languages.setTextDocumentLanguage(doc, tempFileManager.getLanguageId(note));
         await vscode.window.showTextDocument(doc, { preview: false });

@@ -109,9 +109,9 @@ function normalizeScene(content: string): ParsedScene {
   const normalized: ParsedScene = {
     type: parsed?.type,
     version: parsed?.version,
-    elements: Array.isArray(parsed?.elements) ? parsed.elements : [],
+    elements: Array.isArray(parsed?.elements) ? (parsed.elements as unknown[]) : [],
     appState: parsed?.appState && typeof parsed.appState === 'object' ? { ...parsed.appState } : {},
-    files: parsed?.files && typeof parsed.files === 'object' ? parsed.files : {},
+    files: (parsed?.files && typeof parsed.files === 'object') ? (parsed.files as Record<string, unknown>) : {},
   };
 
   // Older saves may persist collaborators as a plain object, but Excalidraw expects a Map at runtime.
@@ -131,22 +131,22 @@ function renderScene(content: string): void {
 
   const nextContent = content.trim() ? content : EMPTY_SCENE;
   const normalized = normalizeScene(nextContent);
-  const restored = restore(normalized, null, null);
+  const restored = restore(normalized as never, null, null);
   suppressNextSave = true;
-  lastSerialized = serializeAsJSON(restored.elements as never[], restored.appState, restored.files, 'local');
+  lastSerialized = serializeAsJSON(restored.elements as never[], restored.appState, restored.files as never, 'local');
 
   const app = React.createElement(
     'div',
     { style: { height: '100%', width: '100%' } },
     React.createElement(Excalidraw, {
       initialData: restored,
-      onChange: (elements: unknown[], appState: Record<string, unknown>, files: Record<string, unknown>) => {
+      onChange: (elements: any, appState: any, files: any) => {
         if (suppressNextSave) {
           suppressNextSave = false;
           return;
         }
 
-        scheduleSave(serializeAsJSON(elements as never[], appState, files, 'local'));
+        scheduleSave(serializeAsJSON(elements as never[], appState as never, files as never, 'local'));
       },
       theme: window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light',
     }),
