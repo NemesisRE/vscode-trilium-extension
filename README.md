@@ -5,6 +5,8 @@
 </p>
 
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
+[![VS Code Marketplace](https://img.shields.io/badge/VS%20Code%20Marketplace-Install-007ACC?logo=visualstudiocode&logoColor=white)](https://marketplace.visualstudio.com/items?itemName=NemesisRE.trilium-notes)
+[![Open VSX](https://img.shields.io/open-vsx/v/NemesisRE/trilium-notes?label=Open%20VSX&logo=eclipseide)](https://open-vsx.org/extension/NemesisRE/trilium-notes)
 [![VS Code Engine](https://img.shields.io/badge/VS%20Code-%5E1.118.0-007ACC?logo=visualstudiocode&logoColor=white)](https://code.visualstudio.com)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
 [![CI](https://github.com/NemesisRE/vscode-trilium-extension/actions/workflows/ci.yml/badge.svg)](https://github.com/NemesisRE/vscode-trilium-extension/actions/workflows/ci.yml)
@@ -34,6 +36,8 @@ Use it to:
 If you want a fast setup, you can be connected in about a minute.
 
 ## Quick Start
+
+Install from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=NemesisRE.trilium-notes) or [Open VSX](https://open-vsx.org/extension/NemesisRE/trilium-notes).
 
 1. Install the extension.
 2. Open the **Trilium Notes** view in the Activity Bar.

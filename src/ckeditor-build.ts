@@ -1,6 +1,6 @@
 /**
  * Custom CKEditor 5 build for Trilium VS Code extension.
- * 
+ *
  * This build includes:
  * - Standard CKEditor 5 Classic editor
  * - Trilium-specific plugins (admonition, math, mermaid, footnotes, keyboard-marker)
@@ -99,7 +99,7 @@ export class TriliumEditor extends ClassicEditor {
     Autoformat,
     Autosave,
     AccessibilityHelp,
-    
+
     // Text formatting
     Bold,
     Italic,
@@ -109,32 +109,32 @@ export class TriliumEditor extends ClassicEditor {
     Subscript,
     Superscript,
     RemoveFormat,
-    
+
     // Paragraph formatting
     Alignment,
     Heading,
     Paragraph,
     Indent,
     IndentBlock,
-    
+
     // Font styling
     FontFamily,
     FontSize,
     FontColor,
     FontBackgroundColor,
     Highlight,
-    
+
     // Lists
     List,
     ListProperties,
     TodoList,
-    
+
     // Block elements
     BlockQuote,
     CodeBlock,
     SyntaxHighlighting,
     HorizontalLine,
-    
+
     // Tables
     Table,
     TableToolbar,
@@ -142,7 +142,7 @@ export class TriliumEditor extends ClassicEditor {
     TableCellProperties,
     TableCaption,
     TableColumnResize,
-    
+
     // Images
     Image,
     ImageCaption,
@@ -153,12 +153,12 @@ export class TriliumEditor extends ClassicEditor {
     ImageUpload,
     AutoImage,
     LinkImage,
-    
+
     // Links & Media
     Link,
     AutoLink,
     MediaEmbed,
-    
+
     // Special characters
     SpecialCharacters,
     SpecialCharactersArrows,
@@ -167,11 +167,11 @@ export class TriliumEditor extends ClassicEditor {
     SpecialCharactersLatin,
     SpecialCharactersMathematical,
     SpecialCharactersText,
-    
+
     // Utilities
     FindAndReplace,
     PasteFromOffice,
-    
+
     // Trilium-specific plugins
     Admonition,
     Footnotes,
@@ -227,6 +227,11 @@ export class TriliumEditor extends ClassicEditor {
       shouldNotGroupWhenFull: true,
     },
     language: 'en',
+    math: {
+      engine: 'mathjax',
+      outputType: 'script',
+      enablePreview: true,
+    },
     image: {
       toolbar: [
         'imageTextAlternative',

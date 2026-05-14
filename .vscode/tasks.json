@@ -2,11 +2,8 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "type": "shell",
-      "command": "node",
-      "args": [
-        "scripts/bootstrap-build.mjs"
-      ],
+      "type": "npm",
+      "script": "bootstrap:build",
       "problemMatcher": [],
       "group": "build",
       "label": "bootstrap: build"

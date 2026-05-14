@@ -1087,8 +1087,8 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
         height: 14px;
         margin-right: 8px;
         border-radius: 3px;
-        border: 2px solid var(--vscode-checkbox-border, var(--vscode-contrastBorder, #9a9a9a));
-        background: var(--vscode-checkbox-background, var(--vscode-editor-background, transparent));
+        border: 2px solid var(--vscode-checkbox-border, var(--vscode-input-border, #c5c5c5));
+        background: var(--vscode-checkbox-background, var(--vscode-input-background, #2d2d30));
         box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.15);
         vertical-align: -2px;
       }
@@ -1100,6 +1100,17 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
       .ck-content .todo-list .todo-list__label > input[type='checkbox']:focus-visible {
         outline: 2px solid var(--vscode-focusBorder, #007fd4);
         outline-offset: 1px;
+      }
+      .ck-content .todo-list .todo-list__label > input[type='checkbox']:not(:checked)::before,
+      .ck-editor__editable.ck-content .todo-list .todo-list__label > span[contenteditable=false] > input[type='checkbox']:not(:checked)::before {
+        border: 1px solid var(--vscode-settings-checkboxBorder, var(--vscode-checkbox-border, #8b8b8b)) !important;
+        background-color: var(--vscode-settings-checkboxBackground, var(--vscode-checkbox-background, #313131)) !important;
+      }
+      .ck-content ul.todo-list li:has(> span.todo-list__label input[type="checkbox"]:checked) > span.todo-list__label span.todo-list__label__description,
+      .ck-content ul.todo-list li:has(> .todo-list__label input[type="checkbox"]:checked) > .todo-list__label .todo-list__label__description,
+      .ck-content ul.todo-list li:has(> label.todo-list__label input[type="checkbox"]:checked) > label.todo-list__label .todo-list__label__description {
+        text-decoration: line-through;
+        opacity: 0.6;
       }
       .ck-content .hljs-comment,
       .ck-content .hljs-quote {

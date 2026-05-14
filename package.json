@@ -1239,6 +1239,7 @@
     }
   },
   "scripts": {
+    "bootstrap:build": "node scripts/bootstrap-build.mjs",
     "prebuild": "node scripts/download-trilium-plugins.mjs",
     "release:sync-version": "node scripts/set-package-version.mjs",
     "vscode:prepublish": "npm run prebuild && node esbuild.mjs --production",
