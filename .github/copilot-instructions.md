@@ -76,6 +76,17 @@ Never rely on recalled API shapes for a package you haven't verified at the reso
 - Unit tests must not depend on a running VS Code instance unless using the extension test runner (`@vscode/test-electron` / `@vscode/test-web`).
 - Mock `vscode` APIs using the `@vscode/test-electron` test helpers or a manual stub — do not assume global availability.
 
+### Trilium Parity and Visual Design
+- **The extension's UI/UX must match Trilium Notes' look and feel as closely as possible.** This includes:
+  - Visual styling and presentation of note types
+  - Math rendering engines and their output (use MathJax to match Trilium's native math rendering)
+  - Icon choices and colors
+  - Editor toolbar and control appearance
+  - Tree presentation (icons, spacing, indentation)
+  - Dialog and notification styling
+- When choosing between multiple valid implementations, prefer the option that achieves visual parity with Trilium.
+- Plugin and library selection must consider visual/behavioral compatibility with Trilium, not just functionality.
+
 ---
 
 ## Code Quality Rules

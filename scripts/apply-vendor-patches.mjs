@@ -42,6 +42,22 @@ export function applyVendorPatches(vendorDir, logPrefix = '[patch-plugins]') {
     }
   }
 
+  // ckeditor5-math: renderMathJax3 leaves behind previous renders if called multiple times,
+  // causing duplicate equations. We need to clear all children before appending the new render.
+  const mathUtilsPath = path.join(vendorDir, 'ckeditor5-math', 'src', 'utils.ts');
+  if (fs.existsSync(mathUtilsPath)) {
+    let src = fs.readFileSync(mathUtilsPath, 'utf8');
+    const before = src;
+    src = src.replace(
+      "if ( element.firstChild ) {\n\t\t\t\telement.removeChild( element.firstChild );\n\t\t\t}",
+      "while ( element.firstChild ) {\n\t\t\t\telement.removeChild( element.firstChild );\n\t\t\t}"
+    );
+    if (src !== before) {
+      fs.writeFileSync(mathUtilsPath, src, 'utf8');
+      console.log(`${logPrefix} patched ckeditor5-math/src/utils.ts`);
+    }
+  }
+
   // ckeditor5-mermaid: newer upstream refs leave the debounced textarea listener
   // callback parameter implicitly typed, which fails under this repo's strict TS config.
   const mermaidEditingPath = path.join(vendorDir, 'ckeditor5-mermaid', 'src', 'mermaidediting.ts');
