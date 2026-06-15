@@ -12,6 +12,80 @@ const lock = JSON.parse(fs.readFileSync(LOCK_PATH, 'utf8'));
 const TRILIUM_REPO = lock.repo;
 const TRILIUM_REF = lock.ref;
 const PLUGINS = lock.plugins;
+const DOWNLOAD_RETRIES = Number.parseInt(process.env.TRILIUM_PLUGIN_DOWNLOAD_RETRIES ?? '4', 10);
+const REQUEST_TIMEOUT_MS = Number.parseInt(process.env.TRILIUM_PLUGIN_DOWNLOAD_TIMEOUT_MS ?? '45000', 10);
+const BACKOFF_BASE_MS = Number.parseInt(process.env.TRILIUM_PLUGIN_DOWNLOAD_BACKOFF_MS ?? '1500', 10);
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function getWithRedirects(url, redirectsRemaining = 5) {
+  return new Promise((resolve, reject) => {
+    const request = https.get(url, (response) => {
+      const { statusCode, headers } = response;
+
+      if ((statusCode === 301 || statusCode === 302 || statusCode === 307 || statusCode === 308) && headers.location) {
+        response.resume();
+        if (redirectsRemaining <= 0) {
+          reject(new Error('Too many redirects while downloading Trilium tarball.'));
+          return;
+        }
+        resolve(getWithRedirects(headers.location, redirectsRemaining - 1));
+        return;
+      }
+
+      if (statusCode !== 200) {
+        response.resume();
+        reject(new Error(`Failed to download: ${statusCode}`));
+        return;
+      }
+
+      resolve(response);
+    });
+
+    request.setTimeout(REQUEST_TIMEOUT_MS, () => {
+      request.destroy(new Error(`Request timed out after ${REQUEST_TIMEOUT_MS}ms`));
+    });
+
+    request.on('error', reject);
+  });
+}
+
+function isRetryableError(error) {
+  const code = error?.code;
+  if (code && ['ETIMEDOUT', 'ECONNRESET', 'EAI_AGAIN', 'ENOTFOUND', 'ECONNREFUSED'].includes(code)) {
+    return true;
+  }
+
+  const message = String(error?.message ?? '').toLowerCase();
+  return message.includes('timed out') || message.includes('socket hang up') || message.includes('network');
+}
+
+async function downloadAllPluginsWithRetry() {
+  let lastError;
+  for (let attempt = 1; attempt <= DOWNLOAD_RETRIES; attempt += 1) {
+    try {
+      if (attempt > 1) {
+        console.log(`[download-plugins] Retry attempt ${attempt}/${DOWNLOAD_RETRIES}...`);
+      }
+      await downloadAllPlugins();
+      return;
+    } catch (error) {
+      lastError = error;
+      const canRetry = attempt < DOWNLOAD_RETRIES && isRetryableError(error);
+      if (!canRetry) {
+        throw error;
+      }
+
+      const backoffMs = BACKOFF_BASE_MS * 2 ** (attempt - 1);
+      console.warn(`[download-plugins] Attempt ${attempt} failed (${error.message}). Retrying in ${backoffMs}ms...`);
+      await sleep(backoffMs);
+    }
+  }
+
+  throw lastError;
+}
 
 /**
  * Downloads the entire Trilium repository tarball once and extracts all plugins.
@@ -34,23 +108,10 @@ async function downloadAllPlugins() {
     }
   }
 
+  const stream = await getWithRedirects(url);
+
   return new Promise((resolve, reject) => {
-    https.get(url, (response) => {
-      if (response.statusCode === 302 || response.statusCode === 301) {
-        // Follow redirect
-        https.get(response.headers.location, (redirectResponse) => {
-          if (redirectResponse.statusCode !== 200) {
-            reject(new Error(`Failed to download: ${redirectResponse.statusCode}`));
-            return;
-          }
-          extractPlugins(redirectResponse, resolve, reject);
-        }).on('error', reject);
-      } else if (response.statusCode === 200) {
-        extractPlugins(response, resolve, reject);
-      } else {
-        reject(new Error(`Failed to download: ${response.statusCode}`));
-      }
-    }).on('error', reject);
+    extractPlugins(stream, resolve, reject);
   });
 }
 
@@ -95,9 +156,10 @@ async function main() {
   console.log(`[download-plugins] Source: ${TRILIUM_REPO}@${TRILIUM_REF}`);
   console.log(`[download-plugins] Target: ${VENDOR_DIR}`);
   console.log(`[download-plugins] Plugins: ${PLUGINS.join(', ')}`);
+  console.log(`[download-plugins] Download retries: ${DOWNLOAD_RETRIES}, timeout: ${REQUEST_TIMEOUT_MS}ms`);
 
   try {
-    await downloadAllPlugins();
+    await downloadAllPluginsWithRetry();
     applyVendorPatches(VENDOR_DIR, '[download-plugins]');
     console.log('[download-plugins] All plugins downloaded successfully.');
   } catch (error) {

@@ -180,7 +180,7 @@ export class TriliumEditor extends ClassicEditor {
     Mermaid,
   ];
 
-  public static override defaultConfig: EditorConfig = {
+  public static override defaultConfig = {
     toolbar: {
       items: [
         'heading',
@@ -281,7 +281,7 @@ export class TriliumEditor extends ClassicEditor {
         { language: 'diff', label: 'Diff' },
       ],
     },
-  };
+  } as EditorConfig;
 }
 
 // Export for use in webview
