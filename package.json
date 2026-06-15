@@ -1240,6 +1240,7 @@
   },
   "scripts": {
     "bootstrap:build": "node scripts/bootstrap-build.mjs",
+    "check:react-deps": "node scripts/check-react-deps.mjs",
     "prebuild": "node scripts/download-trilium-plugins.mjs",
     "release:sync-version": "node scripts/set-package-version.mjs",
     "vscode:prepublish": "npm run prebuild && node esbuild.mjs --production",
@@ -1259,7 +1260,7 @@
   "devDependencies": {
     "@types/mocha": "^10.0.10",
     "@types/node": "^25.9.3",
-    "@types/react": "^19.2.14",
+    "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@types/turndown": "^5.0.6",
     "@types/vscode": "^1.120.0",
@@ -1280,8 +1281,8 @@
     "marked": "^18.0.5",
     "mathlive": "^0.110.0",
     "mermaid": "^11.15.0",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
     "turndown": "^7.2.4"
   }
 }

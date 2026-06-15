@@ -9,6 +9,12 @@ updates:
       day: "monday"
     open-pull-requests-limit: 10
     groups:
+      react-stack:
+        patterns:
+          - "react"
+          - "react-dom"
+          - "@types/react"
+          - "@types/react-dom"
       devDependencies:
         # Group all devDependencies into a single PR to reduce noise.
         dependency-type: "development"
