@@ -1259,11 +1259,11 @@
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",
-    "@types/node": "^25.9.3",
+    "@types/node": "^26.0.0",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@types/turndown": "^5.0.6",
-    "@types/vscode": "^1.120.0",
+    "@types/vscode": "^1.125.0",
     "@vscode/test-cli": "^0.0.12",
     "@vscode/test-electron": "^3.0.0",
     "@vscode/vsce": "^3.9.2",
