@@ -48,7 +48,7 @@ jobs:
         run: npm ci
 
       - name: Cache Trilium CKEditor plugins
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: vendor/
           key: trilium-plugins-${{ hashFiles('scripts/trilium-plugins.lock.json', 'scripts/download-trilium-plugins.mjs', 'scripts/patch-trilium-plugins.mjs', 'scripts/apply-vendor-patches.mjs') }}
