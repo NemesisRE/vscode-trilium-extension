@@ -1259,7 +1259,7 @@
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",
-    "@types/node": "^26.1.0",
+    "@types/node": "^26.1.1",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@types/turndown": "^5.0.6",
@@ -1270,8 +1270,8 @@
     "ckeditor5": "^48.3.0",
     "esbuild": "^0.28.1",
     "mocha": "^11.7.6",
-    "tar": "^7.5.19",
-    "typescript": "^6.0.3"
+    "tar": "^7.5.20",
+    "typescript": "^7.0.2"
   },
   "dependencies": {
     "@excalidraw/excalidraw": "^0.18.1",
