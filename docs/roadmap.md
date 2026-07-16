@@ -65,6 +65,9 @@ These are the most useful and needed improvements based on current capabilities 
 
 - Add a calendar note view for notes using `viewType=calendar`.
 - Continue improving visual parity with Trilium for icon, color, and note-type presentation details, especially across special webview editors.
+- Support for the new spreadsheet note type with in-editor preview and editing capabilities.
+- Add basic markdown support for markdown-formatted notes.
+- Support for custom dictionary integration, potentially with the Code Spell Checker extension, to enable spell-checking across note content.
 
 ### Tree and Navigation Workflows
 
