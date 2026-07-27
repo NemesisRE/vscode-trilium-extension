@@ -1265,12 +1265,12 @@
     "@types/turndown": "^5.0.6",
     "@types/vscode": "^1.125.0",
     "@vscode/test-cli": "^0.0.15",
-    "@vscode/test-electron": "^3.0.0",
+    "@vscode/test-electron": "^3.1.0",
     "@vscode/vsce": "^3.9.2",
     "ckeditor5": "^48.3.1",
     "esbuild": "^0.28.1",
     "mocha": "^11.7.6",
-    "tar": "^7.5.20",
+    "tar": "^7.5.22",
     "typescript": "^7.0.2"
   },
   "dependencies": {
