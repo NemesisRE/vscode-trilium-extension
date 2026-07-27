@@ -1277,7 +1277,7 @@
     "@excalidraw/excalidraw": "^0.18.1",
     "boxicons": "^2.1.4",
     "highlight.js": "^11.11.1",
-    "katex": "^0.17.0",
+    "katex": "^0.18.1",
     "marked": "^18.0.6",
     "mathlive": "^0.110.0",
     "mermaid": "^11.16.0",
