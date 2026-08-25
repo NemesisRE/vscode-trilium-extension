@@ -55,11 +55,11 @@ jobs:
           key: trilium-plugins-${{ hashFiles('scripts/trilium-plugins.lock.json', 'scripts/download-trilium-plugins.mjs', 'scripts/patch-trilium-plugins.mjs', 'scripts/apply-vendor-patches.mjs') }}
 
       - name: Download Trilium CKEditor plugins
-        if: steps.trilium-cache.outputs.cache-hit != 'true'
+        if: steps.trilium-cache.outputs.cache-hit != 'true' || hashFiles('vendor/ckeditor5/**') == ''
         run: node scripts/download-trilium-plugins.mjs
 
       - name: Patch Trilium plugins
-        if: steps.trilium-cache.outputs.cache-hit == 'true'
+        if: steps.trilium-cache.outputs.cache-hit == 'true' && hashFiles('vendor/ckeditor5/**') != ''
         run: node scripts/patch-trilium-plugins.mjs
 
       - name: Sync package.json version to release tag
