@@ -48,14 +48,18 @@ jobs:
         run: npm ci
 
       - name: Cache Trilium CKEditor plugins
+        id: trilium-cache
         uses: actions/cache@v6
         with:
           path: vendor/
           key: trilium-plugins-${{ hashFiles('scripts/trilium-plugins.lock.json', 'scripts/download-trilium-plugins.mjs', 'scripts/patch-trilium-plugins.mjs', 'scripts/apply-vendor-patches.mjs') }}
-          restore-keys: |
-            trilium-plugins-
+
+      - name: Download Trilium CKEditor plugins
+        if: steps.trilium-cache.outputs.cache-hit != 'true'
+        run: node scripts/download-trilium-plugins.mjs
 
       - name: Patch Trilium plugins
+        if: steps.trilium-cache.outputs.cache-hit == 'true'
         run: node scripts/patch-trilium-plugins.mjs
 
       - name: Sync package.json version to release tag
