@@ -88,8 +88,22 @@ jobs:
       - name: Run unit tests
         run: npm test
 
+      - name: Cache VS Code test download
+        uses: actions/cache@v6
+        with:
+          path: .vscode-test/
+          key: vscode-test-bin-${{ runner.os }}
+
       - name: Run integration tests (VS Code extension host)
-        run: xvfb-run -a npm run test:integration
+        run: |
+          for attempt in 1 2 3; do
+            if xvfb-run -a npm run test:integration; then
+              exit 0
+            fi
+            echo "Integration tests attempt $attempt failed, retrying in 15s..." >&2
+            sleep 15
+          done
+          exit 1
 
       - name: Build extension bundle
         run: npm run build:prod
