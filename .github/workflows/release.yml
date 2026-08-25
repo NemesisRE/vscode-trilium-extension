@@ -47,6 +47,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Validate VS Code dependency alignment
+        run: npm run check:vscode-version
+
       - name: Cache Trilium CKEditor plugins
         id: trilium-cache
         uses: actions/cache@v6

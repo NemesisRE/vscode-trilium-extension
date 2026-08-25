@@ -34,7 +34,7 @@
     "etapi"
   ],
   "engines": {
-    "vscode": "^1.118.0"
+    "vscode": "^1.134.0"
   },
   "categories": [
     "Other"
@@ -837,6 +837,7 @@
   "scripts": {
     "bootstrap:build": "node scripts/bootstrap-build.mjs",
     "check:react-deps": "node scripts/check-react-deps.mjs",
+    "check:vscode-version": "node scripts/check-vscode-version.mjs",
     "prebuild": "node scripts/download-trilium-plugins.mjs",
     "release:sync-version": "node scripts/set-package-version.mjs",
     "vscode:prepublish": "npm run prebuild && node esbuild.mjs --production",

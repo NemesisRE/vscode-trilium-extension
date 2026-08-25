@@ -28,6 +28,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Validate VS Code dependency alignment
+        run: npm run check:vscode-version
+
       - name: Validate React dependency alignment
         run: npm run check:react-deps
 
@@ -66,6 +69,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Validate VS Code dependency alignment
+        run: npm run check:vscode-version
 
       - name: Validate React dependency alignment
         run: npm run check:react-deps
