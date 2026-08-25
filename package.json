@@ -2,7 +2,7 @@
   "name": "trilium-notes",
   "displayName": "Trilium Notes",
   "description": "Browse and edit Trilium Notes directly in VS Code via ETAPI",
-  "version": "2.0.1",
+  "version": "2.0.0",
   "publisher": "NemesisRE",
   "icon": "media/icon.png",
   "license": "AGPL-3.0-or-later",
