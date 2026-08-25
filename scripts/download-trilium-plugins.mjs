@@ -100,11 +100,15 @@ async function downloadAllPlugins() {
     fs.mkdirSync(VENDOR_DIR, { recursive: true });
   }
 
-  // Clean and recreate each plugin directory
+  // Clean the consolidated CKEditor package used by current Trilium releases.
+  const targetDir = path.join(VENDOR_DIR, 'ckeditor5');
+  if (fs.existsSync(targetDir)) {
+    fs.rmSync(targetDir, { recursive: true, force: true });
+  }
   for (const plugin of PLUGINS) {
-    const targetDir = path.join(VENDOR_DIR, plugin);
-    if (fs.existsSync(targetDir)) {
-      fs.rmSync(targetDir, { recursive: true, force: true });
+    const legacyTargetDir = path.join(VENDOR_DIR, plugin);
+    if (fs.existsSync(legacyTargetDir)) {
+      fs.rmSync(legacyTargetDir, { recursive: true, force: true });
     }
   }
 
@@ -119,25 +123,20 @@ async function downloadAllPlugins() {
  * Extract only the plugin directories we need from the tarball stream.
  */
 function extractPlugins(stream, resolve, reject) {
-  const repoPrefix = `Trilium-${TRILIUM_REF}/packages/`;
+  const repoPrefix = `Trilium-${TRILIUM_REF}/packages/ckeditor5/`;
   
   stream.pipe(tar.extract({
     cwd: VENDOR_DIR,
     filter: (filepath) => {
-      // Only extract files from plugin directories we care about
-      return PLUGINS.some(plugin => {
-        const prefix = `${repoPrefix}${plugin}/`;
-        return filepath.startsWith(prefix);
-      });
+      // Current Trilium releases consolidate these plugins in one package.
+      return filepath.startsWith(repoPrefix) && !filepath.endsWith('/tsconfig.json');
     },
     // Don't strip - we'll handle the path transformation in onentry
     onentry: (entry) => {
-      // Transform path from 'Trilium-main/packages/ckeditor5-admonition/src/...'
-      // to 'ckeditor5-admonition/src/...'
+      // Transform 'Trilium-<ref>/packages/ckeditor5/...' to 'ckeditor5/...'.
       const pathParts = entry.path.split('/');
-      if (pathParts.length > 3 && pathParts[0].startsWith('Trilium-') && pathParts[1] === 'packages') {
-        // Remove 'Trilium-main' and 'packages' prefix
-        entry.path = pathParts.slice(2).join('/');
+      if (pathParts.length > 3 && pathParts[0].startsWith('Trilium-') && pathParts[1] === 'packages' && pathParts[2] === 'ckeditor5') {
+        entry.path = ['ckeditor5', ...pathParts.slice(3)].join('/');
       }
     }
   }))

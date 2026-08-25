@@ -70,4 +70,3 @@ All commands are available via the Command Palette under the **Trilium** categor
 | `Trilium: Reveal Note in Tree` | Reveal the current editor note inside the tree view. |
 | `Trilium: Open Parent Note` | Open the parent of the current note. |
 | `Trilium: Open Note by ID (internal)` | Internal helper command used by extension workflows. |
-| `Trilium: Debug: List Language Model Tools` | Debug helper to list registered language model tools. |

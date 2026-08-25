@@ -140,29 +140,3 @@ Apply this policy whenever:
 
 ---
 
-## Trilium Note Creation (for contributors using Copilot)
-
-The extension registers two **Language Model Tools** (`trilium_createNote` and
-`trilium_importNotes`) via `vscode.lm.registerTool`. Copilot Chat discovers
-and invokes these automatically for all end users — no `executeCommand` wiring
-needed for note-creation tasks.
-
-When working on this codebase and the user asks you to create notes or
-documentation in Trilium, prefer invoking the tools directly via chat rather
-than writing `executeCommand` calls.
-
-### Content format guidelines
-
-| Note type | `content` format |
-|---|---|
-| `text` | CKEditor HTML — e.g. `<h1>Title</h1><p>Body text</p>` |
-| `code` | Raw source code; also supply `mime` (e.g. `text/javascript`) |
-| `mermaid` | Mermaid diagram syntax only — no code fences |
-| `canvas` | Excalidraw JSON string — `{"type":"excalidraw","version":2,"elements":[],"appState":{}}` |
-
-### Rules when generating Trilium notes
-
-- For `text` notes, always wrap content in valid HTML tags (at minimum `<p>...</p>`).
-- For `mermaid` notes, content must be valid Mermaid syntax only — no code fences.
-- For `canvas` notes, use the minimal Excalidraw JSON shown above as a starting point.
-- Never fabricate noteIds; use `'root'` as the default parent unless the user specifies otherwise.

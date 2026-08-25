@@ -42,7 +42,6 @@ This roadmap is a working list of improvements and ideas, not a strict milestone
 - Fixed stale-cache reopen resilience: restored text-note editor tabs no longer throw errors on startup when disconnected. Instead, they show a safe placeholder and auto-refresh once reconnected, with automatic content fetch and update. Added unit test coverage for disconnected provider path.
 - CKEditor image upload now routes inserted images through the extension host into Trilium attachments, then links them back into the note HTML automatically using Trilium's native attachment URL format.
 - Fixed dirty-state regression for text notes: the editor now uses `CustomEditorProvider` so the tab dirty indicator (●) and native unsaved-close dialog are driven by content changes, not by the filesystem. Auto-save and Ctrl+S both push directly to Trilium via ETAPI; closing a dirty tab always triggers VS Code's native save prompt.
-- LM tools `trilium_searchNotes`, `trilium_readNote`, `trilium_listChildren`, `trilium_updateNoteContent`, and `trilium_appendToNote` are now registered and discovered automatically by Copilot Chat. `trilium_readNote` strips all HTML tags before returning content to prevent prompt injection from note content.
 - Protected-note warnings and LM tool error responses now use consistent, centralized messaging with clear guidance to unlock Protected Session in Trilium.
 - Protected-note open flows now provide guided recovery actions (`Open in Browser`, `Open in External Browser`, `Reconnect`) instead of warning-only dead ends.
 - Auto-refresh for open notes now keeps retrying through intermittent ETAPI/network failures, surfaces operation-specific recovery warnings, and supports configurable failure thresholds.
@@ -72,32 +71,6 @@ These are the most useful and needed improvements based on current capabilities 
 ### Tree and Navigation Workflows
 
 - Extend recent-notes workflow with optional pinning and jump actions for frequently revisited notes.
-
-### Copilot and Automation Tools
-
-#### Write-Safe Operations
-
-- Add `trilium_renameNote` LM tool: rename a note title with confirmation boundary.
-- Add `trilium_moveNote` LM tool: move a note to a new parent with cycle-safety check and explicit confirmation.
-- Add `trilium_deleteNote` LM tool: delete a note, gated behind a required `confirmed: true` input field so accidental deletion is not possible through an LM invocation.
-- Add `trilium_getAttributes` / `trilium_setAttributes` LM tools to read and write labels and relations on a note, enabling AI-driven tagging and linking workflows.
-
-#### Search and Context Gathering
-
-- Add optional search modes for LM tools: title-only vs. full-text, and scoped subtree search by `ancestorNoteId`.
-- Add a `trilium_getNoteContext` LM tool that returns a note's full ancestor path, its own attributes, and a summary of direct children in a single call — reducing the number of round-trips needed to ground LM context before generating or editing content.
-
-#### AI-Driven Workflows
-
-- AI-assisted note templating: allow Copilot to instantiate a structured note tree from a template note, filling placeholders from user-provided parameters.
-- Subtree summarization: use `trilium_listChildren` + `trilium_readNote` in sequence to let Copilot produce a structured summary or table-of-contents for a notebook section.
-- Batch label/attribute operations: expose a `trilium_batchSetAttributes` tool that accepts an array of `{ noteId, attributes }` records so LM-driven bulk-tagging workflows do not require a separate tool call per note.
-- Expose Trilium note-tree structure as VS Code `.instructions.md` context fragments so agents working in other workspaces can reference the user's knowledge base without requiring explicit search calls.
-
-#### Output Structure and Safety
-
-- Improve LM tool output structure for downstream automation: return stable IDs, parent-path metadata, and consistent result blocks across all tools.
-- Add per-tool `confirmationMessages` (VS Code LM tool `prepareInvocation` `confirmationMessages` field) to destructive write tools so Copilot Chat shows a confirmation dialog before executing delete or bulk-move operations.
 
 ### Quality, Tests, and Documentation
 

@@ -3,9 +3,11 @@
   "ref": "a0908a6e1e1741a3c3824d803da07300183dcb0c",
   "plugins": [
     "ckeditor5-admonition",
+    "ckeditor5-collapsible",
     "ckeditor5-footnotes",
     "ckeditor5-keyboard-marker",
     "ckeditor5-math",
-    "ckeditor5-mermaid"
+    "ckeditor5-mermaid",
+    "ckeditor5-utils"
   ]
 }

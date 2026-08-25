@@ -80,15 +80,17 @@ test/
 
 ## Trilium CKEditor Plugins
 
-The extension uses five custom CKEditor 5 plugins from Trilium Notes:
+The extension uses custom CKEditor 5 packages from Trilium Notes:
 
 | Plugin | Purpose |
 | --- | --- |
 | **admonition** | Styled callout blocks (note, tip, warning, danger) |
+| **collapsible** | Collapsible details/summary blocks in text notes |
 | **footnotes** | Inline reference management with auto-numbering |
 | **keyboard-marker** | Visual `<kbd>` tags for keyboard shortcuts |
 | **math** | KaTeX LaTeX formula rendering (inline and block) |
 | **mermaid** | Inline diagram syntax (flowcharts, sequence diagrams, etc.) |
+| **utils** | Shared CKEditor utility helpers used by Trilium plugins |
 
 ### Plugin Download
 
@@ -100,7 +102,7 @@ Plugins are **not checked into Git**. They are downloaded from the [Trilium sour
 2. npm automatically runs `prebuild` before the `build` script (due to the `pre` prefix naming convention)
 3. For `build:prod` and `vscode:prepublish`, `prebuild` is called explicitly (npm's auto-hook doesn't work for script names with colons)
 4. The script downloads the pinned Trilium revision from `scripts/trilium-plugins.lock.json`
-5. It extracts only the five plugin directories from `packages/ckeditor5-*/`
+5. It extracts only the configured package directories from `packages/`
 6. Plugins are written to `vendor/{plugin}/` (e.g., `vendor/ckeditor5-admonition/`, `vendor/ckeditor5-math/`)
 7. The `vendor/` directory is gitignored
 

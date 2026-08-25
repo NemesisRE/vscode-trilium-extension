@@ -2,8 +2,8 @@
  * Integration test suite — runs inside a real VS Code extension host.
  *
  * These tests verify that the extension activates correctly and that all
- * commands and LM tools declared in package.json are actually registered at
- * runtime.  They do NOT require a live Trilium server.
+ * commands declared in package.json are actually registered at runtime.
+ * They do NOT require a live Trilium server.
  */
 
 import { strict as assert } from 'assert';
@@ -22,8 +22,6 @@ const EXPECTED_COMMANDS = [
   'trilium.createNoteMermaid',
   'trilium.createNoteCanvas',
   'trilium.createNoteMindMap',
-  'trilium.confirmDraftSession',
-  'trilium.discardDraftSession',
   'trilium.openTodayNote',
   'trilium.openInBrowser',
   'trilium.openInBrowserExternal',
@@ -41,19 +39,6 @@ const EXPECTED_COMMANDS = [
   'trilium.cloneNote',
   'trilium.moveNote',
   'trilium.exportSubtree',
-];
-
-// All LM tools declared under contributes.languageModelTools in package.json.
-const EXPECTED_LM_TOOLS = [
-  'trilium_createNote',
-  'trilium_importNotes',
-  'trilium_stageDraftNotes',
-  'trilium_searchNotes',
-  'trilium_getNoteContext',
-  'trilium_readNote',
-  'trilium_listChildren',
-  'trilium_updateNoteContent',
-  'trilium_appendToNote',
 ];
 
 suite('Extension activation', () => {
@@ -80,17 +65,6 @@ suite('Extension activation', () => {
       missing,
       [],
       `Missing commands: ${missing.join(', ')}`,
-    );
-  });
-
-  test('all expected LM tools are registered', () => {
-    // vscode.lm.tools is the array of registered LanguageModelToolDescription.
-    const registeredToolNames = new Set(vscode.lm.tools.map(t => t.name));
-    const missing = EXPECTED_LM_TOOLS.filter(name => !registeredToolNames.has(name));
-    assert.deepEqual(
-      missing,
-      [],
-      `Missing LM tools: ${missing.join(', ')}`,
     );
   });
 });

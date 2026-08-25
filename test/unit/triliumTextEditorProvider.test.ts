@@ -1,6 +1,5 @@
 import { strict as assert } from 'assert';
 import * as vscode from 'vscode';
-import { DraftNoteManager } from '../../src/draftNoteManager';
 import { TriliumCustomDocument, TriliumTextEditorProvider } from '../../src/triliumTextEditorProvider';
 import type { EtapiClient } from '../../src/etapiClient';
 
@@ -12,8 +11,6 @@ type ExecuteCommandFn = typeof vscode.commands.executeCommand;
 function createProvider(client: EtapiClient): TriliumTextEditorProvider {
   const provider = Object.create(TriliumTextEditorProvider.prototype) as TriliumTextEditorProvider;
   (provider as any).getClient = () => client;
-  (provider as any).draftNoteManager = new DraftNoteManager();
-  (provider as any).allowedDraftSaves = new Set<string>();
   (provider as any).conflictTheirsByPath = new Map<string, string>();
   (provider as any).conflictOursByPath = new Map<string, string>();
   (provider as any).refreshTreeForNote = async () => undefined;

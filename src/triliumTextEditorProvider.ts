@@ -1,9 +1,68 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { DraftNoteManager } from './draftNoteManager';
 import { EtapiClient } from './etapiClient';
+import { getBundledBoxiconsSvgRoot } from './noteTreeProvider';
 import { getEditorFontSize, getEditorHighlightTheme, getEditorSpellcheck } from './settings';
+import { boxiconSvgRelativePath, mergeTaskStates, svgToCssUrl, taskStateCssIdentifier } from './taskStateIcons';
+
+interface EditorTaskStateDef {
+  name: string;
+  title: string;
+  markdownSymbol: string;
+  isCompleted: boolean;
+  isHidden: boolean;
+  icon: string;
+  iconSvg: string;
+  color: string;
+}
+
+// `none`/`done` map to the native checkbox and are never stored as `data-trilium-task-state`,
+// but they still need menu entries, so they carry checkbox icons of their own.
+const ANCHOR_TASK_STATES: EditorTaskStateDef[] = [
+  {
+    name: 'none', title: 'Empty', markdownSymbol: ' ', isCompleted: false,
+    isHidden: false, icon: 'bx bx-checkbox', iconSvg: '', color: '',
+  },
+  {
+    name: 'done', title: 'Done', markdownSymbol: 'x', isCompleted: true,
+    isHidden: false, icon: 'bx bx-checkbox-checked', iconSvg: '', color: '',
+  },
+];
+
+const FALLBACK_TASK_STATES: EditorTaskStateDef[] = [
+  ...ANCHOR_TASK_STATES,
+  {
+    name: 'doing',
+    title: 'Doing',
+    markdownSymbol: '/',
+    isCompleted: false,
+    isHidden: false,
+    icon: 'bx bx-loader',
+    iconSvg: '',
+    color: '#2f81f7',
+  },
+  {
+    name: 'maybe',
+    title: 'Maybe',
+    markdownSymbol: '?',
+    isCompleted: false,
+    isHidden: false,
+    icon: 'bx bx-question-mark',
+    iconSvg: '',
+    color: '#d29922',
+  },
+  {
+    name: 'cancelled',
+    title: 'Cancelled',
+    markdownSymbol: '-',
+    isCompleted: true,
+    isHidden: false,
+    icon: 'bx bx-x',
+    iconSvg: '',
+    color: '#8b949e',
+  },
+];
 
 /**
  * Backing document model for a Trilium text note opened in the custom editor.
@@ -54,7 +113,6 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
   public readonly onDidChangeCustomDocument = this._onDidChangeCustomDocument.event;
 
   private readonly openDocumentsByUri = new Map<string, TriliumCustomDocument>();
-  private readonly allowedDraftSaves = new Set<string>();
   private readonly conflictTheirsByPath = new Map<string, string>();
   private readonly conflictOursByPath = new Map<string, string>();
 
@@ -63,7 +121,6 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
   constructor(
     private readonly context: vscode.ExtensionContext,
     private readonly getClient: () => EtapiClient | undefined,
-    private readonly draftNoteManager: DraftNoteManager,
     private readonly refreshTreeForNote: (noteId: string) => void | Promise<void> = () => undefined,
     private readonly refreshTreeOnEditorLoad: () => void | Promise<void> = () => undefined,
   ) {
@@ -124,34 +181,6 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
       uri: doc.uri,
       noteId: doc.noteId,
     }));
-  }
-
-  public async confirmDraftSave(noteId: string): Promise<boolean> {
-    const draft = this.draftNoteManager.getDraft(noteId);
-    if (!draft) {
-      return false;
-    }
-
-    const openDocument = Array.from(this.openDocumentsByUri.values()).find((doc) => doc.noteId === noteId);
-    if (!openDocument) {
-      const client = this.getClient();
-      if (!client) {
-        throw new Error('Not connected');
-      }
-      await client.putNoteContent(noteId, draft.localContent);
-      this.draftNoteManager.removeDraft(noteId);
-      return true;
-    }
-
-    this.allowedDraftSaves.add(noteId);
-    try {
-      await vscode.commands.executeCommand('vscode.openWith', openDocument.uri, TriliumTextEditorProvider.viewType);
-      await vscode.commands.executeCommand('workbench.action.files.save');
-      this.draftNoteManager.removeDraft(noteId);
-      return true;
-    } finally {
-      this.allowedDraftSaves.delete(noteId);
-    }
   }
 
   /**
@@ -247,8 +276,7 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
     webviewPanel.title = document.title;
     document.registerPanel(webviewPanel);
 
-    const draftState = document.noteId ? this.draftNoteManager.getDraft(document.noteId) : undefined;
-    if (document.noteId && !draftState) {
+    if (document.noteId) {
       void (async () => {
         try {
           const client = this.getClient();
@@ -268,22 +296,16 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
           // Keep the restored placeholder if the note cannot be loaded yet.
         }
       })();
-    } else if (draftState) {
-      document.content = draftState.localContent;
-      document.syncedContent = draftState.serverContent;
-      document.title = draftState.title;
-      webviewPanel.title = draftState.title;
-      if (document.content !== document.syncedContent) {
-        this._onDidChangeCustomDocument.fire({ document });
-      }
     }
 
     // Set initial HTML
+    const taskStates = await this.loadTaskStates();
     webviewPanel.webview.html = this.getHtmlForWebview(
       webviewPanel.webview,
       getEditorFontSize(),
       getEditorSpellcheck(),
       getEditorHighlightTheme(),
+      taskStates,
     );
 
     // Send initial content once webview is ready
@@ -308,9 +330,6 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
         case 'contentChanged':
           // CKEditor content changed — update the document model and mark dirty.
           document.content = message.content as string;
-          if (document.noteId) {
-            this.draftNoteManager.updateDraftContent(document.noteId, document.content);
-          }
           this._onDidChangeCustomDocument.fire({ document });
           break;
 
@@ -373,13 +392,6 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
       throw new Error('Not connected');
     }
 
-    if (this.draftNoteManager.isDraft(document.noteId) && !this.allowedDraftSaves.has(document.noteId)) {
-      void vscode.window.showInformationMessage(
-        'Trilium: This generated draft is staged locally. Use "Trilium: Confirm Draft Notes" to save it to Trilium.',
-      );
-      throw new Error('Draft: awaiting explicit confirmation');
-    }
-
     try {
       const localContent = document.content;
       const serverContent = await client.getNoteContent(document.noteId);
@@ -424,9 +436,6 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
       vscode.window.setStatusBarMessage('$(check) Trilium: Note saved', 3000);
     } catch (err) {
       if (err instanceof Error && err.message.startsWith('Conflict:')) {
-        throw err;
-      }
-      if (err instanceof Error && err.message.startsWith('Draft:')) {
         throw err;
       }
       void vscode.window.showErrorMessage(`Trilium: Failed to save note: ${err}`);
@@ -592,6 +601,76 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
     }
   }
 
+  private async loadTaskStates(): Promise<EditorTaskStateDef[] | undefined> {
+    const client = this.getClient();
+    if (!client) {
+      return undefined;
+    }
+
+    try {
+      const container = await client.getNote('_taskStates');
+      if (!container.childNoteIds?.length) {
+        return undefined;
+      }
+
+      const states = await Promise.all(container.childNoteIds.map(async (noteId) => {
+        try {
+          const note = await client.getNote(noteId);
+          if (note.isProtected && note.type === 'search') {
+            return null;
+          }
+
+          const labels = new Map(
+            (note.attributes ?? [])
+              .filter((attr) => attr.type === 'label')
+              .map((attr) => [attr.name, attr.value]),
+          );
+
+          const stateName = (labels.get('stateId') ?? '').trim();
+          if (!stateName || stateName === 'none' || stateName === 'done') {
+            return null;
+          }
+
+          return {
+            name: stateName,
+            title: note.title,
+            markdownSymbol: (labels.get('markdownSymbol') ?? '').trim(),
+            isCompleted: labels.get('isCompleted') === 'true',
+            isHidden: labels.get('isHidden') === 'true',
+            icon: (labels.get('iconClass') ?? '').trim(),
+            iconSvg: '',
+            color: (labels.get('color') ?? '').trim(),
+          } satisfies EditorTaskStateDef;
+        } catch {
+          return null;
+        }
+      }));
+
+      const validStates = states.flatMap((state): EditorTaskStateDef[] => (state ? [state] : []));
+      return validStates.length > 0 ? mergeTaskStates(ANCHOR_TASK_STATES, validStates) : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /** Resolve each state's Boxicons class to the SVG bundled with the extension. */
+  private withTaskStateIcons(states: EditorTaskStateDef[]): EditorTaskStateDef[] {
+    const svgRoot = getBundledBoxiconsSvgRoot(this.context.extensionPath);
+
+    return states.map((state) => {
+      const relativePath = boxiconSvgRelativePath(state.icon);
+      if (!relativePath) {
+        return state;
+      }
+
+      try {
+        return { ...state, iconSvg: fs.readFileSync(path.join(svgRoot, relativePath), 'utf8') };
+      } catch {
+        return state;
+      }
+    });
+  }
+
   /**
    * Generate HTML for the webview with CKEditor 5.
    */
@@ -600,6 +679,7 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
     fontSize: number,
     spellcheck: boolean,
     highlightTheme: string,
+    taskStates: EditorTaskStateDef[] | undefined,
   ): string {
     // Load CKEditor from out/ckeditor (CSS and JS are bundled separately by esbuild)
     const ckeditorUri = webview.asWebviewUri(
@@ -622,6 +702,11 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
 
     // Generate a nonce for CSP
     const nonce = getNonce();
+    const effectiveTaskStates = this.withTaskStateIcons(
+      taskStates && taskStates.length > 0 ? taskStates : FALLBACK_TASK_STATES,
+    );
+    const serializedTaskStates = JSON.stringify(effectiveTaskStates);
+    const taskStateCss = renderTaskStateCss(effectiveTaskStates);
 
     return `<!DOCTYPE html>
 <html lang="en">
@@ -639,6 +724,7 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
     <title>Trilium Text Editor</title>
     <!-- Load CKEditor CSS (bundled by esbuild) -->
     <link rel="stylesheet" href="${ckeditorCssUri}">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/boxicons@2.1.4/css/boxicons.min.css">
     <style nonce="${nonce}">
       /*
        * Map VS Code theme tokens → CKEditor CSS variables so the editor
@@ -1083,6 +1169,7 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
       .ck-content .todo-list .todo-list__label > input[type='checkbox'] {
         appearance: none;
         -webkit-appearance: none;
+        position: relative;
         width: 14px;
         height: 14px;
         margin-right: 8px;
@@ -1101,6 +1188,14 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
         outline: 2px solid var(--vscode-focusBorder, #007fd4);
         outline-offset: 1px;
       }
+      .ck-content .todo-list .todo-list__label {
+        position: relative;
+      }
+      .ck-content .todo-list .todo-list__label::before {
+        left: -24px;
+        top: 3px;
+      }
+      ${taskStateCss}
       .ck-content .todo-list .todo-list__label > input[type='checkbox']:not(:checked)::before,
       .ck-editor__editable.ck-content .todo-list .todo-list__label > span[contenteditable=false] > input[type='checkbox']:not(:checked)::before {
         border: 1px solid var(--vscode-settings-checkboxBorder, var(--vscode-checkbox-border, #8b8b8b)) !important;
@@ -1176,9 +1271,46 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
 
       (function() {
         const vscode = acquireVsCodeApi();
+        const taskStates = ${serializedTaskStates};
         let editor;
         let isUpdatingFromExtension = false;
         let pendingExternalContent = '';
+        const TASK_STATE_DEBUG = false;
+        const debugTaskState = (event, details = {}) => {
+          if (!TASK_STATE_DEBUG) {
+            return;
+          }
+          console.debug('[trilium-task-state]', event, {
+            states: taskStates.map((state) => state.name),
+            ...details,
+          });
+        };
+
+        document.addEventListener('contextmenu', (event) => {
+          const checkbox = event.target?.closest?.('.todo-list__label input[type="checkbox"]');
+          if (!checkbox) {
+            return;
+          }
+          const editorRoot = document.querySelector('.ck-editor__editable');
+          debugTaskState('contextmenu', {
+            targetRect: checkbox.getBoundingClientRect().toJSON(),
+            editorRect: editorRoot?.getBoundingClientRect().toJSON(),
+            viewport: { width: window.innerWidth, height: window.innerHeight },
+          });
+        }, true);
+
+        document.addEventListener('click', (event) => {
+          const button = event.target?.closest?.('.task-state-toolbar .ck-button');
+          if (!button) {
+            return;
+          }
+          debugTaskState('state-click', {
+            buttonLabel: button.getAttribute('aria-label'),
+            balloonRect: button.closest('.ck-balloon-panel')?.getBoundingClientRect().toJSON(),
+            commandEnabled: editor?.commands?.get('setTaskState')?.isEnabled,
+            commandValue: editor?.commands?.get('setTaskState')?.value,
+          });
+        }, true);
         let hasPendingExternalContent = false;
         const pendingImageFetches = new Map();
         const pendingUploads = new Map();
@@ -1368,6 +1500,7 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
         TriliumEditor
           .create(document.querySelector('#editor-container'), {
             licenseKey: 'GPL',
+            taskStates,
             // Override toolbar to match Trilium's layout more closely
             toolbar: {
               items: [
@@ -1620,9 +1753,14 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
             vscode.postMessage({ type: 'ready' });
           })
           .catch(error => {
+            console.error('[trilium-editor] CKEditor initialization failed', {
+              error,
+              taskStates,
+              userAgent: navigator.userAgent,
+            });
             vscode.postMessage({
               type: 'error',
-              message: 'Failed to initialize CKEditor: ' + error.message
+              message: 'Failed to initialize CKEditor: ' + (error?.stack || error?.message || String(error))
             });
           });
 
@@ -1716,8 +1854,10 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
             }
           });
         }
-        new MutationObserver(rewriteTriliumImages)
-          .observe(document.body, { childList: true, subtree: true });
+
+        new MutationObserver(() => {
+          rewriteTriliumImages();
+        }).observe(document.body, { childList: true, subtree: true });
 
       })();
     </script>
@@ -1743,4 +1883,81 @@ function mimeFromPath(url: string): string {
     bmp: 'image/bmp', ico: 'image/x-icon', tiff: 'image/tiff', tif: 'image/tiff',
   };
   return map[ext] ?? 'image/jpeg';
+}
+
+function renderTaskStateCss(states: EditorTaskStateDef[]): string {
+  const rules: string[] = [];
+
+  for (const state of states) {
+    if (state.isHidden) {
+      continue;
+    }
+
+    const name = cssString(state.name);
+    const identifier = taskStateCssIdentifier(state.name);
+    const color = sanitizeCssColor(state.color);
+
+    const border = color ?? 'var(--vscode-checkbox-border, var(--vscode-input-border, #c5c5c5))';
+    const background = color ? withAlpha(color, 0.16) : 'var(--vscode-checkbox-background, var(--vscode-input-background, #2d2d30))';
+    const text = color ?? 'var(--vscode-input-foreground, currentColor)';
+
+    rules.push(`.ck.ck-balloon-panel .ck.ck-toolbar.task-state-toolbar .ck-button.ck-task-state-button-${identifier} { color: ${text}; }`);
+    // Scoped to the item's own label: the list model is flat, so a descendant selector would
+    // leak a parent's state onto nested items.
+    rules.push(`.ck-content li[data-trilium-task-state="${name}"] > .todo-list__label > input[type='checkbox'], .ck-content li[data-trilium-task-state="${name}"] > .todo-list__label > span[contenteditable=false] > input[type='checkbox'] { border-color: ${border} !important; background: ${background} !important; }`);
+
+    if (state.iconSvg) {
+      // Mirrors Trilium, which paints the state glyph inside the checkbox. Rendered as a mask so
+      // the glyph takes the state colour, and as a pseudo-element so no node is injected into
+      // CKEditor's editing DOM.
+      const mask = svgToCssUrl(state.iconSvg);
+      rules.push(`.ck-content li[data-trilium-task-state="${name}"] > .todo-list__label::before { content: ''; position: absolute; left: -24px; top: 3px; width: 14px; height: 14px; pointer-events: none; z-index: 1; background-color: ${text}; -webkit-mask: ${mask} center / contain no-repeat; mask: ${mask} center / contain no-repeat; }`);
+    }
+  }
+
+  return rules.join('\n');
+}
+
+function cssString(value: string): string {
+  return value.replace(/[\\"]/g, '\\$&');
+}
+
+function sanitizeCssColor(value: string | undefined): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const trimmed = value.trim().toLowerCase();
+  if (/^#[0-9a-f]{3}([0-9a-f]{3})?$/.test(trimmed)) {
+    return trimmed;
+  }
+  if (/^rgba?\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}(\s*,\s*(0|1|0?\.\d+))?\s*\)$/.test(trimmed)) {
+    return trimmed;
+  }
+  if (/^hsla?\(\s*\d{1,3}(\.\d+)?\s*,\s*\d{1,3}(\.\d+)?%\s*,\s*\d{1,3}(\.\d+)?%(\s*,\s*(0|1|0?\.\d+))?\s*\)$/.test(trimmed)) {
+    return trimmed;
+  }
+  if (/^[a-z][a-z-]*$/.test(trimmed)) {
+    return trimmed;
+  }
+
+  return undefined;
+}
+
+function withAlpha(color: string, alpha: number): string {
+  if (color.startsWith('#')) {
+    const hex = color.slice(1);
+    const normalized = hex.length === 3
+      ? hex.split('').map((c) => c + c).join('')
+      : hex;
+
+    if (/^[0-9a-f]{6}$/i.test(normalized)) {
+      const r = parseInt(normalized.slice(0, 2), 16);
+      const g = parseInt(normalized.slice(2, 4), 16);
+      const b = parseInt(normalized.slice(4, 6), 16);
+      return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    }
+  }
+
+  return color;
 }

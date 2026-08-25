@@ -3,7 +3,7 @@
  *
  * This build includes:
  * - Standard CKEditor 5 Classic editor
- * - Trilium-specific plugins (admonition, math, mermaid, footnotes, keyboard-marker)
+ * - Trilium-specific plugins (admonition, collapsible, footnotes, keyboard-marker, math, mermaid, todo-list multistate)
  * - Additional formatting and editing features
  */
 
@@ -67,25 +67,24 @@ import {
   type EditorConfig,
 } from 'ckeditor5';
 
-// Import Trilium plugins from vendor directory
-// @ts-ignore - vendor directory created during build
-import { Admonition } from '../vendor/ckeditor5-admonition/src/index.ts';
-// @ts-ignore
-import { Footnotes } from '../vendor/ckeditor5-footnotes/src/index.ts';
-// @ts-ignore
-import { Kbd } from '../vendor/ckeditor5-keyboard-marker/src/index.ts';
-// @ts-ignore
-import { Math } from '../vendor/ckeditor5-math/src/index.ts';
-// @ts-ignore
-import { Mermaid } from '../vendor/ckeditor5-mermaid/src/index.ts';
+// Import Trilium plugins from the consolidated package downloaded during build.
+import Admonition from '../vendor/ckeditor5/src/plugins/admonition/admonition';
+import Footnotes from '../vendor/ckeditor5/src/plugins/footnotes/footnotes';
+import Kbd from '../vendor/ckeditor5/src/plugins/keyboard_marker/keyboard_marker';
+import Math from '../vendor/ckeditor5/src/plugins/math/math';
+import Mermaid from '../vendor/ckeditor5/src/plugins/mermaid/mermaid';
+import Collapsible from '../vendor/ckeditor5/src/plugins/collapsible/collapsible';
 import { SyntaxHighlighting } from './ckeditor/syntaxHighlighting';
+import TodoListMultistate from '../vendor/ckeditor5/src/plugins/todo_list_multistate/todo_list_multistate';
+import TodoListUncheckOnEnter from '../vendor/ckeditor5/src/plugins/todo_list_uncheck_on_enter';
 
 // Import all CSS - esbuild will bundle it
 import 'ckeditor5/ckeditor5.css';
-import '../vendor/ckeditor5-admonition/theme/blockquote.css';
-import '../vendor/ckeditor5-footnotes/theme/footnote.css';
-import '../vendor/ckeditor5-math/theme/mathform.css';
-import '../vendor/ckeditor5-mermaid/theme/mermaid.css';
+import '../vendor/ckeditor5/src/theme/blockquote.css';
+import '../vendor/ckeditor5/src/theme/footnotes.css';
+import '../vendor/ckeditor5/src/theme/math_form.css';
+import '../vendor/ckeditor5/src/theme/mermaid.css';
+import '../vendor/ckeditor5/src/theme/collapsible.css';
 import 'mathlive/fonts.css';
 import 'mathlive/static.css';
 
@@ -128,6 +127,8 @@ export class TriliumEditor extends ClassicEditor {
     List,
     ListProperties,
     TodoList,
+    TodoListUncheckOnEnter,
+    TodoListMultistate,
 
     // Block elements
     BlockQuote,
@@ -174,6 +175,7 @@ export class TriliumEditor extends ClassicEditor {
 
     // Trilium-specific plugins
     Admonition,
+    Collapsible,
     Footnotes,
     Kbd,
     Math,
@@ -202,6 +204,7 @@ export class TriliumEditor extends ClassicEditor {
         'bulletedList',
         'numberedList',
         'todoList',
+        'taskStateCycle',
         '|',
         'link',
         'insertImage',
@@ -214,6 +217,7 @@ export class TriliumEditor extends ClassicEditor {
         'math',
         'mermaid',
         'admonition',
+        'collapsible',
         'footnote',
         '|',
         'specialCharacters',
@@ -227,6 +231,7 @@ export class TriliumEditor extends ClassicEditor {
       shouldNotGroupWhenFull: true,
     },
     language: 'en',
+    contentHintsEnabled: false,
     math: {
       engine: 'mathjax',
       outputType: 'script',

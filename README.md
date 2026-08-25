@@ -60,7 +60,7 @@ Install from the [VS Code Marketplace](https://marketplace.visualstudio.com/item
 - New here: start with [Getting Started](docs/getting-started.md)
 - Want capabilities overview: [Features](docs/features.md)
 - Looking for commands and settings: [Reference](docs/reference.md)
-- Using Copilot or scripts: [Automation](docs/automation.md)
+- Using scripts: [Automation](docs/automation.md)
 - Curious what is planned: [Roadmap](docs/roadmap.md)
 - Attribution and license details: [Credits](docs/credits.md)
 

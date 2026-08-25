@@ -4,13 +4,16 @@ The extension icon (`media/trilium.svg`) is the original Trilium Notes logo, tak
 
 ## CKEditor Plugins
 
-The extension incorporates five custom CKEditor 5 plugins from the Trilium Notes project, downloaded and vendored during the build process:
+The extension incorporates custom CKEditor 5 packages and plugins from the Trilium Notes project, downloaded and vendored during the build process:
 
 - **Math** for KaTeX LaTeX formula rendering.
 - **Mermaid** for inline diagram syntax support.
 - **Admonitions** for styled callout blocks.
+- **Collapsible** for expandable details/summary sections.
 - **Footnotes** for inline reference management.
 - **Keyboard Marker** for visual `<kbd>` tags.
+- **Todo List Multistate** for custom task states on to-do list items.
+- **CKEditor Utils** for shared utility helpers used by Trilium plugins.
 
 These plugins are sourced from the [Trilium source repository](https://github.com/TriliumNext/Trilium) and are licensed under AGPL-3.0.
 

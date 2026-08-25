@@ -31,5 +31,27 @@ declare module 'lodash-es' {
 declare module 'mathlive/fonts.css';
 declare module 'mathlive/static.css';
 
+declare module 'bootstrap' {
+  export interface TooltipOptions {
+    [key: string]: unknown;
+  }
+
+  export class Tooltip {
+    public static Default: Record<string, unknown>;
+    public static VERSION: string;
+    public constructor(element?: Element | string, config?: TooltipOptions);
+    public dispose(): void;
+    public show(): void;
+    public hide(): void;
+    public toggle(): void;
+    public setContent(content: string | Record<string, string>): void;
+    public get tip(): HTMLElement | null;
+  }
+
+  export namespace Tooltip {
+    export type Options = TooltipOptions;
+  }
+}
+
 // CKEditor 5 CSS
 declare module 'ckeditor5/ckeditor5.css';

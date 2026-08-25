@@ -18,7 +18,7 @@
 ## Open and Edit Notes
 
 - **Text notes** open in a full **CKEditor 5 WYSIWYG** editor embedded in a VS Code webview. The editor operates directly on Trilium's native HTML with native VS Code undo/redo and `Ctrl+S` save support.
-- The editor includes headings, inline formatting, lists, tables, inline code, code blocks, math, Mermaid diagrams, admonitions, footnotes, keyboard markers, find and replace, and full formatting controls.
+- The editor includes headings, inline formatting, lists, tables, inline code, code blocks, math, Mermaid diagrams, admonitions, collapsible blocks, footnotes, keyboard markers, multistate to-do lists, find and replace, and full formatting controls.
 - Images inserted from the CKEditor toolbar are uploaded as Trilium attachments and persisted as native Trilium attachment URLs.
 - **Code notes** open with the correct language where possible, and changes save directly back to Trilium.
 - **Mermaid notes** open directly in a built-in native Mermaid editor with live rendered preview, auto-save back to Trilium, refresh control, and breadcrumb navigation.
