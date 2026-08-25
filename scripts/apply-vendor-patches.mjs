@@ -178,4 +178,34 @@ export function applyVendorPatches(vendorDir, logPrefix = '[patch-plugins]') {
       console.log(`${logPrefix} patched ckeditor5-collapsible/src/collapsible-editing.ts`);
     }
   }
+
+  // Fresh vendor downloads can include the upstream CKEditor tsconfig with stale
+  // monorepo-only settings that break the standalone extension type-check. Strip
+  // the inherited base config and the declaration-only / extra ambient types that
+  // are not valid in this repo's TypeScript setup.
+  const vendorTsconfigPath = path.join(vendorDir, 'ckeditor5', 'tsconfig.lib.json');
+  if (fs.existsSync(vendorTsconfigPath)) {
+    let src = fs.readFileSync(vendorTsconfigPath, 'utf8');
+    const before = src;
+    try {
+      const config = JSON.parse(src);
+      const compilerOptions = config.compilerOptions ?? {};
+      const hasLegacySettings = config.extends === '../../tsconfig.base.json'
+        || compilerOptions.emitDeclarationOnly === true
+        || (Array.isArray(compilerOptions.types) && compilerOptions.types.some(type => type === 'vite/client' || type === 'jquery'));
+
+      if (hasLegacySettings) {
+        delete config.extends;
+        const { emitDeclarationOnly, types, ...safeCompilerOptions } = compilerOptions;
+        config.compilerOptions = safeCompilerOptions;
+        fs.writeFileSync(vendorTsconfigPath, `${JSON.stringify(config, null, 2)}\n`, 'utf8');
+        console.log(`${logPrefix} normalized stale ckeditor5 tsconfig.lib.json`);
+      }
+    } catch (error) {
+      console.warn(`${logPrefix} unable to normalize stale ckeditor5 tsconfig.lib.json: ${error.message}`);
+    }
+    if (before === fs.readFileSync(vendorTsconfigPath, 'utf8')) {
+      // Keep the existing file untouched when it is already compatible.
+    }
+  }
 }
