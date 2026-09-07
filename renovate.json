@@ -1,0 +1,33 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "minimumReleaseAge": "1 day",
+  "packageRules": [
+    {
+      "groupName": "react-stack",
+      "matchPackageNames": ["react", "react-dom", "@types/react", "@types/react-dom"]
+    },
+    {
+      "groupName": "vscode",
+      "matchPackageNames": ["@types/vscode", "@vscode/**", "vscode-engines"]
+    },
+    {
+      "groupName": "devDependencies",
+      "matchDepTypes": ["devDependencies"]
+    }
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Keep engines.vscode in sync with the vscode group so Type Check never sees a mismatch.",
+      "fileMatch": ["^package\\.json$"],
+      "matchStrings": [
+        "\"engines\"\\s*:\\s*\\{[^}]*\"vscode\"\\s*:\\s*\"\\^(?<currentValue>\\d+\\.\\d+\\.\\d+)\""
+      ],
+      "depNameTemplate": "vscode-engines",
+      "packageNameTemplate": "microsoft/vscode",
+      "datasourceTemplate": "github-releases",
+      "versioningTemplate": "semver"
+    }
+  ]
+}
