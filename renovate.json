@@ -9,25 +9,31 @@
     },
     {
       "groupName": "vscode",
-      "matchPackageNames": ["@types/vscode", "@vscode/**", "vscode-engines"]
+      "matchPackageNames": ["@types/vscode", "@vscode/**"]
     },
     {
       "groupName": "devDependencies",
       "matchDepTypes": ["devDependencies"]
+    },
+    {
+      "description": "@types/vscode is tracked by the custom manager below instead, to keep it and engines.vscode in the same update.",
+      "matchManagers": ["npm"],
+      "matchPackageNames": ["@types/vscode"],
+      "enabled": false
     }
   ],
   "customManagers": [
     {
       "customType": "regex",
-      "description": "Keep engines.vscode in sync with the vscode group so Type Check never sees a mismatch.",
+      "description": "Track @types/vscode and engines.vscode as one dependency with two locations, so they always update together in a single PR.",
       "fileMatch": ["^package\\.json$"],
       "matchStrings": [
+        "\"@types/vscode\"\\s*:\\s*\"\\^(?<currentValue>\\d+\\.\\d+\\.\\d+)\"",
         "\"engines\"\\s*:\\s*\\{[^}]*\"vscode\"\\s*:\\s*\"\\^(?<currentValue>\\d+\\.\\d+\\.\\d+)\""
       ],
-      "depNameTemplate": "vscode-engines",
-      "packageNameTemplate": "microsoft/vscode",
-      "datasourceTemplate": "github-releases",
-      "versioningTemplate": "semver"
+      "depNameTemplate": "@types/vscode",
+      "datasourceTemplate": "npm",
+      "versioningTemplate": "npm"
     }
   ]
 }
