@@ -231,7 +231,7 @@ export class AttributesViewProvider implements vscode.WebviewViewProvider {
     if (!note) {
       return `<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'none';">
 <style>body{font-family:var(--vscode-font-family);font-size:var(--vscode-font-size);color:var(--vscode-descriptionForeground);padding:12px;margin:0;}</style>
 </head><body><p>Select a note to view its attributes.</p></body></html>`;
     }
