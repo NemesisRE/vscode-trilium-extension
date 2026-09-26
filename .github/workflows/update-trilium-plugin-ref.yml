@@ -20,7 +20,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Resolve latest Trilium release commit
         id: latest
@@ -77,7 +77,7 @@ jobs:
 
       - name: Create pull request
         if: steps.latest.outputs.sha != steps.current.outputs.sha
-        uses: peter-evans/create-pull-request@v8.1.1
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
         with:
           commit-message: 'chore(dependencies): update Trilium plugin ref to ${{ steps.latest.outputs.sha }}'
           branch: chore/update-trilium-plugin-ref
