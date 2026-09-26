@@ -1,3 +1,4 @@
+import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
@@ -705,7 +706,9 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
     const effectiveTaskStates = this.withTaskStateIcons(
       taskStates && taskStates.length > 0 ? taskStates : FALLBACK_TASK_STATES,
     );
-    const serializedTaskStates = JSON.stringify(effectiveTaskStates);
+    // Escape `<` so a task-state title/label containing `</script>` cannot break out
+    // of the inline script block below.
+    const serializedTaskStates = JSON.stringify(effectiveTaskStates).replace(/</g, '\\u003c');
     const taskStateCss = renderTaskStateCss(effectiveTaskStates);
 
     return `<!DOCTYPE html>
@@ -718,7 +721,7 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
       style-src ${webview.cspSource} 'unsafe-inline' https://cdn.jsdelivr.net;
       script-src 'nonce-${nonce}' https://cdn.jsdelivr.net;
       font-src ${webview.cspSource} https://cdn.jsdelivr.net data:;
-      img-src * data: blob:;
+      img-src ${webview.cspSource} https: data: blob:;
       connect-src ${webview.cspSource} https://cdn.jsdelivr.net;
     ">
     <title>Trilium Text Editor</title>
@@ -1867,12 +1870,7 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
 }
 
 function getNonce(): string {
-  let text = '';
-  const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  for (let i = 0; i < 32; i++) {
-    text += possible.charAt(Math.floor(Math.random() * possible.length));
-  }
-  return text;
+  return crypto.randomBytes(24).toString('base64');
 }
 
 function mimeFromPath(url: string): string {

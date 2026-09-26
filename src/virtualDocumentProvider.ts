@@ -1,6 +1,15 @@
 import * as vscode from 'vscode';
 import { EtapiClient } from './etapiClient';
 
+function escapeHtml(input: string): string {
+  return input
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 /**
  * TextDocumentContentProvider for virtual trilium-text:// URIs.
  *
@@ -47,7 +56,7 @@ export class VirtualDocumentProvider implements vscode.TextDocumentContentProvid
   private disconnectedPlaceholder(noteId: string): string {
     return [
       '<p><strong>Trilium is not connected.</strong></p>',
-      `<p>This restored editor tab (noteId: <code>${noteId}</code>) will load automatically after you reconnect.</p>`,
+      `<p>This restored editor tab (noteId: <code>${escapeHtml(noteId)}</code>) will load automatically after you reconnect.</p>`,
     ].join('');
   }
 

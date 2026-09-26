@@ -1,3 +1,4 @@
+import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -80,12 +81,7 @@ const noteWebviewPanels = new Map<string, vscode.WebviewPanel>();
 let activeWebviewNoteId: string | undefined;
 
 function createNonce(): string {
-  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  let out = '';
-  for (let i = 0; i < 24; i += 1) {
-    out += alphabet[Math.floor(Math.random() * alphabet.length)];
-  }
-  return out;
+  return crypto.randomBytes(24).toString('base64');
 }
 
 function escapeHtml(input: string): string {

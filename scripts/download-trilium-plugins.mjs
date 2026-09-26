@@ -2,6 +2,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as https from 'https';
+import * as crypto from 'crypto';
 import * as tar from 'tar';
 import { applyVendorPatches } from './apply-vendor-patches.mjs';
 
@@ -11,6 +12,7 @@ const LOCK_PATH = path.join(process.cwd(), 'scripts', 'trilium-plugins.lock.json
 const lock = JSON.parse(fs.readFileSync(LOCK_PATH, 'utf8'));
 const TRILIUM_REPO = lock.repo;
 const TRILIUM_REF = lock.ref;
+const TRILIUM_SHA256 = lock.sha256;
 const PLUGINS = lock.plugins;
 const DOWNLOAD_RETRIES = Number.parseInt(process.env.TRILIUM_PLUGIN_DOWNLOAD_RETRIES ?? '4', 10);
 const REQUEST_TIMEOUT_MS = Number.parseInt(process.env.TRILIUM_PLUGIN_DOWNLOAD_TIMEOUT_MS ?? '45000', 10);
@@ -120,11 +122,47 @@ async function downloadAllPlugins() {
 }
 
 /**
- * Extract only the plugin directories we need from the tarball stream.
+ * Extract only the plugin directories we need from the tarball stream, while
+ * verifying the whole tarball's SHA-256 against the locked hash so a
+ * compromised/MITM'd download can't silently vendor unexpected code.
  */
 function extractPlugins(stream, resolve, reject) {
   const repoPrefix = `Trilium-${TRILIUM_REF}/packages/ckeditor5/`;
-  
+  const hash = crypto.createHash('sha256');
+  let hashDone = false;
+  let extractDone = false;
+  let settled = false;
+
+  const finishIfReady = () => {
+    if (!hashDone || !extractDone || settled) {
+      return;
+    }
+    settled = true;
+
+    const actualSha256 = hash.digest('hex');
+    if (TRILIUM_SHA256 && actualSha256 !== TRILIUM_SHA256) {
+      const targetDir = path.join(VENDOR_DIR, 'ckeditor5');
+      fs.rmSync(targetDir, { recursive: true, force: true });
+      reject(new Error(
+        `Downloaded Trilium tarball SHA-256 mismatch: expected ${TRILIUM_SHA256}, got ${actualSha256}. ` +
+        'Refusing to use unverified vendor content.',
+      ));
+      return;
+    }
+    if (!TRILIUM_SHA256) {
+      console.warn('[download-plugins] No sha256 pinned in trilium-plugins.lock.json - skipping integrity check.');
+    } else {
+      console.log(`[download-plugins] ✓ Tarball SHA-256 verified (${actualSha256})`);
+    }
+    console.log('[download-plugins] ✓ All plugins extracted successfully');
+    resolve();
+  };
+
+  stream.pipe(hash).on('finish', () => {
+    hashDone = true;
+    finishIfReady();
+  }).on('error', reject);
+
   stream.pipe(tar.extract({
     cwd: VENDOR_DIR,
     filter: (filepath) => {
@@ -141,8 +179,8 @@ function extractPlugins(stream, resolve, reject) {
     }
   }))
   .on('finish', () => {
-    console.log('[download-plugins] ✓ All plugins extracted successfully');
-    resolve();
+    extractDone = true;
+    finishIfReady();
   })
   .on('error', reject);
 }
