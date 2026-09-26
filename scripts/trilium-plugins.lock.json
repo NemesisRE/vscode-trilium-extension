@@ -1,6 +1,6 @@
 {
   "repo": "TriliumNext/Trilium",
-  "ref": "a0908a6e1e1741a3c3824d803da07300183dcb0c",
+  "ref": "c0fdceba3b59af8a4473c6944b4f176121bb9788",
   "plugins": [
     "ckeditor5-admonition",
     "ckeditor5-collapsible",
