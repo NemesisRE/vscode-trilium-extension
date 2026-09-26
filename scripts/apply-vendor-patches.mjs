@@ -88,44 +88,9 @@ export function applyVendorPatches(vendorDir, logPrefix = '[patch-plugins]') {
     }
   }
 
-  // ckeditor5-math: remove the custom `declare global` block for window.mathVirtualKeyboard.
-  // mathlive already declares `window.mathVirtualKeyboard: VirtualKeyboardInterface & EventTarget`
-  // in its own types, so redefining it with a narrower type causes TS2687/TS2717.
-  const mathInputViewPath = path.join(vendorDir, 'ckeditor5-math', 'src', 'ui', 'mathinputview.ts');
-  if (fs.existsSync(mathInputViewPath)) {
-    let src = fs.readFileSync(mathInputViewPath, 'utf8');
-    const declareGlobalBlock = /^declare global \{[\s\S]*?\}\s*\n\n/m;
-    if (declareGlobalBlock.test(src)) {
-      src = src.replace(declareGlobalBlock, '');
-      fs.writeFileSync(mathInputViewPath, src, 'utf8');
-      console.log(`${logPrefix} patched ckeditor5-math/src/ui/mathinputview.ts`);
-    }
-  }
-
-  // ckeditor5-math: newer upstream refs import raw SVG files from a package path
-  // that no longer exists in our installed CKEditor icon package. Rewrite these
-  // imports to the supported named exports from @ckeditor/ckeditor5-icons.
-  const mainFormViewPath = path.join(vendorDir, 'ckeditor5-math', 'src', 'ui', 'mainformview.ts');
-  if (fs.existsSync(mainFormViewPath)) {
-    let src = fs.readFileSync(mainFormViewPath, 'utf8');
-    const before = src;
-    src = src.replace(
-      'import IconCheck from "@ckeditor/ckeditor5-icons/theme/icons/check.svg?raw";',
-      'import { IconCheck, IconCancel } from "@ckeditor/ckeditor5-icons";',
-    );
-    src = src.replace(
-      'import IconCancel from "@ckeditor/ckeditor5-icons/theme/icons/cancel.svg?raw";\n',
-      '',
-    );
-    if (src !== before) {
-      fs.writeFileSync(mainFormViewPath, src, 'utf8');
-      console.log(`${logPrefix} patched ckeditor5-math/src/ui/mainformview.ts`);
-    }
-  }
-
   // ckeditor5-math: renderMathJax3 leaves behind previous renders if called multiple times,
   // causing duplicate equations. We need to clear all children before appending the new render.
-  const mathUtilsPath = path.join(vendorDir, 'ckeditor5-math', 'src', 'utils.ts');
+  const mathUtilsPath = path.join(vendorDir, 'ckeditor5', 'src', 'plugins', 'math', 'utils.ts');
   if (fs.existsSync(mathUtilsPath)) {
     let src = fs.readFileSync(mathUtilsPath, 'utf8');
     const before = src;
@@ -139,9 +104,10 @@ export function applyVendorPatches(vendorDir, logPrefix = '[patch-plugins]') {
     }
   }
 
-  // ckeditor5-mermaid: newer upstream refs leave the debounced textarea listener
-  // callback parameter implicitly typed, which fails under this repo's strict TS config.
-  const mermaidEditingPath = path.join(vendorDir, 'ckeditor5-mermaid', 'src', 'mermaidediting.ts');
+  // ckeditor5-mermaid: the debounced textarea input listener leaves its `event` parameter
+  // implicitly typed and accesses `event.target.value` without narrowing target's type,
+  // so give it an explicit `Event` type and guard the HTMLInputElement cast.
+  const mermaidEditingPath = path.join(vendorDir, 'ckeditor5', 'src', 'plugins', 'mermaid', 'mermaid_editing.ts');
   if (fs.existsSync(mermaidEditingPath)) {
     let src = fs.readFileSync(mermaidEditingPath, 'utf8');
     const before = src;
@@ -156,26 +122,6 @@ export function applyVendorPatches(vendorDir, logPrefix = '[patch-plugins]') {
     if (src !== before) {
       fs.writeFileSync(mermaidEditingPath, src, 'utf8');
       console.log(`${logPrefix} patched ckeditor5-mermaid/src/mermaidediting.ts`);
-    }
-  }
-
-  // ckeditor5-collapsible: upstream package imports monorepo workspace deps.
-  // Rewrite those imports to local repo paths so our standalone build can bundle them.
-  const legacyCollapsibleEditingPath = path.join(vendorDir, 'ckeditor5-collapsible', 'src', 'collapsible-editing.ts');
-  if (fs.existsSync(legacyCollapsibleEditingPath)) {
-    let src = fs.readFileSync(legacyCollapsibleEditingPath, 'utf8');
-    const before = src;
-    src = src.replace(
-      'import { formatShortcut, joinShortcut } from "@triliumnext/commons";',
-      'import { formatShortcut, joinShortcut } from "../../../src/ckeditor/shortcut.ts";',
-    );
-    src = src.replace(
-      'import { ContentHintManager, type HintHandle } from "@triliumnext/ckeditor5-utils";',
-      'import { ContentHintManager, type HintHandle } from "../../ckeditor5-utils/src/index.ts";',
-    );
-    if (src !== before) {
-      fs.writeFileSync(legacyCollapsibleEditingPath, src, 'utf8');
-      console.log(`${logPrefix} patched ckeditor5-collapsible/src/collapsible-editing.ts`);
     }
   }
 
