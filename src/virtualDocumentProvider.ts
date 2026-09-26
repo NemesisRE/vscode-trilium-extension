@@ -18,12 +18,29 @@ function escapeHtml(input: string): string {
  *
  * URI format: trilium-text://trilium/noteId?title=Note+Title
  */
+// Caps contentCache's growth: since the URI's path segment embeds the note's
+// title, a renamed note leaves its old-title URI's cache entry unreachable
+// (nothing will ever look it up again). Rather than track per-entry recency,
+// just cap the total count and drop the oldest (Map iterates in insertion order).
+const MAX_CONTENT_CACHE_ENTRIES = 200;
+
 export class VirtualDocumentProvider implements vscode.TextDocumentContentProvider {
   private readonly _onDidChange = new vscode.EventEmitter<vscode.Uri>();
   public readonly onDidChange = this._onDidChange.event;
 
   // Cache of note content by URI
   private readonly contentCache = new Map<string, string>();
+
+  private setCached(uriString: string, content: string): void {
+    this.contentCache.set(uriString, content);
+    while (this.contentCache.size > MAX_CONTENT_CACHE_ENTRIES) {
+      const oldestKey = this.contentCache.keys().next().value;
+      if (oldestKey === undefined) {
+        break;
+      }
+      this.contentCache.delete(oldestKey);
+    }
+  }
 
   constructor(private readonly getClient: () => EtapiClient | undefined) {}
 
@@ -83,7 +100,7 @@ export class VirtualDocumentProvider implements vscode.TextDocumentContentProvid
 
     try {
       const content = await client.getNoteContent(noteId);
-      this.contentCache.set(uri.toString(), content);
+      this.setCached(uri.toString(), content);
       return content;
     } catch (err) {
       throw new Error(`Trilium: Failed to fetch note content: ${err}`);
@@ -95,7 +112,7 @@ export class VirtualDocumentProvider implements vscode.TextDocumentContentProvid
    * This allows external changes to be reflected in the editor.
    */
   updateContent(uri: vscode.Uri, content: string): void {
-    this.contentCache.set(uri.toString(), content);
+    this.setCached(uri.toString(), content);
     this._onDidChange.fire(uri);
   }
 

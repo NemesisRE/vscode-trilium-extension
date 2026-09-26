@@ -77,13 +77,6 @@ function normalizeMime(mime: string): string {
   return mime.split(';', 1)[0].trim().toLowerCase();
 }
 
-interface MindElixirNode {
-  id: string;
-  topic: string;
-  children?: MindElixirNode[];
-  [key: string]: unknown;
-}
-
 /**
  * Manages temporary files used to surface Trilium note content in VS Code's
  * native text editor. Files live in os.tmpdir()/vscode-trilium/ and are
@@ -270,69 +263,6 @@ export class TempFileManager {
     }
 
     return false;
-  }
-
-  /**
-   * Convert MindElixir JSON (Trilium mindMap note content) to a Markdown
-   * heading hierarchy compatible with the mark-elixir VS Code extension.
-   */
-  mindMapJsonToMarkdown(json: string): string {
-    try {
-      const data = JSON.parse(json) as { nodeData?: MindElixirNode };
-      if (!data?.nodeData) {
-        return '# Mind Map\n';
-      }
-      const lines: string[] = [];
-      const traverse = (node: MindElixirNode, depth: number): void => {
-        lines.push(`${'#'.repeat(depth)} ${node.topic ?? ''}`);
-        for (const child of (node.children ?? [])) {
-          traverse(child, depth + 1);
-        }
-      };
-      traverse(data.nodeData, 1);
-      return lines.join('\n') + '\n';
-    } catch {
-      return '# Mind Map\n';
-    }
-  }
-
-  /**
-   * Convert a Markdown heading hierarchy back to MindElixir JSON for saving
-   * to Trilium. Node IDs are regenerated on each save; structural content
-   * (topics and hierarchy) is fully preserved.
-   */
-  markdownToMindMapJson(md: string): string {
-    const lines = md.split('\n');
-    let rootNode: MindElixirNode | null = null;
-    const stack: Array<{ node: MindElixirNode; depth: number }> = [];
-
-    for (const line of lines) {
-      const match = /^(#+)\s+(.+)/.exec(line);
-      if (!match) { continue; }
-      const depth = match[1].length;
-      const topic = match[2].trim();
-      const node: MindElixirNode = {
-        id: Math.random().toString(36).slice(2, 10),
-        topic,
-        children: [],
-      };
-
-      if (!rootNode || depth === 1) {
-        node.id = 'root';
-        rootNode = node;
-        stack.length = 0;
-        stack.push({ node, depth });
-      } else {
-        while (stack.length > 1 && stack[stack.length - 1].depth >= depth) {
-          stack.pop();
-        }
-        (stack[stack.length - 1].node.children as MindElixirNode[]).push(node);
-        stack.push({ node, depth });
-      }
-    }
-
-    const nodeData: MindElixirNode = rootNode ?? { id: 'root', topic: 'Mind Map', children: [] };
-    return JSON.stringify({ nodeData }, null, 2);
   }
 
   /** Convert CKEditor HTML received from Trilium to Markdown for editing. */

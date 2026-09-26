@@ -1282,42 +1282,6 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
         let editor;
         let isUpdatingFromExtension = false;
         let pendingExternalContent = '';
-        const TASK_STATE_DEBUG = false;
-        const debugTaskState = (event, details = {}) => {
-          if (!TASK_STATE_DEBUG) {
-            return;
-          }
-          console.debug('[trilium-task-state]', event, {
-            states: taskStates.map((state) => state.name),
-            ...details,
-          });
-        };
-
-        document.addEventListener('contextmenu', (event) => {
-          const checkbox = event.target?.closest?.('.todo-list__label input[type="checkbox"]');
-          if (!checkbox) {
-            return;
-          }
-          const editorRoot = document.querySelector('.ck-editor__editable');
-          debugTaskState('contextmenu', {
-            targetRect: checkbox.getBoundingClientRect().toJSON(),
-            editorRect: editorRoot?.getBoundingClientRect().toJSON(),
-            viewport: { width: window.innerWidth, height: window.innerHeight },
-          });
-        }, true);
-
-        document.addEventListener('click', (event) => {
-          const button = event.target?.closest?.('.task-state-toolbar .ck-button');
-          if (!button) {
-            return;
-          }
-          debugTaskState('state-click', {
-            buttonLabel: button.getAttribute('aria-label'),
-            balloonRect: button.closest('.ck-balloon-panel')?.getBoundingClientRect().toJSON(),
-            commandEnabled: editor?.commands?.get('setTaskState')?.isEnabled,
-            commandValue: editor?.commands?.get('setTaskState')?.value,
-          });
-        }, true);
         let hasPendingExternalContent = false;
         const pendingImageFetches = new Map();
         const pendingUploads = new Map();
