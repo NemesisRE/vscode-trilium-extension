@@ -83,6 +83,10 @@ import 'ckeditor5/ckeditor5.css';
 import '../vendor/ckeditor5/src/theme/blockquote.css';
 import '../vendor/ckeditor5/src/theme/footnotes.css';
 import '../vendor/ckeditor5/src/theme/math_form.css';
+// KaTeX's rendered math output relies entirely on its own CSS (glyph
+// positioning, font-face declarations) - never wired up before, which is why
+// rendered equations came out unstyled/overflowing rather than typeset math.
+import 'katex/dist/katex.css';
 import '../vendor/ckeditor5/src/theme/mermaid.css';
 import '../vendor/ckeditor5/src/theme/collapsible.css';
 import 'mathlive/fonts.css';
@@ -291,3 +295,23 @@ export class TriliumEditor extends ClassicEditor {
 
 // Export for use in webview
 (window as any).TriliumEditor = TriliumEditor;
+
+// Lazy-loaders for the math/mermaid plugins' `lazyLoad` config. These run as
+// dynamic import()s inside this bundle (not in the webview's own inline
+// script, which can't resolve bare module specifiers), so esbuild's
+// code-splitting produces separate on-demand chunks for katex/mermaid
+// instead of always bundling them into the main ckeditor.js.
+//
+// The math plugin's `lazyLoad` return value is discarded (its type is
+// Promise<void>) - it awaits the promise purely as a completion signal, then
+// re-checks `window.katex`, expecting `lazyLoad` to have assigned it as a
+// side effect. Unlike the CDN's UMD-ish build, the plain npm katex.mjs module
+// never does this itself, so it has to happen here explicitly.
+export async function loadKatex() {
+  (window as any).katex = await import('katex');
+}
+
+export async function loadMermaid() {
+  const mermaid = await import('mermaid');
+  return mermaid.default;
+}

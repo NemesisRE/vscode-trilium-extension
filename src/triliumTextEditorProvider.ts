@@ -723,7 +723,7 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
     <meta http-equiv="Content-Security-Policy" content="
       default-src 'none';
       style-src ${webview.cspSource} 'unsafe-inline' https://cdn.jsdelivr.net;
-      script-src 'nonce-${nonce}' https://cdn.jsdelivr.net;
+      script-src 'nonce-${nonce}' ${webview.cspSource};
       font-src ${webview.cspSource} https://cdn.jsdelivr.net data:;
       img-src ${webview.cspSource} https: data: blob:;
       connect-src ${webview.cspSource} https://cdn.jsdelivr.net;
@@ -1274,7 +1274,7 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
     <div id="editor-container"></div>
 
     <script type="module" nonce="${nonce}">
-      import { TriliumEditor } from '${ckeditorUri}';
+      import { TriliumEditor, loadKatex, loadMermaid } from '${ckeditorUri}';
 
       (function() {
         const vscode = acquireVsCodeApi();
@@ -1557,25 +1557,17 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
             link: {
               defaultProtocol: 'https://'
             },
-            // Math plugin: lazy-load KaTeX library
+            // Math plugin: lazy-load KaTeX library (bundled locally, see ckeditor-build.ts)
             math: {
               engine: 'katex',
-              lazyLoad: async () => {
-                // Dynamically import KaTeX when math plugin is first used
-                const katex = await import('https://cdn.jsdelivr.net/npm/katex@0.18.9/dist/katex.mjs');
-                return katex;
-              },
+              lazyLoad: loadKatex,
               outputType: 'span',
               forceOutputType: false,
               enablePreview: true,
             },
-            // Mermaid plugin: lazy-load Mermaid library
+            // Mermaid plugin: lazy-load Mermaid library (bundled locally, see ckeditor-build.ts)
             mermaid: {
-              lazyLoad: async () => {
-                // Dynamically import Mermaid when first used
-                const mermaid = await import('https://cdn.jsdelivr.net/npm/mermaid@12.0.0/dist/mermaid.esm.min.mjs');
-                return mermaid.default;
-              },
+              lazyLoad: loadMermaid,
             },
             // Code block configuration. The custom syntax-highlighting plugin
             // maps these language names to highlight.js in the editing view.

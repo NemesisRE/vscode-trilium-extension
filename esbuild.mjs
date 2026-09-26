@@ -58,9 +58,10 @@ const extensionBuildOptions = {
 
 /** @type {import('esbuild').BuildOptions} */
 const ckeditorBuildOptions = {
-  entryPoints: ['src/ckeditor-build.ts'],
+  entryPoints: { ckeditor: 'src/ckeditor-build.ts' },
   bundle: true,
-  outfile: 'out/ckeditor/ckeditor.js',
+  outdir: 'out/ckeditor',
+  splitting: true,
   format: 'esm',
   platform: 'browser',
   sourcemap: !production,

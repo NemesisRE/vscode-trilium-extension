@@ -90,6 +90,13 @@ export function applyVendorPatches(vendorDir, logPrefix = '[patch-plugins]') {
 
   // ckeditor5-math: renderMathJax3 leaves behind previous renders if called multiple times,
   // causing duplicate equations. We need to clear all children before appending the new render.
+  // Also: once katex's own package types are reachable in this program (see loadKatex() in
+  // ckeditor-build.ts), TS2686 flags the bare `katex` identifier here as a UMD global used from
+  // a module without an import - switch to `window.katex`, matching the guard just above it,
+  // which resolves the same way without triggering that restriction. And: the constructed options
+  // object is built against this vendor's own (looser) local KatexOptions shape, which no longer
+  // matches katex's own (stricter) KatexOptions once render()'s type comes from the real package -
+  // cast it, since the actual runtime values are unaffected either way.
   const mathUtilsPath = path.join(vendorDir, 'ckeditor5', 'src', 'plugins', 'math', 'utils.ts');
   if (fs.existsSync(mathUtilsPath)) {
     let src = fs.readFileSync(mathUtilsPath, 'utf8');
@@ -98,9 +105,39 @@ export function applyVendorPatches(vendorDir, logPrefix = '[patch-plugins]') {
       "if ( element.firstChild ) {\n\t\t\t\telement.removeChild( element.firstChild );\n\t\t\t}",
       "while ( element.firstChild ) {\n\t\t\t\telement.removeChild( element.firstChild );\n\t\t\t}"
     );
+    src = src.replace(
+      "if ( katex ) {\n\t\t\t\t\tkatex.render( equation, el, {\n\t\t\t\t\t\tthrowOnError: false,\n\t\t\t\t\t\tdisplayMode: display,\n\t\t\t\t\t\t...katexRenderOptions,\n\t\t\t\t\t\t...normalizeKatexMacros( katexRenderOptions )\n\t\t\t\t\t} );",
+      "if ( window.katex ) {\n\t\t\t\t\twindow.katex.render( equation, el, ( {\n\t\t\t\t\t\tthrowOnError: false,\n\t\t\t\t\t\tdisplayMode: display,\n\t\t\t\t\t\t...katexRenderOptions,\n\t\t\t\t\t\t...normalizeKatexMacros( katexRenderOptions )\n\t\t\t\t\t} ) as Parameters<typeof window.katex.render>[ 2 ] );"
+    );
     if (src !== before) {
       fs.writeFileSync(mathUtilsPath, src, 'utf8');
       console.log(`${logPrefix} patched ckeditor5/src/plugins/math/utils.ts`);
+    }
+  }
+
+  // ckeditor5-math: this file's own `declare global { var katex: ...; }` (with a
+  // hand-written minimal Katex interface) exists for when katex is loaded as a
+  // runtime global. We statically import the real katex package elsewhere in
+  // this build (see ckeditor-build.ts's loadKatex()), and katex's own .d.ts
+  // already declares the same global via `export as namespace katex;`, so
+  // once both are reachable in the same compile they collide as a duplicate
+  // identifier. Drop the vendor's now-redundant copy; katex's own (more
+  // accurate) global declaration covers utils.ts's `katex` reference instead.
+  const mathTypingsPath = path.join(vendorDir, 'ckeditor5', 'src', 'plugins', 'math', 'typings_external.ts');
+  if (fs.existsSync(mathTypingsPath)) {
+    let src = fs.readFileSync(mathTypingsPath, 'utf8');
+    const before = src;
+    src = src.replace(
+      "export interface Katex {\n\trender( equation: string, el: HTMLElement, options: KatexOptions ): void;\n}\n\n",
+      "",
+    );
+    src = src.replace(
+      "\t// eslint-disable-next-line no-var\n\tvar katex: undefined | Katex;\n",
+      "",
+    );
+    if (src !== before) {
+      fs.writeFileSync(mathTypingsPath, src, 'utf8');
+      console.log(`${logPrefix} patched ckeditor5/src/plugins/math/typings_external.ts`);
     }
   }
 
