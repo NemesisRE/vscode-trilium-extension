@@ -3143,7 +3143,7 @@ async function runConnectWizard(
     ignoreFocusOut: true,
     validateInput: (v) => {
       try {
-        new globalThis.URL(v);
+        new globalThis.URL(v.trim());
         return null;
       } catch {
         return 'Enter a valid URL (e.g. http://localhost:8080)';
@@ -3159,27 +3159,39 @@ async function runConnectWizard(
     password: true,
     ignoreFocusOut: true,
     placeHolder: 'Paste your ETAPI token here',
+    validateInput: (v) => {
+      const invalidCharIndex = [...v.trim()].findIndex((ch) => ch.codePointAt(0)! > 255);
+      if (invalidCharIndex !== -1) {
+        return 'Token contains a character HTTP headers can\'t carry (e.g. a "smart quote" or em dash from a copy-paste auto-correction). Copy it fresh from Trilium\'s Options → ETAPI page.';
+      }
+      return null;
+    },
   });
   if (!token) {
     return;
   }
 
   // Validate the credentials before storing them.
-  const client = new EtapiClient(serverUrl, token);
+  const trimmedUrl = serverUrl.trim();
+  const trimmedToken = token.trim();
+  const client = new EtapiClient(trimmedUrl, trimmedToken);
   try {
     const info = await client.getAppInfo();
     await vscode.workspace
       .getConfiguration('trilium')
-      .update('serverUrl', serverUrl, vscode.ConfigurationTarget.Global);
-    await storeToken(secrets, token);
+      .update('serverUrl', trimmedUrl, vscode.ConfigurationTarget.Global);
+    await storeToken(secrets, trimmedToken);
     treeProvider.setClient(client);
     void vscode.window.showInformationMessage(
-      `Trilium: Connected to ${serverUrl} (v${info.appVersion}).`,
+      `Trilium: Connected to ${trimmedUrl} (v${info.appVersion}).`,
     );
     return info;
   } catch (err) {
+    const detail = err instanceof TypeError && /ByteString/.test(err.message)
+      ? 'the token or URL contains a character HTTP headers can\'t carry (e.g. a "smart quote" or em dash from a copy-paste auto-correction) - copy it fresh from Trilium\'s Options → ETAPI page'
+      : String(err);
     void vscode.window.showErrorMessage(
-      `Trilium: Could not connect — check URL and token. ${err}`,
+      `Trilium: Could not connect — check URL and token. ${detail}`,
     );
     return undefined;
   }
