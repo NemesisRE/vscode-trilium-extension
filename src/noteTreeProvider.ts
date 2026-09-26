@@ -228,6 +228,13 @@ function themedBoxiconSvg(svg: string, color: string): string {
     .replace(/\sstroke="(?!none\b)[^"]*"/gi, ` stroke="${color}"`);
 }
 
+// NoteItem construction is synchronous (VS Code's TreeItem API expects iconPath
+// to be set at construction time), so this stays a sync function - but memoize
+// per (sourcePath, color) so the disk I/O below only ever runs once per unique
+// icon/color pair instead of on every tree render/expansion.
+const themedBoxiconUriCache = new Map<string, vscode.Uri | undefined>();
+let themedBoxiconsCacheDirEnsured = false;
+
 function boxiconToThemedSvgUri(
   iconClass: string,
   boxiconsSvgRoot: string | undefined,
@@ -243,13 +250,22 @@ function boxiconToThemedSvgUri(
   }
 
   const sourcePath = path.join(boxiconsSvgRoot, parsed.style, parsed.fileName);
+  const key = `${sourcePath}|${color}`;
+  const cached = themedBoxiconUriCache.get(key);
+  if (cached !== undefined || themedBoxiconUriCache.has(key)) {
+    return cached;
+  }
+
   if (!fs.existsSync(sourcePath)) {
+    themedBoxiconUriCache.set(key, undefined);
     return undefined;
   }
 
-  fs.mkdirSync(THEMED_BOXICONS_CACHE_DIR, { recursive: true });
+  if (!themedBoxiconsCacheDirEnsured) {
+    fs.mkdirSync(THEMED_BOXICONS_CACHE_DIR, { recursive: true });
+    themedBoxiconsCacheDirEnsured = true;
+  }
 
-  const key = `${sourcePath}|${color}`;
   const digest = createHash('sha1').update(key).digest('hex').slice(0, 10);
   const targetFile = `${parsed.fileName.replace(/\.svg$/i, '')}-${digest}.svg`;
   const targetPath = path.join(THEMED_BOXICONS_CACHE_DIR, targetFile);
@@ -259,7 +275,9 @@ function boxiconToThemedSvgUri(
     fs.writeFileSync(targetPath, themedBoxiconSvg(rawSvg, color), 'utf8');
   }
 
-  return vscode.Uri.file(targetPath);
+  const uri = vscode.Uri.file(targetPath);
+  themedBoxiconUriCache.set(key, uri);
+  return uri;
 }
 
 /** Parse Trilium #iconClass values like "bx bx-home" / "bx bxs-lock" / "bx bxl-github". */
@@ -658,7 +676,14 @@ export class NoteTreeProvider implements vscode.TreeDataProvider<NoteItem>, vsco
 
   refreshItem(item: NoteItem): void {
     this.noteCache.delete(item.note.noteId);
-    this.branchCache.clear();
+    if (item.branchId) {
+      this.branchCache.delete(item.branchId);
+    }
+    // Reordering children changes their branches' notePosition, so drop those
+    // cached branch entries too rather than only this note's own branch.
+    for (const childBranchId of item.note.childBranchIds) {
+      this.branchCache.delete(childBranchId);
+    }
     this.knownItemsByNoteId.set(item.note.noteId, {
       path: item.path,
       branchId: item.branchId,
@@ -673,7 +698,21 @@ export class NoteTreeProvider implements vscode.TreeDataProvider<NoteItem>, vsco
     }
 
     this.noteCache.delete(noteId);
-    this.branchCache.clear();
+    const staleBranchId = this.knownItemsByNoteId.get(noteId)?.branchId;
+    if (staleBranchId) {
+      this.branchCache.delete(staleBranchId);
+    }
+    try {
+      // Reordering children changes their branches' notePosition, so drop
+      // those cached branch entries too rather than only this note's own branch.
+      const refreshedNote = await this.getNoteCached(noteId);
+      for (const childBranchId of refreshedNote.childBranchIds) {
+        this.branchCache.delete(childBranchId);
+      }
+    } catch {
+      // Note may no longer exist; fall through to the lookup below, which
+      // already handles that case.
+    }
 
     const known = this.knownItemsByNoteId.get(noteId);
     if (known) {

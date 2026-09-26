@@ -112,6 +112,8 @@ export class EtapiError extends Error {
   }
 }
 
+const REQUEST_TIMEOUT_MS = 30_000;
+
 export class EtapiClient {
   constructor(
     private readonly serverUrl: string,
@@ -125,10 +127,26 @@ export class EtapiClient {
   getServerUrl(): string { return this.serverUrl; }
   getToken(): string { return this.token; }
 
+  /** fetch() with a shared request timeout, so an unresponsive server can't hang forever. */
+  private async fetchWithTimeout(url: string, init: RequestInit = {}): Promise<Response> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    try {
+      return await fetch(url, { ...init, signal: controller.signal });
+    } catch (error) {
+      if (controller.signal.aborted) {
+        throw new EtapiError(`Request to ${url} timed out after ${REQUEST_TIMEOUT_MS}ms`, 0);
+      }
+      throw error;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   /** Fetch any URL relative to the server root with auth headers (no ETAPI prefix). */
   async fetchRaw(relativeUrl: string): Promise<{ buffer: ArrayBuffer; contentType: string }> {
     const url = `${this.serverUrl.replace(/\/$/, '')}/${relativeUrl.replace(/^\//, '')}`;
-    const response = await fetch(url, { headers: this.authHeaders() });
+    const response = await this.fetchWithTimeout(url, { headers: this.authHeaders() });
     if (!response.ok) {
       throw new EtapiError(
         `GET ${relativeUrl} failed with status ${response.status}`,
@@ -154,7 +172,7 @@ export class EtapiClient {
       ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
     };
 
-    const response = await fetch(`${this.baseUrl()}${path}`, {
+    const response = await this.fetchWithTimeout(`${this.baseUrl()}${path}`, {
       method,
       headers,
       body: body !== undefined ? JSON.stringify(body) : undefined,
@@ -180,11 +198,11 @@ export class EtapiClient {
   }
 
   async getNote(noteId: string): Promise<Note> {
-    return this.jsonRequest<Note>('GET', `/notes/${noteId}`);
+    return this.jsonRequest<Note>('GET', `/notes/${encodeURIComponent(noteId)}`);
   }
 
   async patchNote(noteId: string, patch: Partial<Pick<Note, 'title' | 'type' | 'mime'>>): Promise<Note> {
-    return this.jsonRequest<Note>('PATCH', `/notes/${noteId}`, patch);
+    return this.jsonRequest<Note>('PATCH', `/notes/${encodeURIComponent(noteId)}`, patch);
   }
 
   async createNote(
@@ -204,7 +222,7 @@ export class EtapiClient {
   }
 
   async getNoteContent(noteId: string): Promise<string> {
-    const response = await fetch(`${this.baseUrl()}/notes/${noteId}/content`, {
+    const response = await this.fetchWithTimeout(`${this.baseUrl()}/notes/${encodeURIComponent(noteId)}/content`, {
       headers: this.authHeaders(),
     });
 
@@ -220,7 +238,7 @@ export class EtapiClient {
   }
 
   async getNoteContentBuffer(noteId: string): Promise<ArrayBuffer> {
-    const response = await fetch(`${this.baseUrl()}/notes/${noteId}/content`, {
+    const response = await this.fetchWithTimeout(`${this.baseUrl()}/notes/${encodeURIComponent(noteId)}/content`, {
       headers: this.authHeaders(),
     });
 
@@ -236,11 +254,11 @@ export class EtapiClient {
   }
 
   async getDayNote(date: string): Promise<Note> {
-    return this.jsonRequest<Note>('GET', `/calendar/days/${date}`);
+    return this.jsonRequest<Note>('GET', `/calendar/days/${encodeURIComponent(date)}`);
   }
 
   async putNoteContent(noteId: string, content: string): Promise<void> {
-    const response = await fetch(`${this.baseUrl()}/notes/${noteId}/content`, {
+    const response = await this.fetchWithTimeout(`${this.baseUrl()}/notes/${encodeURIComponent(noteId)}/content`, {
       method: 'PUT',
       headers: {
         ...this.authHeaders(),
@@ -259,11 +277,11 @@ export class EtapiClient {
   }
 
   async deleteNote(noteId: string): Promise<void> {
-    return this.jsonRequest<void>('DELETE', `/notes/${noteId}`);
+    return this.jsonRequest<void>('DELETE', `/notes/${encodeURIComponent(noteId)}`);
   }
 
   async getAttribute(attributeId: string): Promise<Attribute> {
-    return this.jsonRequest<Attribute>('GET', `/attributes/${attributeId}`);
+    return this.jsonRequest<Attribute>('GET', `/attributes/${encodeURIComponent(attributeId)}`);
   }
 
   async createAttribute(
@@ -279,11 +297,11 @@ export class EtapiClient {
   }
 
   async patchAttribute(attributeId: string, patch: Partial<Pick<Attribute, 'value' | 'isInheritable'>>): Promise<Attribute> {
-    return this.jsonRequest<Attribute>('PATCH', `/attributes/${attributeId}`, patch);
+    return this.jsonRequest<Attribute>('PATCH', `/attributes/${encodeURIComponent(attributeId)}`, patch);
   }
 
   async deleteAttribute(attributeId: string): Promise<void> {
-    return this.jsonRequest<void>('DELETE', `/attributes/${attributeId}`);
+    return this.jsonRequest<void>('DELETE', `/attributes/${encodeURIComponent(attributeId)}`);
   }
 
   async searchNotes(
@@ -308,19 +326,19 @@ export class EtapiClient {
   }
 
   async getInboxNote(date: string): Promise<Note> {
-    return this.jsonRequest<Note>('GET', `/inbox/${date}`);
+    return this.jsonRequest<Note>('GET', `/inbox/${encodeURIComponent(date)}`);
   }
 
   async getWeekNote(week: string): Promise<Note> {
-    return this.jsonRequest<Note>('GET', `/calendar/weeks/${week}`);
+    return this.jsonRequest<Note>('GET', `/calendar/weeks/${encodeURIComponent(week)}`);
   }
 
   async getMonthNote(month: string): Promise<Note> {
-    return this.jsonRequest<Note>('GET', `/calendar/months/${month}`);
+    return this.jsonRequest<Note>('GET', `/calendar/months/${encodeURIComponent(month)}`);
   }
 
   async getYearNote(year: string): Promise<Note> {
-    return this.jsonRequest<Note>('GET', `/calendar/years/${year}`);
+    return this.jsonRequest<Note>('GET', `/calendar/years/${encodeURIComponent(year)}`);
   }
 
   // ---------------------------------------------------------------------------
@@ -328,11 +346,11 @@ export class EtapiClient {
   // ---------------------------------------------------------------------------
 
   async getNoteRevisions(noteId: string): Promise<Revision[]> {
-    return this.jsonRequest<Revision[]>('GET', `/notes/${noteId}/revisions`);
+    return this.jsonRequest<Revision[]>('GET', `/notes/${encodeURIComponent(noteId)}/revisions`);
   }
 
   async getRevisionContent(revisionId: string): Promise<string> {
-    const response = await fetch(`${this.baseUrl()}/revisions/${revisionId}/content`, {
+    const response = await this.fetchWithTimeout(`${this.baseUrl()}/revisions/${encodeURIComponent(revisionId)}/content`, {
       headers: this.authHeaders(),
     });
     if (!response.ok) {
@@ -361,19 +379,19 @@ export class EtapiClient {
     branchId: string,
     patch: Partial<Pick<Branch, 'notePosition' | 'prefix' | 'isExpanded'>>,
   ): Promise<Branch> {
-    return this.jsonRequest<Branch>('PATCH', `/branches/${branchId}`, patch);
+    return this.jsonRequest<Branch>('PATCH', `/branches/${encodeURIComponent(branchId)}`, patch);
   }
 
   async getBranch(branchId: string): Promise<Branch> {
-    return this.jsonRequest<Branch>('GET', `/branches/${branchId}`);
+    return this.jsonRequest<Branch>('GET', `/branches/${encodeURIComponent(branchId)}`);
   }
 
   async deleteBranch(branchId: string): Promise<void> {
-    return this.jsonRequest<void>('DELETE', `/branches/${branchId}`);
+    return this.jsonRequest<void>('DELETE', `/branches/${encodeURIComponent(branchId)}`);
   }
 
   async refreshNoteOrdering(parentNoteId: string): Promise<void> {
-    return this.jsonRequest<void>('POST', `/refresh-note-ordering/${parentNoteId}`);
+    return this.jsonRequest<void>('POST', `/refresh-note-ordering/${encodeURIComponent(parentNoteId)}`);
   }
 
   // ---------------------------------------------------------------------------
@@ -381,11 +399,11 @@ export class EtapiClient {
   // ---------------------------------------------------------------------------
 
   async getNoteAttachments(noteId: string): Promise<Attachment[]> {
-    return this.jsonRequest<Attachment[]>('GET', `/notes/${noteId}/attachments`);
+    return this.jsonRequest<Attachment[]>('GET', `/notes/${encodeURIComponent(noteId)}/attachments`);
   }
 
   async getAttachmentContent(attachmentId: string): Promise<ArrayBuffer> {
-    const response = await fetch(`${this.baseUrl()}/attachments/${attachmentId}/content`, {
+    const response = await this.fetchWithTimeout(`${this.baseUrl()}/attachments/${encodeURIComponent(attachmentId)}/content`, {
       headers: this.authHeaders(),
     });
     if (!response.ok) {
@@ -411,12 +429,12 @@ export class EtapiClient {
   }
 
   async deleteAttachment(attachmentId: string): Promise<void> {
-    return this.jsonRequest<void>('DELETE', `/attachments/${attachmentId}`);
+    return this.jsonRequest<void>('DELETE', `/attachments/${encodeURIComponent(attachmentId)}`);
   }
 
   async putAttachmentContentBinary(attachmentId: string, content: Uint8Array): Promise<void> {
     const body = EtapiClient.toArrayBuffer(content);
-    const response = await fetch(`${this.baseUrl()}/attachments/${attachmentId}/content`, {
+    const response = await this.fetchWithTimeout(`${this.baseUrl()}/attachments/${encodeURIComponent(attachmentId)}/content`, {
       method: 'PUT',
       headers: {
         ...this.authHeaders(),
@@ -440,8 +458,8 @@ export class EtapiClient {
   // ---------------------------------------------------------------------------
 
   async exportNoteSubtree(noteId: string, format: 'html' | 'markdown'): Promise<ArrayBuffer> {
-    const response = await fetch(
-      `${this.baseUrl()}/notes/${noteId}/export?format=${format}`,
+    const response = await this.fetchWithTimeout(
+      `${this.baseUrl()}/notes/${encodeURIComponent(noteId)}/export?format=${format}`,
       { headers: this.authHeaders() },
     );
     if (!response.ok) {
