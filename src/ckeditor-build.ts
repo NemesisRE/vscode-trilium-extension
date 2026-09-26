@@ -75,6 +75,7 @@ import Math from '../vendor/ckeditor5/src/plugins/math/math';
 import Mermaid from '../vendor/ckeditor5/src/plugins/mermaid/mermaid';
 import Collapsible from '../vendor/ckeditor5/src/plugins/collapsible/collapsible';
 import InlineIcon from '../vendor/ckeditor5/src/plugins/inline_icon/inline_icon';
+import InternalLink from './ckeditor/internalLink';
 import { SyntaxHighlighting } from './ckeditor/syntaxHighlighting';
 import TodoListMultistate from '../vendor/ckeditor5/src/plugins/todo_list_multistate/todo_list_multistate';
 import TodoListUncheckOnEnter from '../vendor/ckeditor5/src/plugins/todo_list_uncheck_on_enter';
@@ -187,6 +188,7 @@ export class TriliumEditor extends ClassicEditor {
     Math,
     Mermaid,
     InlineIcon,
+    InternalLink,
   ];
 
   public static override defaultConfig = {
@@ -214,6 +216,7 @@ export class TriliumEditor extends ClassicEditor {
         'taskStateCycle',
         '|',
         'link',
+        'internalLink',
         'insertImage',
         'insertTable',
         'mediaEmbed',

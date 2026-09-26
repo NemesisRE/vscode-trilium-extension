@@ -2,7 +2,7 @@ import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { EtapiClient } from './etapiClient';
+import { EtapiClient, Note } from './etapiClient';
 import { getBundledBoxiconsSvgRoot, listBundledBoxiconClasses } from './noteTreeProvider';
 import { getEditorFontSize, getEditorHighlightTheme, getEditorSpellcheck } from './settings';
 import { boxiconSvgRelativePath, mergeTaskStates, svgToCssUrl, taskStateCssIdentifier } from './taskStateIcons';
@@ -360,6 +360,13 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
           });
           break;
         }
+        case 'showNotePicker': {
+          const { id: notePickId } = message as { type: string; id: string };
+          void this.showNotePickerQuickPick().then(note => {
+            void webviewPanel.webview.postMessage({ type: 'notePickerResult', id: notePickId, note });
+          });
+          break;
+        }
         case 'uploadImage': {
           const { id: uploadId, filename, mime: uploadMime, dataBase64 } = message as {
             type: string; id: string; filename: string; mime: string; dataBase64: string;
@@ -540,6 +547,65 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
     });
 
     return pick?.iconClass;
+  }
+
+  /**
+   * Trilium's own internal-link picker opens through its app-level note-picker dialog,
+   * which has no equivalent here. Reuses the same debounced-search QuickPick pattern as
+   * the "Search Notes..." command instead.
+   */
+  private async showNotePickerQuickPick(): Promise<{ href: string; title: string } | undefined> {
+    const client = this.getClient();
+    if (!client) {
+      return undefined;
+    }
+
+    interface NoteSearchItem extends vscode.QuickPickItem { note: Note; }
+
+    return new Promise((resolve) => {
+      const qp = vscode.window.createQuickPick<NoteSearchItem>();
+      qp.title = 'Insert Internal Link';
+      qp.placeholder = 'Type to search notes…';
+      qp.matchOnDescription = true;
+
+      let debounceTimer: ReturnType<typeof setTimeout> | undefined;
+      let settled = false;
+
+      qp.onDidChangeValue((query) => {
+        if (debounceTimer) { clearTimeout(debounceTimer); }
+        if (!query.trim()) { qp.items = []; return; }
+        qp.busy = true;
+        debounceTimer = setTimeout(async () => {
+          try {
+            const { results } = await client.searchNotes(query, { limit: 50 });
+            qp.items = results.map((note) => ({
+              label: note.title,
+              description: note.type,
+              note,
+            }));
+          } catch {
+            qp.items = [];
+          } finally {
+            qp.busy = false;
+          }
+        }, 300);
+      });
+
+      qp.onDidAccept(() => {
+        const [item] = qp.selectedItems;
+        settled = true;
+        qp.hide();
+        resolve(item ? { href: `#${item.note.noteId}`, title: item.note.title } : undefined);
+      });
+
+      qp.onDidHide(() => {
+        if (debounceTimer) { clearTimeout(debounceTimer); }
+        if (!settled) { resolve(undefined); }
+        qp.dispose();
+      });
+
+      qp.show();
+    });
   }
 
   private async fetchImageDataUri(relativeUrl: string): Promise<string> {
@@ -1317,6 +1383,7 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
         const pendingUploads = new Map();
         const uploadedImageUrlByDataUri = new Map();
         const pendingIconPicks = new Map();
+        const pendingNotePicks = new Map();
 
         const triliumToLocalLanguageMap = {
           'text-plain': 'plaintext',
@@ -1527,6 +1594,7 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
                 'todoList',
                 '|',
                 'link',
+                'internalLink',
                 'insertImage',
                 'insertTable',
                 'mediaEmbed',
@@ -1610,6 +1678,23 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
                 pendingIconPicks.set(id, resolve);
                 vscode.postMessage({ type: 'showIconPicker', id });
               }),
+            },
+            // Internal link plugin: the note picker is a VS Code QuickPick (same debounced
+            // search as the "Search Notes..." command), shown by the extension host.
+            internalLink: {
+              pickNote: () => new Promise((resolve) => {
+                const id = Math.random().toString(36).slice(2);
+                pendingNotePicks.set(id, resolve);
+                vscode.postMessage({ type: 'showNotePicker', id });
+              }),
+            },
+            referenceLink: {
+              openNote: (href) => {
+                const noteId = href.replace(/^#/, '').split('/').pop();
+                if (noteId) {
+                  vscode.postMessage({ type: 'openBreadcrumbNote', noteId });
+                }
+              },
             },
             // Code block configuration. The custom syntax-highlighting plugin
             // maps these language names to highlight.js in the editing view.
@@ -1830,6 +1915,12 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
               const resolve = pendingIconPicks.get(message.id);
               pendingIconPicks.delete(message.id);
               resolve?.(message.iconClass);
+              break;
+            }
+            case 'notePickerResult': {
+              const resolve = pendingNotePicks.get(message.id);
+              pendingNotePicks.delete(message.id);
+              resolve?.(message.note);
               break;
             }
             case 'imageUploadResult': {
