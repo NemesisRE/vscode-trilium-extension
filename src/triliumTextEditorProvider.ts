@@ -1854,23 +1854,22 @@ function renderTaskStateCss(states: EditorTaskStateDef[]): string {
     const name = cssString(state.name);
     const identifier = taskStateCssIdentifier(state.name);
     const color = sanitizeCssColor(state.color);
-
-    const border = color ?? 'var(--vscode-checkbox-border, var(--vscode-input-border, #c5c5c5))';
-    const background = color ? withAlpha(color, 0.16) : 'var(--vscode-checkbox-background, var(--vscode-input-background, #2d2d30))';
     const text = color ?? 'var(--vscode-input-foreground, currentColor)';
 
     rules.push(`.ck.ck-balloon-panel .ck.ck-toolbar.task-state-toolbar .ck-button.ck-task-state-button-${identifier} { color: ${text}; }`);
-    // Scoped to the item's own label: the list model is flat, so a descendant selector would
-    // leak a parent's state onto nested items.
-    rules.push(`.ck-content li[data-trilium-task-state="${name}"] > .todo-list__label > input[type='checkbox'], .ck-content li[data-trilium-task-state="${name}"] > .todo-list__label > span[contenteditable=false] > input[type='checkbox'] { border-color: ${border} !important; background: ${background} !important; }`);
 
+    // Sets the custom properties trilium-parity.css's checkbox ::before/::after read -
+    // scoped to the item's own label, since the list model is flat and a descendant
+    // selector would otherwise leak a parent's state onto nested items.
+    const declarations = [`--_task-checkbox-background: ${color ?? 'var(--vscode-charts-orange, orange)'};`];
     if (state.iconSvg) {
-      // Mirrors Trilium, which paints the state glyph inside the checkbox. Rendered as a mask so
-      // the glyph takes the state colour, and as a pseudo-element so no node is injected into
-      // CKEditor's editing DOM.
-      const mask = svgToCssUrl(state.iconSvg);
-      rules.push(`.ck-content li[data-trilium-task-state="${name}"] > .todo-list__label::before { content: ''; position: absolute; left: -24px; top: 3px; width: 14px; height: 14px; pointer-events: none; z-index: 1; background-color: ${text}; -webkit-mask: ${mask} center / contain no-repeat; mask: ${mask} center / contain no-repeat; }`);
+      // Mirrors Trilium, which paints the state glyph inside the checkbox itself. Rendered
+      // as a mask (rather than injecting an <img>/<svg> node) so it can take a solid color
+      // and stay out of CKEditor's editing DOM.
+      declarations.push(`--task-state-glyph-mask: ${svgToCssUrl(state.iconSvg)};`);
+      declarations.push('--task-state-glyph-opacity: 1;');
     }
+    rules.push(`.ck-content li[data-trilium-task-state="${name}"] > .todo-list__label > input[type='checkbox'], .ck-content li[data-trilium-task-state="${name}"] > .todo-list__label > span[contenteditable=false] > input[type='checkbox'] { ${declarations.join(' ')} }`);
   }
 
   return rules.join('\n');
@@ -1902,20 +1901,3 @@ function sanitizeCssColor(value: string | undefined): string | undefined {
   return undefined;
 }
 
-function withAlpha(color: string, alpha: number): string {
-  if (color.startsWith('#')) {
-    const hex = color.slice(1);
-    const normalized = hex.length === 3
-      ? hex.split('').map((c) => c + c).join('')
-      : hex;
-
-    if (/^[0-9a-f]{6}$/i.test(normalized)) {
-      const r = parseInt(normalized.slice(0, 2), 16);
-      const g = parseInt(normalized.slice(2, 4), 16);
-      const b = parseInt(normalized.slice(4, 6), 16);
-      return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-    }
-  }
-
-  return color;
-}

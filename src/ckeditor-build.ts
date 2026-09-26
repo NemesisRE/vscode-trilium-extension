@@ -89,6 +89,7 @@ import '../vendor/ckeditor5/src/theme/math_form.css';
 import 'katex/dist/katex.css';
 import '../vendor/ckeditor5/src/theme/mermaid.css';
 import '../vendor/ckeditor5/src/theme/collapsible.css';
+import './ckeditor/trilium-parity.css';
 import 'mathlive/fonts.css';
 import 'mathlive/static.css';
 
