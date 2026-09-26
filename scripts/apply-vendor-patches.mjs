@@ -100,7 +100,7 @@ export function applyVendorPatches(vendorDir, logPrefix = '[patch-plugins]') {
     );
     if (src !== before) {
       fs.writeFileSync(mathUtilsPath, src, 'utf8');
-      console.log(`${logPrefix} patched ckeditor5-math/src/utils.ts`);
+      console.log(`${logPrefix} patched ckeditor5/src/plugins/math/utils.ts`);
     }
   }
 
@@ -121,7 +121,7 @@ export function applyVendorPatches(vendorDir, logPrefix = '[patch-plugins]') {
     );
     if (src !== before) {
       fs.writeFileSync(mermaidEditingPath, src, 'utf8');
-      console.log(`${logPrefix} patched ckeditor5-mermaid/src/mermaidediting.ts`);
+      console.log(`${logPrefix} patched ckeditor5/src/plugins/mermaid/mermaid_editing.ts`);
     }
   }
 
