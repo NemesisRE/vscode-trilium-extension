@@ -1562,7 +1562,7 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
               engine: 'katex',
               lazyLoad: async () => {
                 // Dynamically import KaTeX when math plugin is first used
-                const katex = await import('https://cdn.jsdelivr.net/npm/katex@0.16.45/dist/katex.mjs');
+                const katex = await import('https://cdn.jsdelivr.net/npm/katex@0.18.9/dist/katex.mjs');
                 return katex;
               },
               outputType: 'span',
@@ -1573,7 +1573,7 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
             mermaid: {
               lazyLoad: async () => {
                 // Dynamically import Mermaid when first used
-                const mermaid = await import('https://cdn.jsdelivr.net/npm/mermaid@11.14.0/dist/mermaid.esm.min.mjs');
+                const mermaid = await import('https://cdn.jsdelivr.net/npm/mermaid@12.0.0/dist/mermaid.esm.min.mjs');
                 return mermaid.default;
               },
             },
