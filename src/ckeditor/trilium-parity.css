@@ -16,40 +16,51 @@
  * via the same [data-trilium-task-state="..."] attribute selector Trilium uses.
  * ---------------------------------------------------------------------------- */
 
-.ck-content .todo-list li .todo-list__label input[type='checkbox'] {
+/*
+ * CKEditor's own stock todo-list CSS (.ck-editor__editable.ck-content .todo-list
+ * .todo-list__label > span[contenteditable="false"] > input) draws a plain bordered
+ * box, plus a hardcoded green background + white border-triangle checkmark for
+ * :checked - all of it at higher specificity than a bare ".ck-content ..." selector.
+ * Matching the .ck-editor__editable prefix plus !important on the actual color/glyph
+ * properties reliably wins over both the plain and the [checked] variants, rather
+ * than needing to enumerate every one of CKEditor's own selectors here.
+ */
+.ck-editor__editable.ck-content .todo-list li .todo-list__label input[type='checkbox'],
+.ck-editor__editable.ck-content .todo-list li .todo-list__label > span[contenteditable='false'] > input[type='checkbox'] {
   --_checkbox-size: 16px;
-
-  all: unset;
   position: relative;
-  display: inline-block;
-  width: var(--_checkbox-size);
-  height: var(--_checkbox-size);
-  vertical-align: middle;
-  cursor: pointer;
 }
 
-.ck-content .todo-list li .todo-list__label input[type='checkbox']::before {
-  content: '';
+.ck-editor__editable.ck-content .todo-list li .todo-list__label input[type='checkbox']::before,
+.ck-editor__editable.ck-content .todo-list li .todo-list__label > span[contenteditable='false'] > input[type='checkbox']::before {
+  content: '' !important;
+  box-sizing: border-box !important;
   position: absolute;
   inset: 0;
-  border-radius: 4px;
-  background: var(--_task-checkbox-background, var(--vscode-checkbox-border, #d5d5d5));
+  border: none !important;
+  border-radius: 4px !important;
+  background: var(--_task-checkbox-background, var(--vscode-checkbox-border, #d5d5d5)) !important;
 }
 
-.ck-content .todo-list li .todo-list__label input[type='checkbox']::after {
-  content: '';
+.ck-editor__editable.ck-content .todo-list li .todo-list__label input[type='checkbox']::after,
+.ck-editor__editable.ck-content .todo-list li .todo-list__label > span[contenteditable='false'] > input[type='checkbox']::after {
+  content: '' !important;
   position: absolute;
   inset: 12%;
-  background-color: var(--task-state-glyph-color, #fff);
-  -webkit-mask: var(--task-state-glyph-mask, none) center / contain no-repeat;
-  mask: var(--task-state-glyph-mask, none) center / contain no-repeat;
-  opacity: var(--task-state-glyph-opacity, 0);
+  border: none !important;
+  transform: none !important;
+  background-color: var(--task-state-glyph-color, #fff) !important;
+  -webkit-mask: var(--task-state-glyph-mask, none) center / contain no-repeat !important;
+  mask: var(--task-state-glyph-mask, none) center / contain no-repeat !important;
+  opacity: var(--task-state-glyph-opacity, 0) !important;
 }
 
 /* Default "done" (native checked, no custom state - or explicitly "done"): green
  * chip + checkmark, matching Trilium's own default before any custom state applies. */
-.ck-content .todo-list li:not([data-trilium-task-state]):has(> .todo-list__label input:checked) .todo-list__label input[type='checkbox'],
-.ck-content .todo-list li[data-trilium-task-state='done'] .todo-list__label input[type='checkbox'] {
+.ck-editor__editable.ck-content .todo-list li:not([data-trilium-task-state]):has(> .todo-list__label input:checked) .todo-list__label input[type='checkbox'],
+.ck-editor__editable.ck-content .todo-list li:not([data-trilium-task-state]):has(> .todo-list__label span[contenteditable='false'] > input:checked) .todo-list__label span[contenteditable='false'] > input[type='checkbox'],
+.ck-editor__editable.ck-content .todo-list li[data-trilium-task-state='done'] .todo-list__label input[type='checkbox'],
+.ck-editor__editable.ck-content .todo-list li[data-trilium-task-state='done'] .todo-list__label span[contenteditable='false'] > input[type='checkbox'] {
   --_task-checkbox-background: var(--vscode-charts-green, #2e8b57);
   --task-state-glyph-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='%23000' d='M6.2 12.1 2.6 8.5l1.1-1.1 2.5 2.5 5.7-5.7 1.1 1.1z'/%3E%3C/svg%3E");
   --task-state-glyph-opacity: 1;

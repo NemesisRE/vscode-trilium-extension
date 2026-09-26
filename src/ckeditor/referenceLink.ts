@@ -41,12 +41,13 @@ class ReferenceLinkEditing extends Plugin {
       viewToModelPositionOutsideModelElement(this.editor.model, (viewElement) => viewElement.hasClass('reference-link')),
     );
 
-    // Ctrl/Cmd+click follows the link (matches CKEditor's own Link plugin, which requires
-    // the modifier so a plain click stays safe for editing/selecting the widget). Bridged
-    // through editor config since this bundle can't call acquireVsCodeApi() itself.
+    // A click opens the note. This is a widget (isObject: true), so a plain click already
+    // just selects it rather than placing a text caret - there's no "safe editing" gesture
+    // to preserve the way there would be for a click landing in editable inline text.
+    // Bridged through editor config since this bundle can't call acquireVsCodeApi() itself.
     this.listenTo(this.editor.editing.view.document, 'click', (_evt, data) => {
       const domEvent = (data as { domEvent?: MouseEvent }).domEvent;
-      if (!domEvent || !(domEvent.ctrlKey || domEvent.metaKey)) {
+      if (!domEvent) {
         return;
       }
       for (let node = (data as { target?: ViewElement }).target; node; node = node.parent as ViewElement | undefined) {

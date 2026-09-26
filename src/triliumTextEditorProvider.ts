@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { EtapiClient, Note } from './etapiClient';
-import { getBundledBoxiconsSvgRoot, listBundledBoxiconClasses } from './noteTreeProvider';
+import { boxiconToCodeicon, getBundledBoxiconsSvgRoot, listBundledBoxiconClasses } from './noteTreeProvider';
 import { getEditorFontSize, getEditorHighlightTheme, getEditorSpellcheck } from './settings';
 import { boxiconSvgRelativePath, mergeTaskStates, svgToCssUrl, taskStateCssIdentifier } from './taskStateIcons';
 
@@ -529,16 +529,23 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
   /**
    * Trilium's own icon picker is a live-search balloon drawn by its app-level React
    * component tree, which has no equivalent here. Shows a VS Code QuickPick over the
-   * bundled boxicons instead - text search only, no glyph preview (QuickPickItem icons
-   * are limited to built-in codicons).
+   * bundled boxicons instead - text search only for most icons, since QuickPickItem
+   * has no way to render an arbitrary SVG. The ~50 boxicons with a close built-in
+   * codicon equivalent (see BOXICON_TO_CODICON in noteTreeProvider.ts, already used
+   * for the note tree's own fallback icons) get a real preview via that codicon;
+   * the rest fall back to a generic icon so every row still has one.
    */
   private async showIconPickerQuickPick(): Promise<string | undefined> {
     interface IconItem extends vscode.QuickPickItem { iconClass: string; }
 
     const icons = await listBundledBoxiconClasses(this.context.extensionPath);
     const items: IconItem[] = icons
-      .map(({ iconClass, name }) => ({ label: name, description: iconClass, iconClass }))
-      .sort((a, b) => a.label.localeCompare(b.label));
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map(({ iconClass, name }) => ({
+        label: `$(${boxiconToCodeicon(iconClass) ?? 'symbol-misc'}) ${name}`,
+        description: iconClass,
+        iconClass,
+      }));
 
     const pick = await vscode.window.showQuickPick(items, {
       title: 'Insert Icon',
@@ -1003,7 +1010,14 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
         padding: 0;
         margin: 0;
         height: 100vh;
-        overflow: hidden;
+        /* Not "overflow: hidden" - CKEditor appends its balloon panels (toolbar
+           popups shown over selected widgets, dropdowns, etc.) directly to
+           document.body, positioned via calculated coordinates that assume
+           they won't be clipped by an ancestor. #editor-container's own
+           flex:1/min-height:0 sizing already keeps normal content from
+           overflowing body, so this isn't needed as a backstop and only
+           clips balloons landing near an edge of the panel. */
+        overflow: visible;
         display: flex;
         flex-direction: column;
         --trilium-hljs-comment: var(--vscode-editorCodeLens-foreground, #6a9955);
@@ -2008,7 +2022,7 @@ function renderTaskStateCss(states: EditorTaskStateDef[]): string {
       declarations.push(`--task-state-glyph-mask: ${svgToCssUrl(state.iconSvg)};`);
       declarations.push('--task-state-glyph-opacity: 1;');
     }
-    rules.push(`.ck-content li[data-trilium-task-state="${name}"] > .todo-list__label > input[type='checkbox'], .ck-content li[data-trilium-task-state="${name}"] > .todo-list__label > span[contenteditable=false] > input[type='checkbox'] { ${declarations.join(' ')} }`);
+    rules.push(`.ck-content li[data-trilium-task-state="${name}"] .todo-list__label input[type='checkbox'] { ${declarations.join(' ')} }`);
   }
 
   return rules.join('\n');
