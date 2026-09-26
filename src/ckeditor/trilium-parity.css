@@ -220,3 +220,16 @@
 .ck-editor__editable details.trilium-collapsible:focus-within > summary > .trilium-collapsible-handle {
   opacity: 1;
 }
+
+/* ----------------------------------------------------------------------------
+ * Inline icon transforms (inline_icon plugin), ported from Trilium's own
+ * apps/client/src/stylesheets/boxicons-compat.css - not part of the boxicons
+ * package itself, so the "Transform icon" toolbar dropdown has no effect
+ * without these.
+ * ---------------------------------------------------------------------------- */
+
+.bx-rotate-90 { transform: rotate(90deg); }
+.bx-rotate-180 { transform: rotate(180deg); }
+.bx-rotate-270 { transform: rotate(270deg); }
+.bx-flip-horizontal { transform: scaleX(-1); }
+.bx-flip-vertical { transform: scaleY(-1); }

@@ -74,6 +74,7 @@ import Kbd from '../vendor/ckeditor5/src/plugins/keyboard_marker/keyboard_marker
 import Math from '../vendor/ckeditor5/src/plugins/math/math';
 import Mermaid from '../vendor/ckeditor5/src/plugins/mermaid/mermaid';
 import Collapsible from '../vendor/ckeditor5/src/plugins/collapsible/collapsible';
+import InlineIcon from '../vendor/ckeditor5/src/plugins/inline_icon/inline_icon';
 import { SyntaxHighlighting } from './ckeditor/syntaxHighlighting';
 import TodoListMultistate from '../vendor/ckeditor5/src/plugins/todo_list_multistate/todo_list_multistate';
 import TodoListUncheckOnEnter from '../vendor/ckeditor5/src/plugins/todo_list_uncheck_on_enter';
@@ -185,6 +186,7 @@ export class TriliumEditor extends ClassicEditor {
     Kbd,
     Math,
     Mermaid,
+    InlineIcon,
   ];
 
   public static override defaultConfig = {
@@ -224,6 +226,7 @@ export class TriliumEditor extends ClassicEditor {
         'admonition',
         'collapsible',
         'footnote',
+        'insertIcon',
         '|',
         'specialCharacters',
         'highlight',

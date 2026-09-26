@@ -180,6 +180,33 @@ export function getBundledBoxiconsSvgRoot(extensionPath: string): string {
   return path.join(extensionPath, BOXICONS_SVG_RELATIVE_ROOT);
 }
 
+/** Every bundled boxicon, as the "bx bx-<name>" class the inline-icon plugin expects. */
+export async function listBundledBoxiconClasses(
+  extensionPath: string,
+): Promise<Array<{ iconClass: string; name: string }>> {
+  const root = getBundledBoxiconsSvgRoot(extensionPath);
+  const styleDirs: BoxiconStyle[] = ['regular', 'solid', 'logos'];
+  const results: Array<{ iconClass: string; name: string }> = [];
+
+  for (const style of styleDirs) {
+    let files: string[];
+    try {
+      files = await fs.promises.readdir(path.join(root, style));
+    } catch {
+      continue;
+    }
+    for (const file of files) {
+      const m = /^(bx|bxs|bxl)-([a-z0-9-]+)\.svg$/i.exec(file);
+      if (!m) {
+        continue;
+      }
+      results.push({ iconClass: `bx ${m[1]}-${m[2]}`, name: m[2] });
+    }
+  }
+
+  return results;
+}
+
 function defaultThemeIconColor(kind: vscode.ColorThemeKind): string {
   switch (kind) {
     case vscode.ColorThemeKind.Light:

@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { EtapiClient } from './etapiClient';
-import { getBundledBoxiconsSvgRoot } from './noteTreeProvider';
+import { getBundledBoxiconsSvgRoot, listBundledBoxiconClasses } from './noteTreeProvider';
 import { getEditorFontSize, getEditorHighlightTheme, getEditorSpellcheck } from './settings';
 import { boxiconSvgRelativePath, mergeTaskStates, svgToCssUrl, taskStateCssIdentifier } from './taskStateIcons';
 
@@ -353,6 +353,13 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
           });
           break;
         }
+        case 'showIconPicker': {
+          const { id: pickId } = message as { type: string; id: string };
+          void this.showIconPickerQuickPick().then(iconClass => {
+            void webviewPanel.webview.postMessage({ type: 'iconPickerResult', id: pickId, iconClass });
+          });
+          break;
+        }
         case 'uploadImage': {
           const { id: uploadId, filename, mime: uploadMime, dataBase64 } = message as {
             type: string; id: string; filename: string; mime: string; dataBase64: string;
@@ -510,6 +517,29 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
     }
 
     return `${lines.join('\n')}\n`;
+  }
+
+  /**
+   * Trilium's own icon picker is a live-search balloon drawn by its app-level React
+   * component tree, which has no equivalent here. Shows a VS Code QuickPick over the
+   * bundled boxicons instead - text search only, no glyph preview (QuickPickItem icons
+   * are limited to built-in codicons).
+   */
+  private async showIconPickerQuickPick(): Promise<string | undefined> {
+    interface IconItem extends vscode.QuickPickItem { iconClass: string; }
+
+    const icons = await listBundledBoxiconClasses(this.context.extensionPath);
+    const items: IconItem[] = icons
+      .map(({ iconClass, name }) => ({ label: name, description: iconClass, iconClass }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+
+    const pick = await vscode.window.showQuickPick(items, {
+      title: 'Insert Icon',
+      placeHolder: 'Type to search icons…',
+      matchOnDescription: true,
+    });
+
+    return pick?.iconClass;
   }
 
   private async fetchImageDataUri(relativeUrl: string): Promise<string> {
@@ -1286,6 +1316,7 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
         const pendingImageFetches = new Map();
         const pendingUploads = new Map();
         const uploadedImageUrlByDataUri = new Map();
+        const pendingIconPicks = new Map();
 
         const triliumToLocalLanguageMap = {
           'text-plain': 'plaintext',
@@ -1506,7 +1537,9 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
                 'math',
                 'mermaid',
                 'admonition',
+                'collapsible',
                 'footnote',
+                'insertIcon',
                 '|',
                 'specialCharacters',
                 'highlight',
@@ -1568,6 +1601,15 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
             // Mermaid plugin: lazy-load Mermaid library (bundled locally, see ckeditor-build.ts)
             mermaid: {
               lazyLoad: loadMermaid,
+            },
+            // Inline icon plugin: the picker itself is a VS Code QuickPick, shown by the
+            // extension host (see the 'showIconPicker' message handler below).
+            inlineIcon: {
+              showPicker: () => new Promise((resolve) => {
+                const id = Math.random().toString(36).slice(2);
+                pendingIconPicks.set(id, resolve);
+                vscode.postMessage({ type: 'showIconPicker', id });
+              }),
             },
             // Code block configuration. The custom syntax-highlighting plugin
             // maps these language names to highlight.js in the editing view.
@@ -1782,6 +1824,12 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
               const img = pendingImageFetches.get(message.id);
               pendingImageFetches.delete(message.id);
               if (img && message.dataUri) { img.src = message.dataUri; }
+              break;
+            }
+            case 'iconPickerResult': {
+              const resolve = pendingIconPicks.get(message.id);
+              pendingIconPicks.delete(message.id);
+              resolve?.(message.iconClass);
               break;
             }
             case 'imageUploadResult': {

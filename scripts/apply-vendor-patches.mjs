@@ -162,6 +162,41 @@ export function applyVendorPatches(vendorDir, logPrefix = '[patch-plugins]') {
     }
   }
 
+  // ckeditor5-inline_icon: both files import the upstream InlineIconUI, whose picker is
+  // rendered by Trilium's own app-level React component tree
+  // (glob.getComponentByEl(editorEl).showIconPicker(...)), which does not exist in this
+  // standalone extension. Redirect both imports to our own InlineIconUI
+  // (src/ckeditor/inlineIconUi.ts), which calls an editor-config callback wired to a VS
+  // Code QuickPick instead. inline_icon_editing.ts has no such dependency and is used
+  // unmodified.
+  const inlineIconPath = path.join(vendorDir, 'ckeditor5', 'src', 'plugins', 'inline_icon', 'inline_icon.ts');
+  if (fs.existsSync(inlineIconPath)) {
+    let src = fs.readFileSync(inlineIconPath, 'utf8');
+    const before = src;
+    src = src.replace(
+      'import InlineIconUI from "./inline_icon_ui.js";',
+      'import InlineIconUI from "../../../../../src/ckeditor/inlineIconUi.js";',
+    );
+    if (src !== before) {
+      fs.writeFileSync(inlineIconPath, src, 'utf8');
+      console.log(`${logPrefix} patched ckeditor5/src/plugins/inline_icon/inline_icon.ts`);
+    }
+  }
+
+  const inlineIconToolbarPath = path.join(vendorDir, 'ckeditor5', 'src', 'plugins', 'inline_icon', 'inline_icon_toolbar.ts');
+  if (fs.existsSync(inlineIconToolbarPath)) {
+    let src = fs.readFileSync(inlineIconToolbarPath, 'utf8');
+    const before = src;
+    src = src.replace(
+      'import InlineIconUI, { CHANGE_ICON } from "./inline_icon_ui.js";',
+      'import InlineIconUI, { CHANGE_ICON } from "../../../../../src/ckeditor/inlineIconUi.js";',
+    );
+    if (src !== before) {
+      fs.writeFileSync(inlineIconToolbarPath, src, 'utf8');
+      console.log(`${logPrefix} patched ckeditor5/src/plugins/inline_icon/inline_icon_toolbar.ts`);
+    }
+  }
+
   // Fresh vendor downloads can include the upstream CKEditor tsconfig with stale
   // monorepo-only settings that break the standalone extension type-check. Strip
   // the inherited base config and the declaration-only / extra ambient types that

@@ -26,8 +26,14 @@ const svgRawPlugin = {
   name: 'svg-raw',
   setup(build) {
     build.onResolve({ filter: /\.svg\?raw$/ }, args => {
+      const rawPath = args.path.replace('?raw', '');
+      // A relative specifier resolves against the importing file's directory; a bare
+      // package specifier (e.g. "boxicons/svg/regular/bx-star.svg") has to resolve
+      // against node_modules instead - path.resolve(resolveDir, ...) would otherwise
+      // treat it as relative and look for a "boxicons" folder beside the importer.
+      const isBare = !rawPath.startsWith('.') && !path.isAbsolute(rawPath);
       return {
-        path: path.resolve(args.resolveDir, args.path.replace('?raw', '')),
+        path: isBare ? path.join(workspaceRoot, 'node_modules', rawPath) : path.resolve(args.resolveDir, rawPath),
         namespace: 'svg-raw',
       };
     });
