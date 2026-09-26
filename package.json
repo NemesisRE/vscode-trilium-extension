@@ -114,6 +114,12 @@
         "category": "Trilium"
       },
       {
+        "command": "trilium.disconnect",
+        "title": "Disconnect from Trilium Server",
+        "icon": "$(debug-disconnect)",
+        "category": "Trilium"
+      },
+      {
         "command": "trilium.openNote",
         "title": "Open Note",
         "icon": "$(edit)",

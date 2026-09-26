@@ -618,7 +618,7 @@ export class NoteTreeProvider implements vscode.TreeDataProvider<NoteItem>, vsco
     return new NoteItem(note, itemPath, branchId, this.boxiconsSvgRoot);
   }
 
-  setClient(client: EtapiClient): void {
+  setClient(client: EtapiClient | undefined): void {
     this.client = client;
     this.filter = '';
     this.clearFetchCaches();

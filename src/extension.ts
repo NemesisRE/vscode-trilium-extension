@@ -11,7 +11,7 @@ import {
   noteTypeToLabel,
   preferredCodiconForNote,
 } from './noteTreeProvider';
-import { getAutoRevealInTreeOnOpen, getServerUrl, getToken, storeToken } from './settings';
+import { deleteToken, getAutoRevealInTreeOnOpen, getServerUrl, getToken, storeToken } from './settings';
 import { TempFileManager } from './tempFileManager';
 import { AttributesViewProvider } from './attributesViewProvider';
 import { TriliumTextEditorProvider } from './triliumTextEditorProvider';
@@ -1633,6 +1633,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
     }),
 
+    vscode.commands.registerCommand('trilium.disconnect', async () => {
+      const confirmed = await vscode.window.showWarningMessage(
+        'Disconnect from Trilium and remove the stored ETAPI token?',
+        { modal: true },
+        'Disconnect',
+      );
+      if (confirmed !== 'Disconnect') {
+        return;
+      }
+      await deleteToken(context.secrets);
+      treeProvider.setClient(undefined);
+      attributesProvider.setClient(undefined);
+      updateStatusBar(undefined);
+      updateTreeDescription(undefined);
+      void vscode.commands.executeCommand('setContext', 'trilium.connected', false);
+      virtualDocProvider.clearAllCache();
+    }),
+
     vscode.commands.registerCommand('trilium.createNote', async (item?: NoteItem) => {
       interface NoteTypeOption extends vscode.QuickPickItem {
         type: 'text' | 'code' | 'mermaid' | 'canvas' | 'mindMap';
@@ -2989,18 +3007,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
 
     (() => {
-      const POLL_MS = 30_000;
-      const handle = setInterval(async () => {
-        const intervalSecs = vscode.workspace
-          .getConfiguration('trilium')
-          .get<number>('autoRefreshIntervalSeconds', 30);
+      let handle: ReturnType<typeof setInterval> | undefined;
+
+      const tick = async () => {
         const maxConsecutiveFailures = vscode.workspace
           .getConfiguration('trilium')
           .get<number>('autoRefreshMaxConsecutiveFailures', 8);
         const warnAfterFailures = vscode.workspace
           .getConfiguration('trilium')
           .get<number>('autoRefreshWarnAfterFailures', 3);
-        if (intervalSecs <= 0 || refreshRegistry.size === 0) {
+        if (refreshRegistry.size === 0) {
           return;
         }
         const client = treeProvider.getClient();
@@ -3028,7 +3044,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
             entry.lastWarnedFailureCount = entry.consecutiveFailures;
 
-            const action = await vscode.window.showWarningMessage(
+            // Don't await the dialog here: doing so would block every other
+            // tracked note in this tick until the user dismisses it.
+            void vscode.window.showWarningMessage(
               buildRefreshFailureMessage(
                 entry.title,
                 kind,
@@ -3038,25 +3056,54 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
               'Retry Now',
               'Reconnect',
               'Disable Auto-Refresh',
-            );
-
-            if (action === 'Retry Now') {
-              try {
-                await refreshTrackedEntry(noteId, entry, client);
-              } catch {
-                // Leave the note tracked; normal polling/backoff will continue.
+            ).then(async (action) => {
+              if (action === 'Retry Now') {
+                try {
+                  await refreshTrackedEntry(noteId, entry, client);
+                } catch {
+                  // Leave the note tracked; normal polling/backoff will continue.
+                }
+              } else if (action === 'Reconnect') {
+                await vscode.commands.executeCommand('trilium.reconnect');
+              } else if (action === 'Disable Auto-Refresh') {
+                await vscode.workspace
+                  .getConfiguration('trilium')
+                  .update('autoRefreshIntervalSeconds', 0, vscode.ConfigurationTarget.Global);
               }
-            } else if (action === 'Reconnect') {
-              await vscode.commands.executeCommand('trilium.reconnect');
-            } else if (action === 'Disable Auto-Refresh') {
-              await vscode.workspace
-                .getConfiguration('trilium')
-                .update('autoRefreshIntervalSeconds', 0, vscode.ConfigurationTarget.Global);
-            }
+            });
           }
         }
-      }, POLL_MS);
-      return { dispose: () => clearInterval(handle) };
+      };
+
+      const scheduleTimer = () => {
+        if (handle) {
+          clearInterval(handle);
+          handle = undefined;
+        }
+        const intervalSecs = vscode.workspace
+          .getConfiguration('trilium')
+          .get<number>('autoRefreshIntervalSeconds', 30);
+        if (intervalSecs <= 0) {
+          return;
+        }
+        handle = setInterval(tick, intervalSecs * 1000);
+      };
+
+      scheduleTimer();
+      const configListener = vscode.workspace.onDidChangeConfiguration((e) => {
+        if (e.affectsConfiguration('trilium.autoRefreshIntervalSeconds')) {
+          scheduleTimer();
+        }
+      });
+
+      return {
+        dispose: () => {
+          if (handle) {
+            clearInterval(handle);
+          }
+          configListener.dispose();
+        },
+      };
     })(),
   );
 }
