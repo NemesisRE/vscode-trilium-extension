@@ -711,28 +711,42 @@ export class NoteTreeProvider implements vscode.TreeDataProvider<NoteItem>, vsco
     }
 
     const rootId = getRootNoteId();
-    const reversedPath: string[] = [];
-    const visited = new Set<string>();
-    let currentId = noteId;
+    // A note can have multiple parents (clones), so this isn't a single chain -
+    // try every parent and backtrack, rather than committing to parentNoteIds[0].
+    const inProgress = new Set<string>();
+    const memo = new Map<string, string[] | undefined>();
 
-    while (true) {
-      if (visited.has(currentId)) {
-        return undefined;
-      }
-      visited.add(currentId);
-      reversedPath.push(currentId);
-
+    const resolve = async (currentId: string): Promise<string[] | undefined> => {
       if (currentId === rootId) {
-        return reversedPath.reverse();
+        return [currentId];
       }
-
-      const current = await this.getNoteCached(currentId);
-      const parentId = current.parentNoteIds[0];
-      if (!parentId) {
+      if (memo.has(currentId)) {
+        return memo.get(currentId);
+      }
+      if (inProgress.has(currentId)) {
         return undefined;
       }
-      currentId = parentId;
-    }
+      inProgress.add(currentId);
+
+      let result: string[] | undefined;
+      try {
+        const current = await this.getNoteCached(currentId);
+        for (const parentId of current.parentNoteIds) {
+          const parentPath = await resolve(parentId);
+          if (parentPath) {
+            result = [...parentPath, currentId];
+            break;
+          }
+        }
+      } finally {
+        inProgress.delete(currentId);
+      }
+
+      memo.set(currentId, result);
+      return result;
+    };
+
+    return resolve(noteId);
   }
 
   private async resolveBranchIdForPath(pathParts: string[]): Promise<string | undefined> {

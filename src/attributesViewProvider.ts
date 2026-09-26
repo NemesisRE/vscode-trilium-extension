@@ -198,10 +198,12 @@ export class AttributesViewProvider implements vscode.WebviewViewProvider {
     this._render();
     if (note && this._client) {
       this._client.getNoteAttachments(note.noteId).then((attachments) => {
+        if (this._note !== note) { return; }
         this._attachments = attachments;
         this._attachmentsLoaded = true;
         this._render();
       }).catch(() => {
+        if (this._note !== note) { return; }
         this._attachmentsLoaded = true;
         this._render();
       });

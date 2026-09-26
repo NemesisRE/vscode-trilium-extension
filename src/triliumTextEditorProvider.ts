@@ -284,13 +284,17 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
           if (!client) { return; }
           const note = await client.getNote(document.noteId);
           const content = await client.getNoteContent(document.noteId);
-          // Update without marking dirty — this is the authoritative server state.
-          document.content = content;
-          document.syncedContent = content;
           document.title = note.title;
           webviewPanel.title = note.title;
-          if (document.panels.has(webviewPanel)) {
-            void webviewPanel.webview.postMessage({ type: 'update', content });
+          // If the user already started editing (content diverged from the synced
+          // baseline) while this fetch was in flight, don't clobber their edits with
+          // this now-stale server snapshot.
+          if (document.content === document.syncedContent) {
+            document.content = content;
+            document.syncedContent = content;
+            if (document.panels.has(webviewPanel)) {
+              void webviewPanel.webview.postMessage({ type: 'update', content });
+            }
           }
           await this.refreshTreeOnEditorLoad();
         } catch {
