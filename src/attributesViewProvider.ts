@@ -545,13 +545,12 @@ document.querySelector('.upload-btn')?.addEventListener('click', () => {
       text-overflow: ellipsis;
       white-space: nowrap;
       font-size: 0.85em;
+    }
     .att-item.att-pdf {
-      grid-template-columns: 1fr auto auto auto;
       padding: 4px 6px;
       border: 1px solid var(--vscode-editorWidget-border, #444);
       border-radius: 4px;
       background: color-mix(in srgb, var(--vscode-editorWidget-background, #333) 88%, transparent);
-    }
     }
     .att-size {
       font-size: 0.75em;

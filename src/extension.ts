@@ -993,6 +993,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     if (!backlinksProvider) {
       backlinksProvider = new BacklinksProvider(() => treeProvider.getClient());
+      backlinksProvider.setLogger((msg) => output.appendLine(`[backlinks] ${msg}`));
     }
     if (!backlinksView) {
       backlinksView = vscode.window.createTreeView('triliumBacklinks', {

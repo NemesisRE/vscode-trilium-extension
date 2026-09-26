@@ -15,8 +15,13 @@ export class BacklinksProvider implements vscode.TreeDataProvider<BacklinkItem> 
 
   private backlinks: BacklinkItem[] = [];
   private currentNoteId: string | null = null;
+  private _logger: ((msg: string) => void) | undefined;
 
   constructor(private readonly getClient: () => EtapiClient | undefined) {}
+
+  setLogger(fn: (msg: string) => void): void {
+    this._logger = fn;
+  }
 
   refresh(): void {
     this._onDidChangeTreeData.fire();
@@ -94,7 +99,7 @@ export class BacklinksProvider implements vscode.TreeDataProvider<BacklinkItem> 
 
       this.refresh();
     } catch (error) {
-      // Silently fail if backlinks cannot be loaded
+      this._logger?.(`Failed to load backlinks for ${noteId}: ${error}`);
       this.backlinks = [];
       this.refresh();
     }
