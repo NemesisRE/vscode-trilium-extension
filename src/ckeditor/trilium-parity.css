@@ -27,8 +27,12 @@
  */
 .ck-editor__editable.ck-content .todo-list li .todo-list__label input[type='checkbox'],
 .ck-editor__editable.ck-content .todo-list li .todo-list__label > span[contenteditable='false'] > input[type='checkbox'] {
-  --_checkbox-size: 16px;
   position: relative;
+}
+
+.ck-editor__editable.ck-content .todo-list li .todo-list__label input[type='checkbox']:focus-visible {
+  outline: 2px solid var(--vscode-focusBorder, #007fd4);
+  outline-offset: 1px;
 }
 
 .ck-editor__editable.ck-content .todo-list li .todo-list__label input[type='checkbox']::before,

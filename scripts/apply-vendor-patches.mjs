@@ -191,6 +191,24 @@ export function applyVendorPatches(vendorDir, logPrefix = '[patch-plugins]') {
       'import InlineIconUI, { CHANGE_ICON } from "./inline_icon_ui.js";',
       'import InlineIconUI, { CHANGE_ICON } from "../../../../../src/ckeditor/inlineIconUi.js";',
     );
+    // Upstream only offers horizontally centred positions (the default WidgetToolbarRepository
+    // candidate list). Confirmed by a headless reproduction: an icon inserted near the left edge
+    // of a narrow editing pane (a common case here - VS Code editor panes can be much narrower
+    // than Trilium's own browser tab) gets a balloon centred over it that renders with a negative
+    // `left`, i.e. partly off-screen. The same fix used below for the todo-list task-state balloon
+    // (preferring CKEditor's `*West`/`*East` presets) turned out not to be enough here: those
+    // presets still use a flat ~25px arrow offset regardless of how much room is actually left,
+    // so a target within that distance of the edge (as in the reproduction) still clips. Use our
+    // own edge-clamped positions (src/ckeditor/balloonPositions.ts) first instead, which size the
+    // offset to the room actually available; the presets stay as a fallback.
+    src = src.replace(
+      'import {\n    addListToDropdown, Collection, type Command, createDropdown,\n    type ListDropdownItemDefinition, type LocaleTranslate, Plugin, UIModel, WidgetToolbarRepository\n} from "ckeditor5";',
+      'import {\n    addListToDropdown, BalloonPanelView, Collection, type Command, createDropdown,\n    type ListDropdownItemDefinition, type LocaleTranslate, Plugin, UIModel, WidgetToolbarRepository\n} from "ckeditor5";\nimport { edgeClampedToolbarPositions } from "../../../../../src/ckeditor/balloonPositions.js";',
+    );
+    src = src.replace(
+      '    afterInit() {\n        this.editor.plugins.get(WidgetToolbarRepository).register(ICON, {\n            ariaLabel: this.editor.t("Icon toolbar"),\n            items: [ CHANGE_ICON, ICON_TRANSFORM_COMMAND ],\n            getRelatedElement: (selection) => {',
+      '    afterInit() {\n        const editor = this.editor;\n\n        editor.plugins.get(WidgetToolbarRepository).register(ICON, {\n            ariaLabel: editor.t("Icon toolbar"),\n            items: [ CHANGE_ICON, ICON_TRANSFORM_COMMAND ],\n            positions: [\n                ...edgeClampedToolbarPositions(editor),\n                BalloonPanelView.defaultPositions.northArrowSouthWest,\n                BalloonPanelView.defaultPositions.southArrowNorthWest,\n                BalloonPanelView.defaultPositions.northArrowSouth,\n                BalloonPanelView.defaultPositions.southArrowNorth,\n                BalloonPanelView.defaultPositions.northArrowSouthEast,\n                BalloonPanelView.defaultPositions.southArrowNorthEast\n            ],\n            getRelatedElement: (selection) => {',
+    );
     if (src !== before) {
       fs.writeFileSync(inlineIconToolbarPath, src, 'utf8');
       console.log(`${logPrefix} patched ckeditor5/src/plugins/inline_icon/inline_icon_toolbar.ts`);
