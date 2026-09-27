@@ -3,7 +3,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { EtapiClient, Note } from './etapiClient';
-import { boxiconToCodeicon, getBundledBoxiconsSvgRoot, listBundledBoxiconClasses } from './noteTreeProvider';
+import { showIconPickerPanel } from './iconPickerPanel';
+import { getBundledBoxiconsSvgRoot } from './noteTreeProvider';
 import { getEditorFontSize, getEditorHighlightTheme, getEditorSpellcheck } from './settings';
 import { boxiconSvgRelativePath, mergeTaskStates, svgToCssUrl, taskStateCssIdentifier } from './taskStateIcons';
 
@@ -355,7 +356,7 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
         }
         case 'showIconPicker': {
           const { id: pickId } = message as { type: string; id: string };
-          void this.showIconPickerQuickPick().then(iconClass => {
+          void showIconPickerPanel(this.context).then(iconClass => {
             void webviewPanel.webview.postMessage({ type: 'iconPickerResult', id: pickId, iconClass });
           });
           break;
@@ -524,36 +525,6 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
     }
 
     return `${lines.join('\n')}\n`;
-  }
-
-  /**
-   * Trilium's own icon picker is a live-search balloon drawn by its app-level React
-   * component tree, which has no equivalent here. Shows a VS Code QuickPick over the
-   * bundled boxicons instead - text search only for most icons, since QuickPickItem
-   * has no way to render an arbitrary SVG. The ~50 boxicons with a close built-in
-   * codicon equivalent (see BOXICON_TO_CODICON in noteTreeProvider.ts, already used
-   * for the note tree's own fallback icons) get a real preview via that codicon;
-   * the rest fall back to a generic icon so every row still has one.
-   */
-  private async showIconPickerQuickPick(): Promise<string | undefined> {
-    interface IconItem extends vscode.QuickPickItem { iconClass: string; }
-
-    const icons = await listBundledBoxiconClasses(this.context.extensionPath);
-    const items: IconItem[] = icons
-      .sort((a, b) => a.name.localeCompare(b.name))
-      .map(({ iconClass, name }) => ({
-        label: `$(${boxiconToCodeicon(iconClass) ?? 'symbol-misc'}) ${name}`,
-        description: iconClass,
-        iconClass,
-      }));
-
-    const pick = await vscode.window.showQuickPick(items, {
-      title: 'Insert Icon',
-      placeHolder: 'Type to search icons…',
-      matchOnDescription: true,
-    });
-
-    return pick?.iconClass;
   }
 
   /**
