@@ -42,7 +42,7 @@ const FALLBACK_TASK_STATES: EditorTaskStateDef[] = [
     isHidden: false,
     icon: 'bx bx-loader',
     iconSvg: '',
-    color: '#2f81f7',
+    color: '#e6a23c',
   },
   {
     name: 'maybe',
@@ -52,7 +52,10 @@ const FALLBACK_TASK_STATES: EditorTaskStateDef[] = [
     isHidden: false,
     icon: 'bx bx-question-mark',
     iconSvg: '',
-    color: '#d29922',
+    // No fixed color upstream either - renderTaskStateCss() falls back to a generic
+    // orange (matching Trilium's own --task-checkbox-with-state-background) for any
+    // configured state with no color of its own.
+    color: '',
   },
   {
     name: 'cancelled',
@@ -60,9 +63,9 @@ const FALLBACK_TASK_STATES: EditorTaskStateDef[] = [
     markdownSymbol: '-',
     isCompleted: true,
     isHidden: false,
-    icon: 'bx bx-x',
+    icon: 'bx bx-block',
     iconSvg: '',
-    color: '#8b949e',
+    color: '#e64d4d',
   },
 ];
 
@@ -1951,14 +1954,25 @@ function renderTaskStateCss(states: EditorTaskStateDef[]): string {
     const name = cssString(state.name);
     const identifier = taskStateCssIdentifier(state.name);
     const color = sanitizeCssColor(state.color);
-    const text = color ?? 'var(--vscode-input-foreground, currentColor)';
+    // The anchor states (none/done) never carry a configured color - their checkbox look
+    // is the hardcoded default in trilium-parity.css's own default rule. Match that here too,
+    // rather than falling back to the generic "configured state with no color" orange, so the
+    // right-click menu's None/Done buttons look like their real checkboxes instead of both
+    // showing the same fallback color.
+    const chipBackground = color
+      ?? (state.name === 'done' ? 'var(--vscode-charts-green, #2e8b57)'
+        : state.name === 'none' ? 'var(--vscode-checkbox-border, #d5d5d5)'
+          : 'var(--vscode-charts-orange, orange)');
 
-    rules.push(`.ck.ck-balloon-panel .ck.ck-toolbar.task-state-toolbar .ck-button.ck-task-state-button-${identifier} { color: ${text}; }`);
+    // Right-click/task-state-cycle menu: give each button's icon the same colored-chip
+    // look as the checkbox itself (background = state color, white glyph) instead of a
+    // plain line icon, so the menu reads as the same design as the checklist it edits.
+    rules.push(`.ck.ck-balloon-panel .ck.ck-toolbar.task-state-toolbar .ck-button.ck-task-state-button-${identifier} .ck-button__icon { background: ${chipBackground}; }`);
 
     // Sets the custom properties trilium-parity.css's checkbox ::before/::after read -
     // scoped to the item's own label, since the list model is flat and a descendant
     // selector would otherwise leak a parent's state onto nested items.
-    const declarations = [`--_task-checkbox-background: ${color ?? 'var(--vscode-charts-orange, orange)'};`];
+    const declarations = [`--_task-checkbox-background: ${chipBackground};`];
     if (state.iconSvg) {
       // Mirrors Trilium, which paints the state glyph inside the checkbox itself. Rendered
       // as a mask (rather than injecting an <img>/<svg> node) so it can take a solid color

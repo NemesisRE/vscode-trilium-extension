@@ -80,6 +80,21 @@
   --task-state-glyph-opacity: 1;
 }
 
+/* Right-click / task-state-cycle menu (todo_list_multistate_toolbar's balloon): each
+ * state's button renders its raw boxicon as a plain line icon by default. Give it the
+ * same colored-chip look as the checkbox it edits instead - background color is set
+ * per state by taskStateCss (triliumTextEditorProvider.ts), keyed by the same
+ * ck-task-state-button-<name> class already on the button. */
+.ck.ck-balloon-panel .ck.ck-toolbar.task-state-toolbar .ck-button.ck-task-state-button .ck-button__icon {
+  box-sizing: border-box !important;
+  border-radius: 4px;
+  padding: 3px;
+}
+
+.ck.ck-balloon-panel .ck.ck-toolbar.task-state-toolbar .ck-button.ck-task-state-button .ck-button__icon *:not([fill='none']) {
+  fill: #fff !important;
+}
+
 /* ----------------------------------------------------------------------------
  * Collapsible blocks (collapsible plugin)
  * ---------------------------------------------------------------------------- */
