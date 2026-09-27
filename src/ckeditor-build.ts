@@ -109,6 +109,11 @@ import ClipboardImageEmbed from '../vendor/ckeditor5/src/plugins/clipboard_image
 import ClipboardBareImage from '../vendor/ckeditor5/src/plugins/clipboard_bare_image';
 import FindInLinkWidgets from '../vendor/ckeditor5/src/plugins/find_in_link_widgets';
 import TriliumFormatPainter from '../vendor/ckeditor5/src/plugins/format_painter/format_painter';
+import './ckeditor/vendorTypeAugmentations';
+import CutToNotePlugin from '../vendor/ckeditor5/src/plugins/cuttonote';
+import CopyLinkUrlButton from '../vendor/ckeditor5/src/plugins/copy_link_url';
+import CopyAnchorLinkButton from '../vendor/ckeditor5/src/plugins/copy_anchor_link';
+import MarkdownImportPlugin from '../vendor/ckeditor5/src/plugins/markdownimport';
 import emojiDefinitions from '../vendor/ckeditor5/src/emoji_definitions/en.json';
 
 // Import all CSS - esbuild will bundle it
@@ -232,6 +237,8 @@ export class TriliumEditor extends ClassicEditor {
     AutoLink,
     MediaEmbed,
     FindInLinkWidgets,
+    CopyLinkUrlButton,
+    CopyAnchorLinkButton,
 
     // Special characters & emoji
     SpecialCharacters,
@@ -248,6 +255,8 @@ export class TriliumEditor extends ClassicEditor {
     FindAndReplace,
     PasteFromOffice,
     InsertDateTimePlugin,
+    CutToNotePlugin,
+    MarkdownImportPlugin,
 
     // Trilium-specific plugins
     Admonition,
@@ -314,6 +323,9 @@ export class TriliumEditor extends ClassicEditor {
         'outdent',
         'indent',
         '|',
+        'markdownImport',
+        'cutToNote',
+        '|',
         'undo',
         'redo',
         '|',
@@ -333,6 +345,15 @@ export class TriliumEditor extends ClassicEditor {
     },
     emoji: {
       definitionsUrl: emojiDefinitionsUrl,
+    },
+    // Adds the "Copy URL"/"Copy anchor link" buttons Trilium's own config includes
+    // (apps/client/.../text/config.ts) onto the stock link/bookmark balloon toolbars,
+    // next to their respective preview items.
+    link: {
+      toolbar: ['linkPreview', 'copyLinkUrl', '|', 'editLink', 'linkProperties', 'unlink'],
+    },
+    bookmark: {
+      toolbar: ['bookmarkPreview', 'copyAnchorLink', '|', 'editBookmark', 'removeBookmark'],
     },
     image: {
       toolbar: [

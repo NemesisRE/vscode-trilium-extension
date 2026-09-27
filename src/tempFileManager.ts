@@ -7,6 +7,17 @@ import { Note } from './etapiClient';
 
 const turndown = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced' });
 
+/** Convert Markdown to HTML. Standalone so callers without a TempFileManager instance
+ * (e.g. the CKEditor webview's Markdown-paste-import handler) don't need one just for this. */
+export function markdownToHtml(markdown: string): string {
+  const result = marked.parse(markdown);
+  if (typeof result !== 'string') {
+    // marked.parse returns string when not async; narrow the type
+    throw new Error('Unexpected async result from marked.parse');
+  }
+  return result;
+}
+
 /**
  * Maps Trilium MIME types to VS Code language identifiers.
  * Language IDs are the internal identifiers used by VS Code's language services.
@@ -272,12 +283,7 @@ export class TempFileManager {
 
   /** Convert Markdown back to HTML before saving to Trilium. */
   markdownToHtml(markdown: string): string {
-    const result = marked.parse(markdown);
-    if (typeof result !== 'string') {
-      // marked.parse returns string when not async; narrow the type
-      throw new Error('Unexpected async result from marked.parse');
-    }
-    return result;
+    return markdownToHtml(markdown);
   }
 
   removeTempFile(noteId: string): string | undefined {
