@@ -324,12 +324,14 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
 
     // Set initial HTML
     const taskStates = await this.loadTaskStates();
+    const snippetDefinitions = await this.loadSnippetDefinitions();
     webviewPanel.webview.html = await this.getHtmlForWebview(
       webviewPanel.webview,
       getEditorFontSize(),
       getEditorSpellcheck(),
       getEditorHighlightTheme(),
       taskStates,
+      snippetDefinitions,
       document.noteId,
       document.title,
     );
@@ -939,6 +941,38 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
     }
   }
 
+  /** Loads the user's #snippet/#textSnippet notes into TriliumSnippets' definition shape.
+   * Fetched once when the editor opens, same as task states above - this extension has no
+   * existing "note tree changed elsewhere" event a currently-open editor could subscribe to for
+   * true live reload the way Trilium's own client does, so a snippet added or edited after the
+   * editor is already open needs the note reopened to show up. */
+  private async loadSnippetDefinitions(): Promise<Array<{ title: string; data: string; iconClass?: string }>> {
+    const client = this.getClient();
+    if (!client) { return []; }
+
+    try {
+      const { results } = await client.searchNotes('#snippet OR #textSnippet', { limit: 200 });
+      const definitions = await Promise.all(results.map(async (result) => {
+        try {
+          const [note, data] = await Promise.all([
+            client.getNote(result.noteId),
+            client.getNoteContent(result.noteId),
+          ]);
+          const iconClass = (note.attributes ?? [])
+            .find((attr) => attr.type === 'label' && attr.name === 'iconClass')?.value.trim();
+          return { title: note.title, data, iconClass: iconClass || undefined };
+        } catch (err) {
+          this._logger?.(`Failed to load snippet note ${result.noteId}: ${err}`);
+          return null;
+        }
+      }));
+      return definitions.flatMap((def): Array<{ title: string; data: string; iconClass?: string }> => (def ? [def] : []));
+    } catch (err) {
+      this._logger?.(`Failed to load snippet definitions: ${err}`);
+      return [];
+    }
+  }
+
   /** Resolve each state's Boxicons class to the SVG bundled with the extension. */
   private async withTaskStateIcons(states: EditorTaskStateDef[]): Promise<EditorTaskStateDef[]> {
     const svgRoot = getBundledBoxiconsSvgRoot(this.context.extensionPath);
@@ -967,6 +1001,7 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
     spellcheck: boolean,
     highlightTheme: string,
     taskStates: EditorTaskStateDef[] | undefined,
+    snippetDefinitions: Array<{ title: string; data: string; iconClass?: string }>,
     noteId: string | undefined,
     noteTitle: string | undefined,
   ): Promise<string> {
@@ -1002,6 +1037,7 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
     // inline script below).
     const serializedNoteId = JSON.stringify(noteId ?? null).replace(/</g, '\\u003c');
     const serializedNoteTitle = JSON.stringify(noteTitle ?? null).replace(/</g, '\\u003c');
+    const serializedSnippetDefinitions = JSON.stringify(snippetDefinitions).replace(/</g, '\\u003c');
 
     return `<!DOCTYPE html>
 <html lang="en">
@@ -1554,6 +1590,7 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
         const taskStates = ${serializedTaskStates};
         const noteId = ${serializedNoteId};
         const noteTitle = ${serializedNoteTitle};
+        const initialSnippetDefinitions = ${serializedSnippetDefinitions};
         let editor;
         let isUpdatingFromExtension = false;
         let pendingExternalContent = '';
@@ -1788,7 +1825,7 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
                   items: [
                     'link', 'internalLink', 'bookmark', '|',
                     'collapsible', 'math', 'mermaid', 'horizontalLine', 'pageBreak', '|',
-                    'dateTime', 'specialCharacters', 'emoji', 'insertIcon',
+                    'dateTime', 'specialCharacters', 'emoji', 'insertIcon', 'insertTemplate',
                   ],
                 },
                 '|',
@@ -1987,6 +2024,12 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
                   vscode.postMessage({ type: 'openBreadcrumbNote', noteId });
                 }
               },
+            },
+            // Text snippets: the initial list fetched from #snippet/#textSnippet notes when this
+            // editor opened (see loadSnippetDefinitions). Each definition's data field is the
+            // note's HTML content, inserted verbatim at the caret when picked.
+            snippets: {
+              definitions: initialSnippetDefinitions,
             },
             // Generic file attachment plugin: a click downloads the attachment and opens it
             // with VS Code's own editor/preview picker (see the 'openAttachment' message

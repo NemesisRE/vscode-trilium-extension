@@ -115,6 +115,7 @@ import CutToNotePlugin from '../vendor/ckeditor5/src/plugins/cuttonote';
 import CopyLinkUrlButton from '../vendor/ckeditor5/src/plugins/copy_link_url';
 import CopyAnchorLinkButton from '../vendor/ckeditor5/src/plugins/copy_anchor_link';
 import MarkdownImportPlugin from '../vendor/ckeditor5/src/plugins/markdownimport';
+import TriliumSnippets from '../vendor/ckeditor5/src/plugins/snippets/snippets';
 import Uploadfileplugin from '../vendor/ckeditor5/src/plugins/file_upload/uploadfileplugin';
 import MentionCustomization from '../vendor/ckeditor5/src/plugins/mention_customization';
 import TriliumEmojiMention from '../vendor/ckeditor5/src/plugins/mention/emoji_mention';
@@ -275,6 +276,10 @@ export class TriliumEditor extends ClassicEditor {
     InlineIcon,
     InternalLink,
 
+    // Text snippets ("Templates"): a searchable dropdown of reusable text sourced from the
+    // user's own #snippet/#textSnippet notes.
+    TriliumSnippets,
+
     // Generic (non-image) file attachments, dropped/pasted via CKEditor's standard
     // FileRepository upload-adapter interface.
     Uploadfileplugin,
@@ -332,7 +337,7 @@ export class TriliumEditor extends ClassicEditor {
           items: [
             'link', 'internalLink', 'bookmark', '|',
             'collapsible', 'math', 'mermaid', 'horizontalLine', 'pageBreak', '|',
-            'dateTime', 'specialCharacters', 'emoji', 'insertIcon',
+            'dateTime', 'specialCharacters', 'emoji', 'insertIcon', 'insertTemplate',
           ],
         },
         '|',
