@@ -241,10 +241,18 @@ export function applyVendorPatches(vendorDir, logPrefix = '[patch-plugins]') {
   if (fs.existsSync(insertDateTimePath)) {
     let src = fs.readFileSync(insertDateTimePath, 'utf8');
     const before = src;
-    src = src.replace(
-      "import dateTimeIcon from '../icons/date-time.svg?raw';",
-      "import dateTimeIcon from '../icons/date-time.svg?raw';\nimport { formatDateTime } from '../../../../src/ckeditor/insertDateTimeFormat.js';",
-    );
+    // Unlike the replacements above, the search string here (the dateTimeIcon import) is not
+    // itself removed by patching - it stays in the file with the new import appended after it -
+    // so a second call (e.g. this repo's CI re-runs applyVendorPatches on a cache hit, against
+    // an already-patched vendor/ tree) would insert a duplicate import. Guard on the new
+    // import's own presence instead, the same way the other replacements are naturally guarded
+    // by their search string disappearing once applied.
+    if (!src.includes('insertDateTimeFormat.js')) {
+      src = src.replace(
+        "import dateTimeIcon from '../icons/date-time.svg?raw';",
+        "import dateTimeIcon from '../icons/date-time.svg?raw';\nimport { formatDateTime } from '../../../../src/ckeditor/insertDateTimeFormat.js';",
+      );
+    }
     src = src.replace(
       /function formatNow\(editor: Editor, format\?: string\) \{\n[^\n]*\n[^\n]*\n\}/,
       'function formatNow(editor: Editor, format?: string) {\n    return formatDateTime(new Date(), format);\n}',
