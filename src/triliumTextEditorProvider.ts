@@ -4,6 +4,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { EtapiClient, Note } from './etapiClient';
 import { showIconPickerPanel } from './iconPickerPanel';
+import { fetchLinkMetadata } from './linkMetadataFetch';
 import { getBundledBoxiconsSvgRoot } from './noteTreeProvider';
 import { getEditorFontSize, getEditorHighlightTheme, getEditorSpellcheck } from './settings';
 import { boxiconSvgRelativePath, mergeTaskStates, svgToCssUrl, taskStateCssIdentifier } from './taskStateIcons';
@@ -370,6 +371,13 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
             void webviewPanel.webview.postMessage({ type: 'imageFetchResult', id, dataUri });
           }).catch(() => {
             void webviewPanel.webview.postMessage({ type: 'imageFetchResult', id, error: 'fetch failed' });
+          });
+          break;
+        }
+        case 'fetchLinkMetadata': {
+          const { id: linkMetadataId, url: linkUrl } = message as { type: string; id: string; url: string };
+          void fetchLinkMetadata(linkUrl).then(metadata => {
+            void webviewPanel.webview.postMessage({ type: 'linkMetadataResult', id: linkMetadataId, metadata });
           });
           break;
         }
@@ -1513,6 +1521,7 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
         const pendingMentionCreates = new Map();
         const pendingCutToNoteRequests = new Map();
         const pendingMarkdownImportRequests = new Map();
+        const pendingLinkMetadataRequests = new Map();
 
         const triliumToLocalLanguageMap = {
           'text-plain': 'plaintext',
@@ -1731,7 +1740,7 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
                   label: 'Insert',
                   icon: 'plus',
                   items: [
-                    'link', 'internalLink', 'bookmark', '|',
+                    'link', 'internalLink', 'bookmark', 'linkEmbed', '|',
                     'collapsible', 'math', 'mermaid', 'horizontalLine', 'pageBreak', '|',
                     'dateTime', 'specialCharacters', 'emoji', 'insertIcon',
                   ],
@@ -1793,7 +1802,10 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
             },
             link: {
               defaultProtocol: 'https://',
-              toolbar: ['linkPreview', 'copyLinkUrl', '|', 'editLink', 'linkProperties', 'unlink']
+              // linkEmbedDisplayDropdown also hosts here (see link_embed_toolbar.ts): a native
+              // link's balloon offers converting it into a mention/card/embed preview, the same
+              // dropdown the widget toolbar's Display option uses on an existing preview.
+              toolbar: ['linkPreview', 'copyLinkUrl', 'linkEmbedDisplayDropdown', '|', 'editLink', 'linkProperties', 'unlink']
             },
             bookmark: {
               toolbar: ['bookmarkPreview', 'copyAnchorLink', '|', 'editBookmark', 'removeBookmark']
@@ -1923,6 +1935,18 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
                 const id = Math.random().toString(36).slice(2);
                 pendingMarkdownImportRequests.set(id, resolve);
                 vscode.postMessage({ type: 'importMarkdown', id });
+              }),
+            },
+            // LinkEmbed plugin: the metadata fetch (URL → title/description/favicon/image) runs
+            // on the extension host, outside the webview's CSP - it needs an unrestricted outbound
+            // HTTP request the webview itself could never make (see linkMetadataFetch.ts's SSRF
+            // guard). Rendering the resulting card/mention/video preview stays local (see
+            // link_embed_editing.ts's vendor patch) - no host round-trip there.
+            linkEmbed: {
+              fetchMetadata: (url) => new Promise((resolve) => {
+                const id = Math.random().toString(36).slice(2);
+                pendingLinkMetadataRequests.set(id, resolve);
+                vscode.postMessage({ type: 'fetchLinkMetadata', id, url });
               }),
             },
             referenceLink: {
@@ -2195,6 +2219,12 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
               const resolve = pendingMarkdownImportRequests.get(message.id);
               pendingMarkdownImportRequests.delete(message.id);
               resolve?.(message.html);
+              break;
+            }
+            case 'linkMetadataResult': {
+              const resolve = pendingLinkMetadataRequests.get(message.id);
+              pendingLinkMetadataRequests.delete(message.id);
+              resolve?.(message.metadata);
               break;
             }
           }

@@ -118,6 +118,7 @@ import MentionCustomization from '../vendor/ckeditor5/src/plugins/mention_custom
 import TriliumEmojiMention from '../vendor/ckeditor5/src/plugins/mention/emoji_mention';
 import TriliumMentionUI from '../vendor/ckeditor5/src/plugins/mention/trilium_mention_ui';
 import TriliumSlashCommands from '../vendor/ckeditor5/src/plugins/mention/slash_commands';
+import LinkEmbedToolbar from '../vendor/ckeditor5/src/plugins/link_embed/link_embed_toolbar';
 import emojiDefinitions from '../vendor/ckeditor5/src/emoji_definitions/en.json';
 
 // Import all CSS - esbuild will bundle it
@@ -243,6 +244,7 @@ export class TriliumEditor extends ClassicEditor {
     FindInLinkWidgets,
     CopyLinkUrlButton,
     CopyAnchorLinkButton,
+    LinkEmbedToolbar,
 
     // Special characters & emoji
     SpecialCharacters,

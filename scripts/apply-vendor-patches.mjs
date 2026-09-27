@@ -479,6 +479,107 @@ export function applyVendorPatches(vendorDir, logPrefix = '[patch-plugins]') {
     }
   }
 
+  // link_embed_editing.ts's editing downcast paints the card/mention preview through Trilium's
+  // own app-level component (glob.getComponentByEl(editorEl).renderLinkEmbed/renderLinkMention),
+  // which has no equivalent here. Both are pure presentation - they only read the metadata
+  // already stored as element attributes - so they're redirected straight to a local
+  // reimplementation (src/ckeditor/linkEmbedRender.ts) with no host round-trip at all.
+  const linkEmbedEditingPath = path.join(vendorDir, 'ckeditor5', 'src', 'plugins', 'link_embed', 'link_embed_editing.ts');
+  if (fs.existsSync(linkEmbedEditingPath)) {
+    let src = fs.readFileSync(linkEmbedEditingPath, 'utf8');
+    const before = src;
+    src = src.replace(
+      "import { preventCKEditorHandling } from '../widget_utils.js';",
+      "import { preventCKEditorHandling } from '../widget_utils.js';\nimport { renderLinkEmbed, renderLinkMention } from '../../../../../src/ckeditor/linkEmbedRender.js';",
+    );
+    src = src.replace(
+      "                    const editorEl = editor.editing.view.getDomRoot();\n                    const component = glob.getComponentByEl<EditorComponent>(editorEl);\n                    component.renderLinkEmbed(domElement, { url, embedType, title, description, favicon, siteName, image }, true);",
+      '                    renderLinkEmbed(domElement, { url, embedType, title, description, favicon, siteName, image }, true);',
+    );
+    src = src.replace(
+      "                    const editorEl = editor.editing.view.getDomRoot();\n                    const component = glob.getComponentByEl<EditorComponent>(editorEl);\n                    component.renderLinkMention(domElement, { url, title, favicon }, true);",
+      '                    renderLinkMention(domElement, { url, title, favicon }, true);',
+    );
+    if (src !== before) {
+      fs.writeFileSync(linkEmbedEditingPath, src, 'utf8');
+      console.log(`${logPrefix} patched ckeditor5/src/plugins/link_embed/link_embed_editing.ts`);
+    }
+  }
+
+  // link_embed_ui.ts's URL field asks Trilium's app-level component
+  // (glob.getComponentByEl(editorEl).detectEmbedType(url)) whether a typed URL has a player
+  // behind it. Pure URL-pattern matching (YouTube vs. everything else) - redirected to the same
+  // local detector as link_embed_commands.ts below, no host round-trip.
+  const linkEmbedUiPath = path.join(vendorDir, 'ckeditor5', 'src', 'plugins', 'link_embed', 'link_embed_ui.ts');
+  if (fs.existsSync(linkEmbedUiPath)) {
+    let src = fs.readFileSync(linkEmbedUiPath, 'utf8');
+    const before = src;
+    src = src.replace(
+      "import { isHttpUrl } from '@triliumnext/commons';",
+      "import { isHttpUrl, detectEmbedType } from '../../../../../src/ckeditor/linkEmbedShared.js';",
+    );
+    src = src.replace(
+      '    const editorEl = editor.editing.view.getDomRoot();\n    const component = glob.getComponentByEl<EditorComponent>(editorEl);\n    return component.detectEmbedType(normalizeUrl(url) ?? url);',
+      '    return detectEmbedType(normalizeUrl(url) ?? url);',
+    );
+    if (src !== before) {
+      fs.writeFileSync(linkEmbedUiPath, src, 'utf8');
+      console.log(`${logPrefix} patched ckeditor5/src/plugins/link_embed/link_embed_ui.ts`);
+    }
+  }
+
+  // link_embed_commands.ts and link_embed_autodetect.ts import isHttpUrl/chooseLinkPreviewKind/
+  // isUrlAloneInBlock/BlockChildLike from @triliumnext/commons, which isn't shipped with this
+  // standalone extension - redirected to the local port (src/ckeditor/linkEmbedShared.ts). Their
+  // detectEmbedType() calls are pure URL matching (see the link_embed_ui.ts patch above) and are
+  // redirected the same way. Their fetchLinkMetadata() calls need the extension host (the actual
+  // network fetch, outside the webview's CSP) - redirected to an editor-config callback (wired in
+  // triliumTextEditorProvider.ts, same shape as markdownImport's/cutToNote's), not to a local
+  // function.
+  const linkEmbedCommandsPath = path.join(vendorDir, 'ckeditor5', 'src', 'plugins', 'link_embed', 'link_embed_commands.ts');
+  if (fs.existsSync(linkEmbedCommandsPath)) {
+    let src = fs.readFileSync(linkEmbedCommandsPath, 'utf8');
+    const before = src;
+    src = src.replace(
+      "import { isHttpUrl } from '@triliumnext/commons';",
+      "import { isHttpUrl, detectEmbedType } from '../../../../../src/ckeditor/linkEmbedShared.js';",
+    );
+    src = src.replace(
+      '        const editorEl = editor.editing.view.getDomRoot();\n        const component = glob.getComponentByEl<EditorComponent>(editorEl);\n\n        const metadata = await component.fetchLinkMetadata(url);',
+      "        const config = editor.config.get('linkEmbed') as { fetchMetadata?: (url: string) => Promise<LinkEmbedMetadata> } | undefined;\n        if (!config?.fetchMetadata) return;\n        const metadata = await config.fetchMetadata(url);",
+    );
+    src = src.replace(
+      '        const editorEl = editor.editing.view.getDomRoot();\n        const component = glob.getComponentByEl<EditorComponent>(editorEl);\n\n        // The linked text is tracked as a live range: the metadata fetch reads the page server-side\n        // and can take seconds, and edits made meanwhile must not shift what gets replaced.\n        const liveRange = ModelLiveRange.fromRange(findAttributeRange(position, \'linkHref\', href, model));\n        const metadata = await component.fetchLinkMetadata(href);',
+      "        const config = editor.config.get('linkEmbed') as { fetchMetadata?: (url: string) => Promise<LinkEmbedMetadata> } | undefined;\n        if (!config?.fetchMetadata) return;\n\n        // The linked text is tracked as a live range: the metadata fetch reads the page host-side\n        // and can take seconds, and edits made meanwhile must not shift what gets replaced.\n        const liveRange = ModelLiveRange.fromRange(findAttributeRange(position, 'linkHref', href, model));\n        const metadata = await config.fetchMetadata(href);",
+    );
+    src = src.replaceAll(
+      '    /** Delegates to the client service to avoid duplicating URL detection logic. */\n    private _detectEmbedType(url: string): string {\n        const editorEl = this.editor.editing.view.getDomRoot();\n        const component = glob.getComponentByEl<EditorComponent>(editorEl);\n        return component.detectEmbedType(url);\n    }',
+      '    private _detectEmbedType(url: string): string {\n        return detectEmbedType(url);\n    }',
+    );
+    if (src !== before) {
+      fs.writeFileSync(linkEmbedCommandsPath, src, 'utf8');
+      console.log(`${logPrefix} patched ckeditor5/src/plugins/link_embed/link_embed_commands.ts`);
+    }
+  }
+
+  const linkEmbedAutodetectPath = path.join(vendorDir, 'ckeditor5', 'src', 'plugins', 'link_embed', 'link_embed_autodetect.ts');
+  if (fs.existsSync(linkEmbedAutodetectPath)) {
+    let src = fs.readFileSync(linkEmbedAutodetectPath, 'utf8');
+    const before = src;
+    src = src.replace(
+      "import { chooseLinkPreviewKind, isUrlAloneInBlock, type BlockChildLike } from '@triliumnext/commons';",
+      "import { chooseLinkPreviewKind, isUrlAloneInBlock, type BlockChildLike } from '../../../../../src/ckeditor/linkEmbedShared.js';",
+    );
+    src = src.replace(
+      "        const editorEl = editor.editing.view.getDomRoot();\n        const component = glob.getComponentByEl<EditorComponent>(editorEl);\n\n        component.fetchLinkMetadata(url).then((metadata: LinkEmbedMetadata) => {",
+      "        const config = editor.config.get('linkEmbed') as { fetchMetadata?: (url: string) => Promise<LinkEmbedMetadata> } | undefined;\n        if (!config?.fetchMetadata) return;\n\n        config.fetchMetadata(url).then((metadata: LinkEmbedMetadata) => {",
+    );
+    if (src !== before) {
+      fs.writeFileSync(linkEmbedAutodetectPath, src, 'utf8');
+      console.log(`${logPrefix} patched ckeditor5/src/plugins/link_embed/link_embed_autodetect.ts`);
+    }
+  }
+
   // Fresh vendor downloads can include the upstream CKEditor tsconfig with stale
   // monorepo-only settings that break the standalone extension type-check. Strip
   // the inherited base config and the declaration-only / extra ambient types that
