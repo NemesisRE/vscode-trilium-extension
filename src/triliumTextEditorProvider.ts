@@ -1,5 +1,6 @@
 import * as crypto from 'crypto';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { EtapiClient, Note } from './etapiClient';
@@ -332,12 +333,14 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
 
     // Set initial HTML
     const taskStates = await this.loadTaskStates();
+    const snippetDefinitions = await this.loadSnippetDefinitions();
     webviewPanel.webview.html = await this.getHtmlForWebview(
       webviewPanel.webview,
       getEditorFontSize(),
       getEditorSpellcheck(),
       getEditorHighlightTheme(),
       taskStates,
+      snippetDefinitions,
       document.noteId,
       document.title,
     );
@@ -409,6 +412,24 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
             });
           }).catch((err: unknown) => {
             void webviewPanel.webview.postMessage({ type: 'imageUploadResult', id: uploadId, error: String(err) });
+          });
+          break;
+        }
+        case 'uploadFile': {
+          const { id: fileUploadId, filename: attachmentFilename, mime: attachmentMime, dataBase64: attachmentDataBase64 } = message as {
+            type: string; id: string; filename: string; mime: string; dataBase64: string;
+          };
+          void this.uploadFileAsAttachment(document.noteId, attachmentFilename, attachmentMime, attachmentDataBase64).then(attachmentId => {
+            void webviewPanel.webview.postMessage({ type: 'uploadFileResult', id: fileUploadId, attachmentId });
+          }).catch((err: unknown) => {
+            void webviewPanel.webview.postMessage({ type: 'uploadFileResult', id: fileUploadId, error: String(err) });
+          });
+          break;
+        }
+        case 'openAttachment': {
+          const { attachmentId, filename: openFilename } = message as { type: string; attachmentId: string; filename: string };
+          void this.openAttachmentExternally(attachmentId, openFilename).catch((err: unknown) => {
+            void vscode.window.showErrorMessage(`Trilium Editor: failed to open attachment: ${String(err)}`);
           });
           break;
         }
@@ -771,6 +792,41 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
     return 'api/attachments/' + attachment.attachmentId + '/image/' + encodeURIComponent(filename);
   }
 
+  /** Backs the generic file-attachment upload adapter: stores the dropped/pasted file as a
+   * 'file'-role attachment under the note being edited (same shape as uploadImageAsAttachment's
+   * 'image' role) and returns its attachment id - not a browsable URL, since the reference the
+   * editor inserts is opened through 'openAttachment' below rather than followed as a link. */
+  private async uploadFileAsAttachment(
+    noteId: string,
+    filename: string,
+    mime: string,
+    dataBase64: string,
+  ): Promise<string> {
+    const client = this.getClient();
+    if (!client) { throw new Error('Not connected'); }
+
+    const attachment = await client.createAttachment(noteId, 'file', mime, filename, '');
+    const binary = Buffer.from(dataBase64, 'base64');
+    await client.putAttachmentContentBinary(attachment.attachmentId, binary);
+    return attachment.attachmentId;
+  }
+
+  /** Backs a file-attachment link's click handler: downloads the attachment's content and opens
+   * it with VS Code's own editor/preview selection, same approach attributesViewProvider.ts
+   * already uses for its "open attachment" action. */
+  private async openAttachmentExternally(attachmentId: string, filename: string): Promise<void> {
+    const client = this.getClient();
+    if (!client) { return; }
+
+    const buffer = await client.getAttachmentContent(attachmentId);
+    const safeName = (filename || `attachment-${attachmentId}`).replace(/[^a-zA-Z0-9._-]/g, '_');
+    const tmpDir = path.join(os.tmpdir(), 'trilium-attachments', attachmentId);
+    await vscode.workspace.fs.createDirectory(vscode.Uri.file(tmpDir));
+    const tmpFile = vscode.Uri.file(path.join(tmpDir, safeName));
+    await vscode.workspace.fs.writeFile(tmpFile, new Uint8Array(buffer));
+    await vscode.commands.executeCommand('vscode.open', tmpFile);
+  }
+
   /** Backs the "@" mention feed: searches notes as the user types after "@", mapped into the
    * mention item shape mention_customization.ts's CustomMentionCommand expects. */
   private async searchNotesForMention(
@@ -947,6 +1003,38 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
     }
   }
 
+  /** Loads the user's #snippet/#textSnippet notes into TriliumSnippets' definition shape.
+   * Fetched once when the editor opens, same as task states above - this extension has no
+   * existing "note tree changed elsewhere" event a currently-open editor could subscribe to for
+   * true live reload the way Trilium's own client does, so a snippet added or edited after the
+   * editor is already open needs the note reopened to show up. */
+  private async loadSnippetDefinitions(): Promise<Array<{ title: string; data: string; iconClass?: string }>> {
+    const client = this.getClient();
+    if (!client) { return []; }
+
+    try {
+      const { results } = await client.searchNotes('#snippet OR #textSnippet', { limit: 200 });
+      const definitions = await Promise.all(results.map(async (result) => {
+        try {
+          const [note, data] = await Promise.all([
+            client.getNote(result.noteId),
+            client.getNoteContent(result.noteId),
+          ]);
+          const iconClass = (note.attributes ?? [])
+            .find((attr) => attr.type === 'label' && attr.name === 'iconClass')?.value.trim();
+          return { title: note.title, data, iconClass: iconClass || undefined };
+        } catch (err) {
+          this._logger?.(`Failed to load snippet note ${result.noteId}: ${err}`);
+          return null;
+        }
+      }));
+      return definitions.flatMap((def): Array<{ title: string; data: string; iconClass?: string }> => (def ? [def] : []));
+    } catch (err) {
+      this._logger?.(`Failed to load snippet definitions: ${err}`);
+      return [];
+    }
+  }
+
   /** Resolve each state's Boxicons class to the SVG bundled with the extension. */
   private async withTaskStateIcons(states: EditorTaskStateDef[]): Promise<EditorTaskStateDef[]> {
     const svgRoot = getBundledBoxiconsSvgRoot(this.context.extensionPath);
@@ -975,6 +1063,7 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
     spellcheck: boolean,
     highlightTheme: string,
     taskStates: EditorTaskStateDef[] | undefined,
+    snippetDefinitions: Array<{ title: string; data: string; iconClass?: string }>,
     noteId: string | undefined,
     noteTitle: string | undefined,
   ): Promise<string> {
@@ -1010,6 +1099,7 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
     // inline script below).
     const serializedNoteId = JSON.stringify(noteId ?? null).replace(/</g, '\\u003c');
     const serializedNoteTitle = JSON.stringify(noteTitle ?? null).replace(/</g, '\\u003c');
+    const serializedSnippetDefinitions = JSON.stringify(snippetDefinitions).replace(/</g, '\\u003c');
 
     return `<!DOCTYPE html>
 <html lang="en">
@@ -1562,12 +1652,14 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
         const taskStates = ${serializedTaskStates};
         const noteId = ${serializedNoteId};
         const noteTitle = ${serializedNoteTitle};
+        const initialSnippetDefinitions = ${serializedSnippetDefinitions};
         let editor;
         let isUpdatingFromExtension = false;
         let pendingExternalContent = '';
         let hasPendingExternalContent = false;
         const pendingImageFetches = new Map();
         const pendingUploads = new Map();
+        const pendingFileUploads = new Map();
         const uploadedImageUrlByDataUri = new Map();
         const pendingIconPicks = new Map();
         const pendingNotePicks = new Map();
@@ -1900,7 +1992,7 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
                   items: [
                     'link', 'internalLink', 'bookmark', '|',
                     'collapsible', 'math', 'mermaid', 'horizontalLine', 'pageBreak', '|',
-                    'dateTime', 'specialCharacters', 'emoji', 'insertIcon',
+                    'dateTime', 'specialCharacters', 'emoji', 'insertIcon', 'insertTemplate',
                   ],
                 },
                 '|',
@@ -2114,6 +2206,20 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
                 renderIncludedNote(noteId, domElement, boxSize);
               },
             },
+            // Text snippets: the initial list fetched from #snippet/#textSnippet notes when this
+            // editor opened (see loadSnippetDefinitions). Each definition's data field is the
+            // note's HTML content, inserted verbatim at the caret when picked.
+            snippets: {
+              definitions: initialSnippetDefinitions,
+            },
+            // Generic file attachment plugin: a click downloads the attachment and opens it
+            // with VS Code's own editor/preview picker (see the 'openAttachment' message
+            // handler below). Fire-and-forget, same shape as referenceLink.openNote above.
+            fileAttachment: {
+              openAttachment: (attachmentId, filename) => {
+                vscode.postMessage({ type: 'openAttachment', attachmentId, filename });
+              },
+            },
             // Code block configuration. The custom syntax-highlighting plugin
             // maps these language names to highlight.js in the editing view.
             codeBlock: {
@@ -2202,40 +2308,45 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
               }
             });
 
-            // Route image uploads through the extension host to Trilium attachments.
+            // Route image uploads through the extension host to Trilium attachments; a non-image
+            // file (from the generic file-attachment plugin's loaders, sharing this same
+            // FileRepository) goes through the 'uploadFile' pending map instead - it resolves
+            // with the new attachment's id rather than a data URI, since a file link has nothing
+            // to render inline the way an <img src> does.
             editor.plugins.get('FileRepository').createUploadAdapter = (loader) => {
               return {
                 upload() {
                   return loader.file.then(file => {
+                    const isImage = (file.type || '').startsWith('image/');
                     return new Promise((resolve, reject) => {
                       const uploadId = Math.random().toString(36).slice(2);
-                      pendingUploads.set(uploadId, { resolve, reject });
+                      (isImage ? pendingUploads : pendingFileUploads).set(uploadId, { resolve, reject });
                       const reader = new FileReader();
                       reader.onload = (e) => {
                         const dataUrl = e.target?.result;
                         if (typeof dataUrl !== 'string') {
-                          pendingUploads.delete(uploadId);
-                          reject(new Error('Failed to read image file'));
+                          (isImage ? pendingUploads : pendingFileUploads).delete(uploadId);
+                          reject(new Error('Failed to read file'));
                           return;
                         }
                         const comma = dataUrl.indexOf(',');
                         if (comma < 0) {
-                          pendingUploads.delete(uploadId);
-                          reject(new Error('Failed to encode image file'));
+                          (isImage ? pendingUploads : pendingFileUploads).delete(uploadId);
+                          reject(new Error('Failed to encode file'));
                           return;
                         }
                         const dataBase64 = dataUrl.slice(comma + 1);
                         vscode.postMessage({
-                          type: 'uploadImage',
+                          type: isImage ? 'uploadImage' : 'uploadFile',
                           id: uploadId,
-                          filename: file.name || 'image.png',
-                          mime: file.type || 'image/png',
+                          filename: file.name || (isImage ? 'image.png' : 'file'),
+                          mime: file.type || (isImage ? 'image/png' : 'application/octet-stream'),
                           dataBase64,
                         });
                       };
                       reader.onerror = () => {
-                        pendingUploads.delete(uploadId);
-                        reject(new Error('Failed to read image file'));
+                        (isImage ? pendingUploads : pendingFileUploads).delete(uploadId);
+                        reject(new Error('Failed to read file'));
                       };
                       reader.readAsDataURL(file);
                     });
@@ -2360,6 +2471,18 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
                     uploadedImageUrlByDataUri.set(message.dataUri, message.url);
                   }
                   pending.resolve({ default: message.dataUri });
+                } else {
+                  pending.reject(new Error(message.error || 'Upload failed'));
+                }
+              }
+              break;
+            }
+            case 'uploadFileResult': {
+              const pending = pendingFileUploads.get(message.id);
+              pendingFileUploads.delete(message.id);
+              if (pending) {
+                if (message.attachmentId) {
+                  pending.resolve({ default: message.attachmentId });
                 } else {
                   pending.reject(new Error(message.error || 'Upload failed'));
                 }
