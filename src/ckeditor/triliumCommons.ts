@@ -1,6 +1,10 @@
 export const NONE_STATE_NAME = 'none';
 export const DONE_STATE_NAME = 'done';
 
+/** Marks an `<img>` whose `src` is a value the editing view injected (e.g. a blob: URL from a
+ * pasted image) rather than real note content, so paste/clipboard plugins can tell them apart. */
+export const TRILIUM_SRC_ATTRIBUTE = 'data-trilium-src';
+
 export interface TaskStateDef {
   name: string;
   title: string;

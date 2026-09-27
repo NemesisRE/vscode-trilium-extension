@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { EtapiClient, Note } from './etapiClient';
+import { EtapiClient } from './etapiClient';
 
 interface BacklinkItem extends vscode.TreeItem {
   noteId: string;
@@ -15,8 +15,13 @@ export class BacklinksProvider implements vscode.TreeDataProvider<BacklinkItem> 
 
   private backlinks: BacklinkItem[] = [];
   private currentNoteId: string | null = null;
+  private _logger: ((msg: string) => void) | undefined;
 
   constructor(private readonly getClient: () => EtapiClient | undefined) {}
+
+  setLogger(fn: (msg: string) => void): void {
+    this._logger = fn;
+  }
 
   refresh(): void {
     this._onDidChangeTreeData.fire();
@@ -51,28 +56,19 @@ export class BacklinksProvider implements vscode.TreeDataProvider<BacklinkItem> 
     try {
       await client.getNote(noteId);
 
-      // Get all notes that have relations pointing to this note
-      // We search for notes with targetRelationCount > 0, then filter client-side
+      // Get all notes that have relations pointing to this note. ETAPI's search
+      // results already include each note's full `attributes` array (same mapper
+      // as a direct getNote() call), so no per-result re-fetch is needed here -
+      // we search broadly for note.targetRelationCount > 0 (Trilium's search
+      // syntax has no "any relation, any name, pointing at X" predicate) and then
+      // filter client-side using the attributes already on hand.
       const { results } = await client.searchNotes(`note.targetRelationCount > 0`, {
         limit: 100,
       });
 
-      // Filter to notes that actually have a relation pointing to current noteId
-      const backlinkPromises = results.map(async (n) => {
-        try {
-          const fullNote = await client.getNote(n.noteId);
-          const pointsToCurrentNote = fullNote.attributes?.some(
-            (attr) => attr.type === 'relation' && attr.value === noteId,
-          ) ?? false;
-          return pointsToCurrentNote ? fullNote : null;
-        } catch {
-          return null;
-        }
-      });
-
-      const backlinkNotes = (await Promise.all(backlinkPromises)).filter(
-        (n) => n !== null,
-      ) as Note[];
+      const backlinkNotes = results.filter((n) =>
+        n.attributes?.some((attr) => attr.type === 'relation' && attr.value === noteId) ?? false,
+      );
 
       this.backlinks = backlinkNotes
         .sort((a, b) => a.title.localeCompare(b.title))
@@ -94,7 +90,7 @@ export class BacklinksProvider implements vscode.TreeDataProvider<BacklinkItem> 
 
       this.refresh();
     } catch (error) {
-      // Silently fail if backlinks cannot be loaded
+      this._logger?.(`Failed to load backlinks for ${noteId}: ${error}`);
       this.backlinks = [];
       this.refresh();
     }

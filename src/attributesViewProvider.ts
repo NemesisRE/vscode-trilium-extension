@@ -198,10 +198,12 @@ export class AttributesViewProvider implements vscode.WebviewViewProvider {
     this._render();
     if (note && this._client) {
       this._client.getNoteAttachments(note.noteId).then((attachments) => {
+        if (this._note !== note) { return; }
         this._attachments = attachments;
         this._attachmentsLoaded = true;
         this._render();
       }).catch(() => {
+        if (this._note !== note) { return; }
         this._attachmentsLoaded = true;
         this._render();
       });
@@ -229,7 +231,7 @@ export class AttributesViewProvider implements vscode.WebviewViewProvider {
     if (!note) {
       return `<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'none';">
 <style>body{font-family:var(--vscode-font-family);font-size:var(--vscode-font-size);color:var(--vscode-descriptionForeground);padding:12px;margin:0;}</style>
 </head><body><p>Select a note to view its attributes.</p></body></html>`;
     }
@@ -545,13 +547,12 @@ document.querySelector('.upload-btn')?.addEventListener('click', () => {
       text-overflow: ellipsis;
       white-space: nowrap;
       font-size: 0.85em;
+    }
     .att-item.att-pdf {
-      grid-template-columns: 1fr auto auto auto;
       padding: 4px 6px;
       border: 1px solid var(--vscode-editorWidget-border, #444);
       border-radius: 4px;
       background: color-mix(in srgb, var(--vscode-editorWidget-background, #333) 88%, transparent);
-    }
     }
     .att-size {
       font-size: 0.75em;

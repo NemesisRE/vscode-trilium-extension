@@ -4,7 +4,7 @@ This roadmap is a working list of improvements and ideas, not a strict milestone
 
 ## Recently Completed
 
-- Visual math rendering in text notes: CKEditor now uses MathJax from a CDN for rendering TeX equations and formulas with live preview support, enabling both inline and display math with stable source editing.
+- Visual math rendering in text notes: CKEditor uses KaTeX (loaded on demand) for rendering TeX equations and formulas with live preview support, enabling both inline and display math with stable source editing.
 - Text-note CKEditor tabs now use native unsaved-close protection semantics.
 - Save flow for text notes is now server-first, so unresolved upstream conflicts do not silently clear dirty state.
 - Conflict resolution for text notes now includes **Compare**, **Keep Ours**, and **Use Theirs**.

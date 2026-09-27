@@ -88,44 +88,16 @@ export function applyVendorPatches(vendorDir, logPrefix = '[patch-plugins]') {
     }
   }
 
-  // ckeditor5-math: remove the custom `declare global` block for window.mathVirtualKeyboard.
-  // mathlive already declares `window.mathVirtualKeyboard: VirtualKeyboardInterface & EventTarget`
-  // in its own types, so redefining it with a narrower type causes TS2687/TS2717.
-  const mathInputViewPath = path.join(vendorDir, 'ckeditor5-math', 'src', 'ui', 'mathinputview.ts');
-  if (fs.existsSync(mathInputViewPath)) {
-    let src = fs.readFileSync(mathInputViewPath, 'utf8');
-    const declareGlobalBlock = /^declare global \{[\s\S]*?\}\s*\n\n/m;
-    if (declareGlobalBlock.test(src)) {
-      src = src.replace(declareGlobalBlock, '');
-      fs.writeFileSync(mathInputViewPath, src, 'utf8');
-      console.log(`${logPrefix} patched ckeditor5-math/src/ui/mathinputview.ts`);
-    }
-  }
-
-  // ckeditor5-math: newer upstream refs import raw SVG files from a package path
-  // that no longer exists in our installed CKEditor icon package. Rewrite these
-  // imports to the supported named exports from @ckeditor/ckeditor5-icons.
-  const mainFormViewPath = path.join(vendorDir, 'ckeditor5-math', 'src', 'ui', 'mainformview.ts');
-  if (fs.existsSync(mainFormViewPath)) {
-    let src = fs.readFileSync(mainFormViewPath, 'utf8');
-    const before = src;
-    src = src.replace(
-      'import IconCheck from "@ckeditor/ckeditor5-icons/theme/icons/check.svg?raw";',
-      'import { IconCheck, IconCancel } from "@ckeditor/ckeditor5-icons";',
-    );
-    src = src.replace(
-      'import IconCancel from "@ckeditor/ckeditor5-icons/theme/icons/cancel.svg?raw";\n',
-      '',
-    );
-    if (src !== before) {
-      fs.writeFileSync(mainFormViewPath, src, 'utf8');
-      console.log(`${logPrefix} patched ckeditor5-math/src/ui/mainformview.ts`);
-    }
-  }
-
   // ckeditor5-math: renderMathJax3 leaves behind previous renders if called multiple times,
   // causing duplicate equations. We need to clear all children before appending the new render.
-  const mathUtilsPath = path.join(vendorDir, 'ckeditor5-math', 'src', 'utils.ts');
+  // Also: once katex's own package types are reachable in this program (see loadKatex() in
+  // ckeditor-build.ts), TS2686 flags the bare `katex` identifier here as a UMD global used from
+  // a module without an import - switch to `window.katex`, matching the guard just above it,
+  // which resolves the same way without triggering that restriction. And: the constructed options
+  // object is built against this vendor's own (looser) local KatexOptions shape, which no longer
+  // matches katex's own (stricter) KatexOptions once render()'s type comes from the real package -
+  // cast it, since the actual runtime values are unaffected either way.
+  const mathUtilsPath = path.join(vendorDir, 'ckeditor5', 'src', 'plugins', 'math', 'utils.ts');
   if (fs.existsSync(mathUtilsPath)) {
     let src = fs.readFileSync(mathUtilsPath, 'utf8');
     const before = src;
@@ -133,15 +105,46 @@ export function applyVendorPatches(vendorDir, logPrefix = '[patch-plugins]') {
       "if ( element.firstChild ) {\n\t\t\t\telement.removeChild( element.firstChild );\n\t\t\t}",
       "while ( element.firstChild ) {\n\t\t\t\telement.removeChild( element.firstChild );\n\t\t\t}"
     );
+    src = src.replace(
+      "if ( katex ) {\n\t\t\t\t\tkatex.render( equation, el, {\n\t\t\t\t\t\tthrowOnError: false,\n\t\t\t\t\t\tdisplayMode: display,\n\t\t\t\t\t\t...katexRenderOptions,\n\t\t\t\t\t\t...normalizeKatexMacros( katexRenderOptions )\n\t\t\t\t\t} );",
+      "if ( window.katex ) {\n\t\t\t\t\twindow.katex.render( equation, el, ( {\n\t\t\t\t\t\tthrowOnError: false,\n\t\t\t\t\t\tdisplayMode: display,\n\t\t\t\t\t\t...katexRenderOptions,\n\t\t\t\t\t\t...normalizeKatexMacros( katexRenderOptions )\n\t\t\t\t\t} ) as Parameters<typeof window.katex.render>[ 2 ] );"
+    );
     if (src !== before) {
       fs.writeFileSync(mathUtilsPath, src, 'utf8');
-      console.log(`${logPrefix} patched ckeditor5-math/src/utils.ts`);
+      console.log(`${logPrefix} patched ckeditor5/src/plugins/math/utils.ts`);
     }
   }
 
-  // ckeditor5-mermaid: newer upstream refs leave the debounced textarea listener
-  // callback parameter implicitly typed, which fails under this repo's strict TS config.
-  const mermaidEditingPath = path.join(vendorDir, 'ckeditor5-mermaid', 'src', 'mermaidediting.ts');
+  // ckeditor5-math: this file's own `declare global { var katex: ...; }` (with a
+  // hand-written minimal Katex interface) exists for when katex is loaded as a
+  // runtime global. We statically import the real katex package elsewhere in
+  // this build (see ckeditor-build.ts's loadKatex()), and katex's own .d.ts
+  // already declares the same global via `export as namespace katex;`, so
+  // once both are reachable in the same compile they collide as a duplicate
+  // identifier. Drop the vendor's now-redundant copy; katex's own (more
+  // accurate) global declaration covers utils.ts's `katex` reference instead.
+  const mathTypingsPath = path.join(vendorDir, 'ckeditor5', 'src', 'plugins', 'math', 'typings_external.ts');
+  if (fs.existsSync(mathTypingsPath)) {
+    let src = fs.readFileSync(mathTypingsPath, 'utf8');
+    const before = src;
+    src = src.replace(
+      "export interface Katex {\n\trender( equation: string, el: HTMLElement, options: KatexOptions ): void;\n}\n\n",
+      "",
+    );
+    src = src.replace(
+      "\t// eslint-disable-next-line no-var\n\tvar katex: undefined | Katex;\n",
+      "",
+    );
+    if (src !== before) {
+      fs.writeFileSync(mathTypingsPath, src, 'utf8');
+      console.log(`${logPrefix} patched ckeditor5/src/plugins/math/typings_external.ts`);
+    }
+  }
+
+  // ckeditor5-mermaid: the debounced textarea input listener leaves its `event` parameter
+  // implicitly typed and accesses `event.target.value` without narrowing target's type,
+  // so give it an explicit `Event` type and guard the HTMLInputElement cast.
+  const mermaidEditingPath = path.join(vendorDir, 'ckeditor5', 'src', 'plugins', 'mermaid', 'mermaid_editing.ts');
   if (fs.existsSync(mermaidEditingPath)) {
     let src = fs.readFileSync(mermaidEditingPath, 'utf8');
     const before = src;
@@ -155,27 +158,139 @@ export function applyVendorPatches(vendorDir, logPrefix = '[patch-plugins]') {
     );
     if (src !== before) {
       fs.writeFileSync(mermaidEditingPath, src, 'utf8');
-      console.log(`${logPrefix} patched ckeditor5-mermaid/src/mermaidediting.ts`);
+      console.log(`${logPrefix} patched ckeditor5/src/plugins/mermaid/mermaid_editing.ts`);
     }
   }
 
-  // ckeditor5-collapsible: upstream package imports monorepo workspace deps.
-  // Rewrite those imports to local repo paths so our standalone build can bundle them.
-  const legacyCollapsibleEditingPath = path.join(vendorDir, 'ckeditor5-collapsible', 'src', 'collapsible-editing.ts');
-  if (fs.existsSync(legacyCollapsibleEditingPath)) {
-    let src = fs.readFileSync(legacyCollapsibleEditingPath, 'utf8');
+  // ckeditor5-inline_icon: both files import the upstream InlineIconUI, whose picker is
+  // rendered by Trilium's own app-level React component tree
+  // (glob.getComponentByEl(editorEl).showIconPicker(...)), which does not exist in this
+  // standalone extension. Redirect both imports to our own InlineIconUI
+  // (src/ckeditor/inlineIconUi.ts), which calls an editor-config callback wired to a VS
+  // Code QuickPick instead. inline_icon_editing.ts has no such dependency and is used
+  // unmodified.
+  const inlineIconPath = path.join(vendorDir, 'ckeditor5', 'src', 'plugins', 'inline_icon', 'inline_icon.ts');
+  if (fs.existsSync(inlineIconPath)) {
+    let src = fs.readFileSync(inlineIconPath, 'utf8');
     const before = src;
     src = src.replace(
-      'import { formatShortcut, joinShortcut } from "@triliumnext/commons";',
-      'import { formatShortcut, joinShortcut } from "../../../src/ckeditor/shortcut.ts";',
-    );
-    src = src.replace(
-      'import { ContentHintManager, type HintHandle } from "@triliumnext/ckeditor5-utils";',
-      'import { ContentHintManager, type HintHandle } from "../../ckeditor5-utils/src/index.ts";',
+      'import InlineIconUI from "./inline_icon_ui.js";',
+      'import InlineIconUI from "../../../../../src/ckeditor/inlineIconUi.js";',
     );
     if (src !== before) {
-      fs.writeFileSync(legacyCollapsibleEditingPath, src, 'utf8');
-      console.log(`${logPrefix} patched ckeditor5-collapsible/src/collapsible-editing.ts`);
+      fs.writeFileSync(inlineIconPath, src, 'utf8');
+      console.log(`${logPrefix} patched ckeditor5/src/plugins/inline_icon/inline_icon.ts`);
+    }
+  }
+
+  const inlineIconToolbarPath = path.join(vendorDir, 'ckeditor5', 'src', 'plugins', 'inline_icon', 'inline_icon_toolbar.ts');
+  if (fs.existsSync(inlineIconToolbarPath)) {
+    let src = fs.readFileSync(inlineIconToolbarPath, 'utf8');
+    const before = src;
+    src = src.replace(
+      'import InlineIconUI, { CHANGE_ICON } from "./inline_icon_ui.js";',
+      'import InlineIconUI, { CHANGE_ICON } from "../../../../../src/ckeditor/inlineIconUi.js";',
+    );
+    // Upstream only offers horizontally centred positions (the default WidgetToolbarRepository
+    // candidate list). Confirmed by a headless reproduction: an icon inserted near the left edge
+    // of a narrow editing pane (a common case here - VS Code editor panes can be much narrower
+    // than Trilium's own browser tab) gets a balloon centred over it that renders with a negative
+    // `left`, i.e. partly off-screen. The same fix used below for the todo-list task-state balloon
+    // (preferring CKEditor's `*West`/`*East` presets) turned out not to be enough here: those
+    // presets still use a flat ~25px arrow offset regardless of how much room is actually left,
+    // so a target within that distance of the edge (as in the reproduction) still clips. Use our
+    // own edge-clamped positions (src/ckeditor/balloonPositions.ts) first instead, which size the
+    // offset to the room actually available; the presets stay as a fallback.
+    src = src.replace(
+      'import {\n    addListToDropdown, Collection, type Command, createDropdown,\n    type ListDropdownItemDefinition, type LocaleTranslate, Plugin, UIModel, WidgetToolbarRepository\n} from "ckeditor5";',
+      'import {\n    addListToDropdown, BalloonPanelView, Collection, type Command, createDropdown,\n    type ListDropdownItemDefinition, type LocaleTranslate, Plugin, UIModel, WidgetToolbarRepository\n} from "ckeditor5";\nimport { edgeClampedToolbarPositions } from "../../../../../src/ckeditor/balloonPositions.js";',
+    );
+    src = src.replace(
+      '    afterInit() {\n        this.editor.plugins.get(WidgetToolbarRepository).register(ICON, {\n            ariaLabel: this.editor.t("Icon toolbar"),\n            items: [ CHANGE_ICON, ICON_TRANSFORM_COMMAND ],\n            getRelatedElement: (selection) => {',
+      '    afterInit() {\n        const editor = this.editor;\n\n        editor.plugins.get(WidgetToolbarRepository).register(ICON, {\n            ariaLabel: editor.t("Icon toolbar"),\n            items: [ CHANGE_ICON, ICON_TRANSFORM_COMMAND ],\n            positions: [\n                ...edgeClampedToolbarPositions(editor),\n                BalloonPanelView.defaultPositions.northArrowSouthWest,\n                BalloonPanelView.defaultPositions.southArrowNorthWest,\n                BalloonPanelView.defaultPositions.northArrowSouth,\n                BalloonPanelView.defaultPositions.southArrowNorth,\n                BalloonPanelView.defaultPositions.northArrowSouthEast,\n                BalloonPanelView.defaultPositions.southArrowNorthEast\n            ],\n            getRelatedElement: (selection) => {',
+    );
+    if (src !== before) {
+      fs.writeFileSync(inlineIconToolbarPath, src, 'utf8');
+      console.log(`${logPrefix} patched ckeditor5/src/plugins/inline_icon/inline_icon_toolbar.ts`);
+    }
+  }
+
+  // Same "no @triliumnext/commons in this standalone extension" situation as the todo plugin
+  // above - these two clipboard-paste plugins only need the one shared attribute-name constant.
+  const clipboardPluginsDir = path.join(vendorDir, 'ckeditor5', 'src', 'plugins');
+  for (const fileName of ['clipboard_image_embed.ts', 'clipboard_bare_image.ts']) {
+    const filePath = path.join(clipboardPluginsDir, fileName);
+    if (!fs.existsSync(filePath)) {
+      continue;
+    }
+    let src = fs.readFileSync(filePath, 'utf8');
+    const before = src;
+    src = src.replaceAll('from "@triliumnext/commons"', 'from "../../../../src/ckeditor/triliumCommons"');
+    if (src !== before) {
+      fs.writeFileSync(filePath, src, 'utf8');
+      console.log(`${logPrefix} patched ckeditor5/src/plugins/${fileName}`);
+    }
+  }
+
+  // insert_date_time.ts formats "now" through Trilium's own app-level date service
+  // (glob.getComponentByEl(editorEl).formatDateTime(...), for the user's configured
+  // customDateTimeFormat) which has no equivalent here. Redirect to a small local formatter
+  // (src/ckeditor/insertDateTimeFormat.ts) covering the same fixed preset formats the plugin
+  // itself offers - there's no "custom format" setting in this extension to honour instead.
+  const insertDateTimePath = path.join(vendorDir, 'ckeditor5', 'src', 'plugins', 'insert_date_time.ts');
+  if (fs.existsSync(insertDateTimePath)) {
+    let src = fs.readFileSync(insertDateTimePath, 'utf8');
+    const before = src;
+    // Unlike the replacements above, the search string here (the dateTimeIcon import) is not
+    // itself removed by patching - it stays in the file with the new import appended after it -
+    // so a second call (e.g. this repo's CI re-runs applyVendorPatches on a cache hit, against
+    // an already-patched vendor/ tree) would insert a duplicate import. Guard on the new
+    // import's own presence instead, the same way the other replacements are naturally guarded
+    // by their search string disappearing once applied.
+    if (!src.includes('insertDateTimeFormat.js')) {
+      src = src.replace(
+        "import dateTimeIcon from '../icons/date-time.svg?raw';",
+        "import dateTimeIcon from '../icons/date-time.svg?raw';\nimport { formatDateTime } from '../../../../src/ckeditor/insertDateTimeFormat.js';",
+      );
+    }
+    src = src.replace(
+      /function formatNow\(editor: Editor, format\?: string\) \{\n[^\n]*\n[^\n]*\n\}/,
+      'function formatNow(editor: Editor, format?: string) {\n    return formatDateTime(new Date(), format);\n}',
+    );
+    if (src !== before) {
+      fs.writeFileSync(insertDateTimePath, src, 'utf8');
+      console.log(`${logPrefix} patched ckeditor5/src/plugins/insert_date_time.ts`);
+    }
+  }
+
+  // Two Tier-1 plugins (see the toolbar-parity work) don't compile cleanly under this repo's
+  // stricter tsconfig, same as the other type-only patches in this file - neither changes
+  // behaviour, just satisfies the type checker.
+  const copyToClipboardPath = path.join(vendorDir, 'ckeditor5', 'src', 'plugins', 'copy_to_clipboard_button.ts');
+  if (fs.existsSync(copyToClipboardPath)) {
+    let src = fs.readFileSync(copyToClipboardPath, 'utf8');
+    const before = src;
+    src = src.replace(
+      'this.executeCallback = this.editor.config.get("clipboard")?.copy;',
+      'this.executeCallback = (this.editor.config.get("clipboard") as { copy?: (text: string) => void } | undefined)?.copy;',
+    );
+    if (src !== before) {
+      fs.writeFileSync(copyToClipboardPath, src, 'utf8');
+      console.log(`${logPrefix} patched ckeditor5/src/plugins/copy_to_clipboard_button.ts`);
+    }
+  }
+
+  const moveBlockUpDownPath = path.join(vendorDir, 'ckeditor5', 'src', 'plugins', 'move_block_updown.ts');
+  if (fs.existsSync(moveBlockUpDownPath)) {
+    let src = fs.readFileSync(moveBlockUpDownPath, 'utf8');
+    const before = src;
+    src = src.replace(
+      "const keyMap = {\n    ArrowUp: 'moveBlockUp',\n    ArrowDown: 'moveBlockDown'\n};",
+      "const keyMap: Record<string, string> = {\n    ArrowUp: 'moveBlockUp',\n    ArrowDown: 'moveBlockDown'\n};",
+    );
+    if (src !== before) {
+      fs.writeFileSync(moveBlockUpDownPath, src, 'utf8');
+      console.log(`${logPrefix} patched ckeditor5/src/plugins/move_block_updown.ts`);
     }
   }
 

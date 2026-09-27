@@ -1,3 +1,4 @@
+import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -10,7 +11,7 @@ import {
   noteTypeToLabel,
   preferredCodiconForNote,
 } from './noteTreeProvider';
-import { getAutoRevealInTreeOnOpen, getServerUrl, getToken, storeToken } from './settings';
+import { deleteToken, getAutoRevealInTreeOnOpen, getServerUrl, getToken, storeToken } from './settings';
 import { TempFileManager } from './tempFileManager';
 import { AttributesViewProvider } from './attributesViewProvider';
 import { TriliumTextEditorProvider } from './triliumTextEditorProvider';
@@ -80,12 +81,7 @@ const noteWebviewPanels = new Map<string, vscode.WebviewPanel>();
 let activeWebviewNoteId: string | undefined;
 
 function createNonce(): string {
-  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  let out = '';
-  for (let i = 0; i < 24; i += 1) {
-    out += alphabet[Math.floor(Math.random() * alphabet.length)];
-  }
-  return out;
+  return crypto.randomBytes(24).toString('base64');
 }
 
 function escapeHtml(input: string): string {
@@ -997,6 +993,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     if (!backlinksProvider) {
       backlinksProvider = new BacklinksProvider(() => treeProvider.getClient());
+      backlinksProvider.setLogger((msg) => output.appendLine(`[backlinks] ${msg}`));
     }
     if (!backlinksView) {
       backlinksView = vscode.window.createTreeView('triliumBacklinks', {
@@ -1635,6 +1632,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (info) {
         await refreshOpenVirtualEditorsAfterReconnect();
       }
+    }),
+
+    vscode.commands.registerCommand('trilium.disconnect', async () => {
+      const confirmed = await vscode.window.showWarningMessage(
+        'Disconnect from Trilium and remove the stored ETAPI token?',
+        { modal: true },
+        'Disconnect',
+      );
+      if (confirmed !== 'Disconnect') {
+        return;
+      }
+      await deleteToken(context.secrets);
+      treeProvider.setClient(undefined);
+      attributesProvider.setClient(undefined);
+      updateStatusBar(undefined);
+      updateTreeDescription(undefined);
+      void vscode.commands.executeCommand('setContext', 'trilium.connected', false);
+      virtualDocProvider.clearAllCache();
     }),
 
     vscode.commands.registerCommand('trilium.createNote', async (item?: NoteItem) => {
@@ -2993,18 +3008,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
 
     (() => {
-      const POLL_MS = 30_000;
-      const handle = setInterval(async () => {
-        const intervalSecs = vscode.workspace
-          .getConfiguration('trilium')
-          .get<number>('autoRefreshIntervalSeconds', 30);
+      let handle: ReturnType<typeof setInterval> | undefined;
+
+      const tick = async () => {
         const maxConsecutiveFailures = vscode.workspace
           .getConfiguration('trilium')
           .get<number>('autoRefreshMaxConsecutiveFailures', 8);
         const warnAfterFailures = vscode.workspace
           .getConfiguration('trilium')
           .get<number>('autoRefreshWarnAfterFailures', 3);
-        if (intervalSecs <= 0 || refreshRegistry.size === 0) {
+        if (refreshRegistry.size === 0) {
           return;
         }
         const client = treeProvider.getClient();
@@ -3032,7 +3045,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
             entry.lastWarnedFailureCount = entry.consecutiveFailures;
 
-            const action = await vscode.window.showWarningMessage(
+            // Don't await the dialog here: doing so would block every other
+            // tracked note in this tick until the user dismisses it.
+            void vscode.window.showWarningMessage(
               buildRefreshFailureMessage(
                 entry.title,
                 kind,
@@ -3042,25 +3057,54 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
               'Retry Now',
               'Reconnect',
               'Disable Auto-Refresh',
-            );
-
-            if (action === 'Retry Now') {
-              try {
-                await refreshTrackedEntry(noteId, entry, client);
-              } catch {
-                // Leave the note tracked; normal polling/backoff will continue.
+            ).then(async (action) => {
+              if (action === 'Retry Now') {
+                try {
+                  await refreshTrackedEntry(noteId, entry, client);
+                } catch {
+                  // Leave the note tracked; normal polling/backoff will continue.
+                }
+              } else if (action === 'Reconnect') {
+                await vscode.commands.executeCommand('trilium.reconnect');
+              } else if (action === 'Disable Auto-Refresh') {
+                await vscode.workspace
+                  .getConfiguration('trilium')
+                  .update('autoRefreshIntervalSeconds', 0, vscode.ConfigurationTarget.Global);
               }
-            } else if (action === 'Reconnect') {
-              await vscode.commands.executeCommand('trilium.reconnect');
-            } else if (action === 'Disable Auto-Refresh') {
-              await vscode.workspace
-                .getConfiguration('trilium')
-                .update('autoRefreshIntervalSeconds', 0, vscode.ConfigurationTarget.Global);
-            }
+            });
           }
         }
-      }, POLL_MS);
-      return { dispose: () => clearInterval(handle) };
+      };
+
+      const scheduleTimer = () => {
+        if (handle) {
+          clearInterval(handle);
+          handle = undefined;
+        }
+        const intervalSecs = vscode.workspace
+          .getConfiguration('trilium')
+          .get<number>('autoRefreshIntervalSeconds', 30);
+        if (intervalSecs <= 0) {
+          return;
+        }
+        handle = setInterval(tick, intervalSecs * 1000);
+      };
+
+      scheduleTimer();
+      const configListener = vscode.workspace.onDidChangeConfiguration((e) => {
+        if (e.affectsConfiguration('trilium.autoRefreshIntervalSeconds')) {
+          scheduleTimer();
+        }
+      });
+
+      return {
+        dispose: () => {
+          if (handle) {
+            clearInterval(handle);
+          }
+          configListener.dispose();
+        },
+      };
     })(),
   );
 }
@@ -3099,7 +3143,7 @@ async function runConnectWizard(
     ignoreFocusOut: true,
     validateInput: (v) => {
       try {
-        new globalThis.URL(v);
+        new globalThis.URL(v.trim());
         return null;
       } catch {
         return 'Enter a valid URL (e.g. http://localhost:8080)';
@@ -3115,27 +3159,39 @@ async function runConnectWizard(
     password: true,
     ignoreFocusOut: true,
     placeHolder: 'Paste your ETAPI token here',
+    validateInput: (v) => {
+      const invalidCharIndex = [...v.trim()].findIndex((ch) => ch.codePointAt(0)! > 255);
+      if (invalidCharIndex !== -1) {
+        return 'Token contains a character HTTP headers can\'t carry (e.g. a "smart quote" or em dash from a copy-paste auto-correction). Copy it fresh from Trilium\'s Options → ETAPI page.';
+      }
+      return null;
+    },
   });
   if (!token) {
     return;
   }
 
   // Validate the credentials before storing them.
-  const client = new EtapiClient(serverUrl, token);
+  const trimmedUrl = serverUrl.trim();
+  const trimmedToken = token.trim();
+  const client = new EtapiClient(trimmedUrl, trimmedToken);
   try {
     const info = await client.getAppInfo();
     await vscode.workspace
       .getConfiguration('trilium')
-      .update('serverUrl', serverUrl, vscode.ConfigurationTarget.Global);
-    await storeToken(secrets, token);
+      .update('serverUrl', trimmedUrl, vscode.ConfigurationTarget.Global);
+    await storeToken(secrets, trimmedToken);
     treeProvider.setClient(client);
     void vscode.window.showInformationMessage(
-      `Trilium: Connected to ${serverUrl} (v${info.appVersion}).`,
+      `Trilium: Connected to ${trimmedUrl} (v${info.appVersion}).`,
     );
     return info;
   } catch (err) {
+    const detail = err instanceof TypeError && /ByteString/.test(err.message)
+      ? 'the token or URL contains a character HTTP headers can\'t carry (e.g. a "smart quote" or em dash from a copy-paste auto-correction) - copy it fresh from Trilium\'s Options → ETAPI page'
+      : String(err);
     void vscode.window.showErrorMessage(
-      `Trilium: Could not connect — check URL and token. ${err}`,
+      `Trilium: Could not connect — check URL and token. ${detail}`,
     );
     return undefined;
   }

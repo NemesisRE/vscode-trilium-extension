@@ -29,10 +29,13 @@ export function getEditorSpellcheck(): boolean {
   return vscode.workspace.getConfiguration('trilium').get<boolean>('editor.spellcheck', false);
 }
 
+const HIGHLIGHT_THEMES = ['vscode', 'github', 'atom-one-dark', 'solarized-light'] as const;
+
 export function getEditorHighlightTheme(): string {
-  return vscode.workspace
+  const value = vscode.workspace
     .getConfiguration('trilium')
     .get<string>('editor.highlightTheme', 'vscode');
+  return (HIGHLIGHT_THEMES as readonly string[]).includes(value) ? value : 'vscode';
 }
 
 export function getRootNoteId(): string {

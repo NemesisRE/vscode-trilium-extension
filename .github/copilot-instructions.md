@@ -79,7 +79,7 @@ Never rely on recalled API shapes for a package you haven't verified at the reso
 ### Trilium Parity and Visual Design
 - **The extension's UI/UX must match Trilium Notes' look and feel as closely as possible.** This includes:
   - Visual styling and presentation of note types
-  - Math rendering engines and their output (use MathJax to match Trilium's native math rendering)
+  - Math rendering engines and their output (use KaTeX to match Trilium's native math rendering)
   - Icon choices and colors
   - Editor toolbar and control appearance
   - Tree presentation (icons, spacing, indentation)

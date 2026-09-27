@@ -20,7 +20,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Resolve latest Trilium release commit
         id: latest
@@ -58,18 +58,26 @@ jobs:
           CURRENT="$(node -p "require('./scripts/trilium-plugins.lock.json').ref")"
           echo "sha=$CURRENT" >> "$GITHUB_OUTPUT"
 
+      - name: Compute tarball checksum for the new ref
+        id: checksum
+        if: steps.latest.outputs.sha != steps.current.outputs.sha
+        run: |
+          set -euo pipefail
+          SHA256="$(curl -sSfL "https://github.com/TriliumNext/Trilium/archive/${{ steps.latest.outputs.sha }}.tar.gz" | sha256sum | cut -d' ' -f1)"
+          echo "sha256=$SHA256" >> "$GITHUB_OUTPUT"
+
       - name: Update lock file
         if: steps.latest.outputs.sha != steps.current.outputs.sha
         run: |
           set -euo pipefail
-          LATEST_SHA='${{ steps.latest.outputs.sha }}'
-          node -e "const fs=require('fs');const p='scripts/trilium-plugins.lock.json';const d=JSON.parse(fs.readFileSync(p,'utf8'));d.ref=process.env.LATEST_SHA;fs.writeFileSync(p,JSON.stringify(d,null,2)+'\\n');"
+          node -e "const fs=require('fs');const p='scripts/trilium-plugins.lock.json';const d=JSON.parse(fs.readFileSync(p,'utf8'));d.ref=process.env.LATEST_SHA;d.sha256=process.env.NEW_SHA256;fs.writeFileSync(p,JSON.stringify(d,null,2)+'\\n');"
         env:
           LATEST_SHA: ${{ steps.latest.outputs.sha }}
+          NEW_SHA256: ${{ steps.checksum.outputs.sha256 }}
 
       - name: Create pull request
         if: steps.latest.outputs.sha != steps.current.outputs.sha
-        uses: peter-evans/create-pull-request@v8.1.1
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
         with:
           commit-message: 'chore(dependencies): update Trilium plugin ref to ${{ steps.latest.outputs.sha }}'
           branch: chore/update-trilium-plugin-ref

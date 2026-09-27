@@ -1,7 +1,9 @@
+import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { EtapiClient } from './etapiClient';
+import { EtapiClient, Note } from './etapiClient';
+import { showIconPickerPanel } from './iconPickerPanel';
 import { getBundledBoxiconsSvgRoot } from './noteTreeProvider';
 import { getEditorFontSize, getEditorHighlightTheme, getEditorSpellcheck } from './settings';
 import { boxiconSvgRelativePath, mergeTaskStates, svgToCssUrl, taskStateCssIdentifier } from './taskStateIcons';
@@ -40,7 +42,7 @@ const FALLBACK_TASK_STATES: EditorTaskStateDef[] = [
     isHidden: false,
     icon: 'bx bx-loader',
     iconSvg: '',
-    color: '#2f81f7',
+    color: '#e6a23c',
   },
   {
     name: 'maybe',
@@ -50,7 +52,10 @@ const FALLBACK_TASK_STATES: EditorTaskStateDef[] = [
     isHidden: false,
     icon: 'bx bx-question-mark',
     iconSvg: '',
-    color: '#d29922',
+    // No fixed color upstream either - renderTaskStateCss() falls back to a generic
+    // orange (matching Trilium's own --task-checkbox-with-state-background) for any
+    // configured state with no color of its own.
+    color: '',
   },
   {
     name: 'cancelled',
@@ -58,9 +63,9 @@ const FALLBACK_TASK_STATES: EditorTaskStateDef[] = [
     markdownSymbol: '-',
     isCompleted: true,
     isHidden: false,
-    icon: 'bx bx-x',
+    icon: 'bx bx-block',
     iconSvg: '',
-    color: '#8b949e',
+    color: '#e64d4d',
   },
 ];
 
@@ -283,13 +288,17 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
           if (!client) { return; }
           const note = await client.getNote(document.noteId);
           const content = await client.getNoteContent(document.noteId);
-          // Update without marking dirty — this is the authoritative server state.
-          document.content = content;
-          document.syncedContent = content;
           document.title = note.title;
           webviewPanel.title = note.title;
-          if (document.panels.has(webviewPanel)) {
-            void webviewPanel.webview.postMessage({ type: 'update', content });
+          // If the user already started editing (content diverged from the synced
+          // baseline) while this fetch was in flight, don't clobber their edits with
+          // this now-stale server snapshot.
+          if (document.content === document.syncedContent) {
+            document.content = content;
+            document.syncedContent = content;
+            if (document.panels.has(webviewPanel)) {
+              void webviewPanel.webview.postMessage({ type: 'update', content });
+            }
           }
           await this.refreshTreeOnEditorLoad();
         } catch {
@@ -345,6 +354,20 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
             void webviewPanel.webview.postMessage({ type: 'imageFetchResult', id, dataUri });
           }).catch(() => {
             void webviewPanel.webview.postMessage({ type: 'imageFetchResult', id, error: 'fetch failed' });
+          });
+          break;
+        }
+        case 'showIconPicker': {
+          const { id: pickId } = message as { type: string; id: string };
+          void showIconPickerPanel(this.context).then(iconClass => {
+            void webviewPanel.webview.postMessage({ type: 'iconPickerResult', id: pickId, iconClass });
+          });
+          break;
+        }
+        case 'showNotePicker': {
+          const { id: notePickId } = message as { type: string; id: string };
+          void this.showNotePickerQuickPick().then(note => {
+            void webviewPanel.webview.postMessage({ type: 'notePickerResult', id: notePickId, note });
           });
           break;
         }
@@ -505,6 +528,65 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
     }
 
     return `${lines.join('\n')}\n`;
+  }
+
+  /**
+   * Trilium's own internal-link picker opens through its app-level note-picker dialog,
+   * which has no equivalent here. Reuses the same debounced-search QuickPick pattern as
+   * the "Search Notes..." command instead.
+   */
+  private async showNotePickerQuickPick(): Promise<{ href: string; title: string } | undefined> {
+    const client = this.getClient();
+    if (!client) {
+      return undefined;
+    }
+
+    interface NoteSearchItem extends vscode.QuickPickItem { note: Note; }
+
+    return new Promise((resolve) => {
+      const qp = vscode.window.createQuickPick<NoteSearchItem>();
+      qp.title = 'Insert Internal Link';
+      qp.placeholder = 'Type to search notes…';
+      qp.matchOnDescription = true;
+
+      let debounceTimer: ReturnType<typeof setTimeout> | undefined;
+      let settled = false;
+
+      qp.onDidChangeValue((query) => {
+        if (debounceTimer) { clearTimeout(debounceTimer); }
+        if (!query.trim()) { qp.items = []; return; }
+        qp.busy = true;
+        debounceTimer = setTimeout(async () => {
+          try {
+            const { results } = await client.searchNotes(query, { limit: 50 });
+            qp.items = results.map((note) => ({
+              label: note.title,
+              description: note.type,
+              note,
+            }));
+          } catch {
+            qp.items = [];
+          } finally {
+            qp.busy = false;
+          }
+        }, 300);
+      });
+
+      qp.onDidAccept(() => {
+        const [item] = qp.selectedItems;
+        settled = true;
+        qp.hide();
+        resolve(item ? { href: `#${item.note.noteId}`, title: item.note.title } : undefined);
+      });
+
+      qp.onDidHide(() => {
+        if (debounceTimer) { clearTimeout(debounceTimer); }
+        if (!settled) { resolve(undefined); }
+        qp.dispose();
+      });
+
+      qp.show();
+    });
   }
 
   private async fetchImageDataUri(relativeUrl: string): Promise<string> {
@@ -705,7 +787,9 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
     const effectiveTaskStates = this.withTaskStateIcons(
       taskStates && taskStates.length > 0 ? taskStates : FALLBACK_TASK_STATES,
     );
-    const serializedTaskStates = JSON.stringify(effectiveTaskStates);
+    // Escape `<` so a task-state title/label containing `</script>` cannot break out
+    // of the inline script block below.
+    const serializedTaskStates = JSON.stringify(effectiveTaskStates).replace(/</g, '\\u003c');
     const taskStateCss = renderTaskStateCss(effectiveTaskStates);
 
     return `<!DOCTYPE html>
@@ -713,13 +797,18 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- connect-src needs blob: for the emoji picker: EmojiRepository always fetches its
+         definitions from a URL, so ckeditor-build.ts hands it a blob: URL wrapping the
+         already-vendored definitions file instead of CKEditor's own CDN - without blob:
+         here that fetch is CSP-blocked, the repository never finishes loading, and the
+         toolbar button stays permanently disabled. -->
     <meta http-equiv="Content-Security-Policy" content="
       default-src 'none';
       style-src ${webview.cspSource} 'unsafe-inline' https://cdn.jsdelivr.net;
-      script-src 'nonce-${nonce}' https://cdn.jsdelivr.net;
+      script-src 'nonce-${nonce}' ${webview.cspSource};
       font-src ${webview.cspSource} https://cdn.jsdelivr.net data:;
-      img-src * data: blob:;
-      connect-src ${webview.cspSource} https://cdn.jsdelivr.net;
+      img-src ${webview.cspSource} https: data: blob:;
+      connect-src ${webview.cspSource} https://cdn.jsdelivr.net blob:;
     ">
     <title>Trilium Text Editor</title>
     <!-- Load CKEditor CSS (bundled by esbuild) -->
@@ -900,7 +989,14 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
         padding: 0;
         margin: 0;
         height: 100vh;
-        overflow: hidden;
+        /* Not "overflow: hidden" - CKEditor appends its balloon panels (toolbar
+           popups shown over selected widgets, dropdowns, etc.) directly to
+           document.body, positioned via calculated coordinates that assume
+           they won't be clipped by an ancestor. #editor-container's own
+           flex:1/min-height:0 sizing already keeps normal content from
+           overflowing body, so this isn't needed as a backstop and only
+           clips balloons landing near an edge of the panel. */
+        overflow: visible;
         display: flex;
         flex-direction: column;
         --trilium-hljs-comment: var(--vscode-editorCodeLens-foreground, #6a9955);
@@ -1166,28 +1262,6 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
         color: var(--vscode-editor-foreground, #000);
         font-family: inherit;
       }
-      .ck-content .todo-list .todo-list__label > input[type='checkbox'] {
-        appearance: none;
-        -webkit-appearance: none;
-        position: relative;
-        width: 14px;
-        height: 14px;
-        margin-right: 8px;
-        border-radius: 3px;
-        border: 2px solid var(--vscode-checkbox-border, var(--vscode-input-border, #c5c5c5));
-        background: var(--vscode-checkbox-background, var(--vscode-input-background, #2d2d30));
-        box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.15);
-        vertical-align: -2px;
-      }
-      .ck-content .todo-list .todo-list__label > input[type='checkbox']:checked {
-        background: var(--vscode-checkbox-selectBackground, var(--vscode-inputOption-activeBackground, #0e639c));
-        border-color: var(--vscode-checkbox-selectBorder, var(--vscode-inputOption-activeBackground, #0e639c));
-        box-shadow: none;
-      }
-      .ck-content .todo-list .todo-list__label > input[type='checkbox']:focus-visible {
-        outline: 2px solid var(--vscode-focusBorder, #007fd4);
-        outline-offset: 1px;
-      }
       .ck-content .todo-list .todo-list__label {
         position: relative;
       }
@@ -1196,11 +1270,6 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
         top: 3px;
       }
       ${taskStateCss}
-      .ck-content .todo-list .todo-list__label > input[type='checkbox']:not(:checked)::before,
-      .ck-editor__editable.ck-content .todo-list .todo-list__label > span[contenteditable=false] > input[type='checkbox']:not(:checked)::before {
-        border: 1px solid var(--vscode-settings-checkboxBorder, var(--vscode-checkbox-border, #8b8b8b)) !important;
-        background-color: var(--vscode-settings-checkboxBackground, var(--vscode-checkbox-background, #313131)) !important;
-      }
       .ck-content ul.todo-list li:has(> span.todo-list__label input[type="checkbox"]:checked) > span.todo-list__label span.todo-list__label__description,
       .ck-content ul.todo-list li:has(> .todo-list__label input[type="checkbox"]:checked) > .todo-list__label .todo-list__label__description,
       .ck-content ul.todo-list li:has(> label.todo-list__label input[type="checkbox"]:checked) > label.todo-list__label .todo-list__label__description {
@@ -1267,7 +1336,7 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
     <div id="editor-container"></div>
 
     <script type="module" nonce="${nonce}">
-      import { TriliumEditor } from '${ckeditorUri}';
+      import { TriliumEditor, loadKatex, loadMermaid } from '${ckeditorUri}';
 
       (function() {
         const vscode = acquireVsCodeApi();
@@ -1275,46 +1344,12 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
         let editor;
         let isUpdatingFromExtension = false;
         let pendingExternalContent = '';
-        const TASK_STATE_DEBUG = false;
-        const debugTaskState = (event, details = {}) => {
-          if (!TASK_STATE_DEBUG) {
-            return;
-          }
-          console.debug('[trilium-task-state]', event, {
-            states: taskStates.map((state) => state.name),
-            ...details,
-          });
-        };
-
-        document.addEventListener('contextmenu', (event) => {
-          const checkbox = event.target?.closest?.('.todo-list__label input[type="checkbox"]');
-          if (!checkbox) {
-            return;
-          }
-          const editorRoot = document.querySelector('.ck-editor__editable');
-          debugTaskState('contextmenu', {
-            targetRect: checkbox.getBoundingClientRect().toJSON(),
-            editorRect: editorRoot?.getBoundingClientRect().toJSON(),
-            viewport: { width: window.innerWidth, height: window.innerHeight },
-          });
-        }, true);
-
-        document.addEventListener('click', (event) => {
-          const button = event.target?.closest?.('.task-state-toolbar .ck-button');
-          if (!button) {
-            return;
-          }
-          debugTaskState('state-click', {
-            buttonLabel: button.getAttribute('aria-label'),
-            balloonRect: button.closest('.ck-balloon-panel')?.getBoundingClientRect().toJSON(),
-            commandEnabled: editor?.commands?.get('setTaskState')?.isEnabled,
-            commandValue: editor?.commands?.get('setTaskState')?.value,
-          });
-        }, true);
         let hasPendingExternalContent = false;
         const pendingImageFetches = new Map();
         const pendingUploads = new Map();
         const uploadedImageUrlByDataUri = new Map();
+        const pendingIconPicks = new Map();
+        const pendingNotePicks = new Map();
 
         const triliumToLocalLanguageMap = {
           'text-plain': 'plaintext',
@@ -1501,48 +1536,62 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
           .create(document.querySelector('#editor-container'), {
             licenseKey: 'GPL',
             taskStates,
-            // Override toolbar to match Trilium's layout more closely
+            // Override toolbar to match Trilium's layout more closely (grouped the same way
+            // as Trilium's own buildClassicToolbar - see ckeditor-build.ts's defaultConfig for
+            // the full rationale; this copy has to stay in sync by hand since it lives in a
+            // different bundle - the inline webview script can't import from ckeditor-build.ts).
             toolbar: {
               items: [
                 'heading',
+                'fontSize',
                 '|',
                 'bold',
                 'italic',
-                'underline',
-                'strikethrough',
+                {
+                  label: 'Text formatting',
+                  icon: 'text',
+                  items: ['underline', 'strikethrough', '|', 'superscript', 'subscript', '|', 'kbd'],
+                },
+                'formatPainter',
                 '|',
-                'fontSize',
-                'fontFamily',
                 'fontColor',
                 'fontBackgroundColor',
+                'removeFormat',
+                '|',
+                'bulletedList',
+                'numberedList',
+                'todoList',
+                'taskStateCycle',
+                '|',
+                'insertImage',
+                'blockQuote',
+                'admonition',
+                'insertTable',
+                '|',
+                'code',
+                'codeBlock',
+                '|',
+                'footnote',
+                {
+                  label: 'Insert',
+                  icon: 'plus',
+                  items: [
+                    'link', 'internalLink', 'bookmark', '|',
+                    'collapsible', 'math', 'mermaid', 'horizontalLine', 'pageBreak', '|',
+                    'dateTime', 'specialCharacters', 'emoji', 'insertIcon',
+                  ],
+                },
                 '|',
                 'alignment',
                 'outdent',
                 'indent',
                 '|',
-                'bulletedList',
-                'numberedList',
-                'todoList',
-                '|',
-                'link',
-                'insertImage',
-                'insertTable',
-                'mediaEmbed',
-                'blockQuote',
-                'codeBlock',
-                'horizontalLine',
-                '|',
-                'math',
-                'mermaid',
-                'admonition',
-                'footnote',
-                '|',
-                'specialCharacters',
-                'highlight',
-                '|',
                 'undo',
                 'redo',
                 '|',
+                'fontFamily',
+                'mediaEmbed',
+                'highlight',
                 'findAndReplace',
               ],
               shouldNotGroupWhenFull: true
@@ -1580,30 +1629,65 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
             image: {
               toolbar: [
                 'imageStyle:inline', 'imageStyle:block', 'imageStyle:side',
-                '|', 'toggleImageCaption', 'imageTextAlternative', 'linkImage'
+                '|', 'toggleImageCaption', 'imageTextAlternative', 'linkImage',
+                '|', 'copyImageToClipboard', 'downloadImage'
               ]
             },
             link: {
               defaultProtocol: 'https://'
             },
-            // Math plugin: lazy-load KaTeX library
+            // Math plugin: lazy-load KaTeX library (bundled locally, see ckeditor-build.ts)
             math: {
               engine: 'katex',
-              lazyLoad: async () => {
-                // Dynamically import KaTeX when math plugin is first used
-                const katex = await import('https://cdn.jsdelivr.net/npm/katex@0.16.45/dist/katex.mjs');
-                return katex;
-              },
+              lazyLoad: loadKatex,
               outputType: 'span',
               forceOutputType: false,
               enablePreview: true,
             },
-            // Mermaid plugin: lazy-load Mermaid library
+            // Mermaid plugin: lazy-load Mermaid library (bundled locally, see ckeditor-build.ts)
             mermaid: {
-              lazyLoad: async () => {
-                // Dynamically import Mermaid when first used
-                const mermaid = await import('https://cdn.jsdelivr.net/npm/mermaid@11.14.0/dist/mermaid.esm.min.mjs');
-                return mermaid.default;
+              lazyLoad: loadMermaid,
+            },
+            // Image balloon "copy"/"download" buttons - both work directly against the image's
+            // src (a data:/blob: URL in the editing view), no extension-host round-trip needed.
+            imageActions: {
+              copyToClipboard: (src) => {
+                void fetch(src)
+                  .then(response => response.blob())
+                  .then(blob => navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]))
+                  .catch(() => vscode.postMessage({ type: 'error', message: 'Failed to copy image to clipboard.' }));
+              },
+              download: (src) => {
+                const link = document.createElement('a');
+                link.href = src;
+                link.download = 'image';
+                link.click();
+              },
+            },
+            // Inline icon plugin: the picker itself is a VS Code QuickPick, shown by the
+            // extension host (see the 'showIconPicker' message handler below).
+            inlineIcon: {
+              showPicker: () => new Promise((resolve) => {
+                const id = Math.random().toString(36).slice(2);
+                pendingIconPicks.set(id, resolve);
+                vscode.postMessage({ type: 'showIconPicker', id });
+              }),
+            },
+            // Internal link plugin: the note picker is a VS Code QuickPick (same debounced
+            // search as the "Search Notes..." command), shown by the extension host.
+            internalLink: {
+              pickNote: () => new Promise((resolve) => {
+                const id = Math.random().toString(36).slice(2);
+                pendingNotePicks.set(id, resolve);
+                vscode.postMessage({ type: 'showNotePicker', id });
+              }),
+            },
+            referenceLink: {
+              openNote: (href) => {
+                const noteId = href.replace(/^#/, '').split('/').pop();
+                if (noteId) {
+                  vscode.postMessage({ type: 'openBreadcrumbNote', noteId });
+                }
               },
             },
             // Code block configuration. The custom syntax-highlighting plugin
@@ -1821,6 +1905,18 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
               if (img && message.dataUri) { img.src = message.dataUri; }
               break;
             }
+            case 'iconPickerResult': {
+              const resolve = pendingIconPicks.get(message.id);
+              pendingIconPicks.delete(message.id);
+              resolve?.(message.iconClass);
+              break;
+            }
+            case 'notePickerResult': {
+              const resolve = pendingNotePicks.get(message.id);
+              pendingNotePicks.delete(message.id);
+              resolve?.(message.note);
+              break;
+            }
             case 'imageUploadResult': {
               const pending = pendingUploads.get(message.id);
               pendingUploads.delete(message.id);
@@ -1867,12 +1963,7 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
 }
 
 function getNonce(): string {
-  let text = '';
-  const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  for (let i = 0; i < 32; i++) {
-    text += possible.charAt(Math.floor(Math.random() * possible.length));
-  }
-  return text;
+  return crypto.randomBytes(24).toString('base64');
 }
 
 function mimeFromPath(url: string): string {
@@ -1896,23 +1987,33 @@ function renderTaskStateCss(states: EditorTaskStateDef[]): string {
     const name = cssString(state.name);
     const identifier = taskStateCssIdentifier(state.name);
     const color = sanitizeCssColor(state.color);
+    // The anchor states (none/done) never carry a configured color - their checkbox look
+    // is the hardcoded default in trilium-parity.css's own default rule. Match that here too,
+    // rather than falling back to the generic "configured state with no color" orange, so the
+    // right-click menu's None/Done buttons look like their real checkboxes instead of both
+    // showing the same fallback color.
+    const chipBackground = color
+      ?? (state.name === 'done' ? 'var(--vscode-charts-green, #2e8b57)'
+        : state.name === 'none' ? 'var(--vscode-checkbox-border, #d5d5d5)'
+          : 'var(--vscode-charts-orange, orange)');
 
-    const border = color ?? 'var(--vscode-checkbox-border, var(--vscode-input-border, #c5c5c5))';
-    const background = color ? withAlpha(color, 0.16) : 'var(--vscode-checkbox-background, var(--vscode-input-background, #2d2d30))';
-    const text = color ?? 'var(--vscode-input-foreground, currentColor)';
+    // Right-click/task-state-cycle menu: give each button's icon the same colored-chip
+    // look as the checkbox itself (background = state color, white glyph) instead of a
+    // plain line icon, so the menu reads as the same design as the checklist it edits.
+    rules.push(`.ck.ck-balloon-panel .ck.ck-toolbar.task-state-toolbar .ck-button.ck-task-state-button-${identifier} .ck-button__icon { background: ${chipBackground}; }`);
 
-    rules.push(`.ck.ck-balloon-panel .ck.ck-toolbar.task-state-toolbar .ck-button.ck-task-state-button-${identifier} { color: ${text}; }`);
-    // Scoped to the item's own label: the list model is flat, so a descendant selector would
-    // leak a parent's state onto nested items.
-    rules.push(`.ck-content li[data-trilium-task-state="${name}"] > .todo-list__label > input[type='checkbox'], .ck-content li[data-trilium-task-state="${name}"] > .todo-list__label > span[contenteditable=false] > input[type='checkbox'] { border-color: ${border} !important; background: ${background} !important; }`);
-
+    // Sets the custom properties trilium-parity.css's checkbox ::before/::after read -
+    // scoped to the item's own label, since the list model is flat and a descendant
+    // selector would otherwise leak a parent's state onto nested items.
+    const declarations = [`--_task-checkbox-background: ${chipBackground};`];
     if (state.iconSvg) {
-      // Mirrors Trilium, which paints the state glyph inside the checkbox. Rendered as a mask so
-      // the glyph takes the state colour, and as a pseudo-element so no node is injected into
-      // CKEditor's editing DOM.
-      const mask = svgToCssUrl(state.iconSvg);
-      rules.push(`.ck-content li[data-trilium-task-state="${name}"] > .todo-list__label::before { content: ''; position: absolute; left: -24px; top: 3px; width: 14px; height: 14px; pointer-events: none; z-index: 1; background-color: ${text}; -webkit-mask: ${mask} center / contain no-repeat; mask: ${mask} center / contain no-repeat; }`);
+      // Mirrors Trilium, which paints the state glyph inside the checkbox itself. Rendered
+      // as a mask (rather than injecting an <img>/<svg> node) so it can take a solid color
+      // and stay out of CKEditor's editing DOM.
+      declarations.push(`--task-state-glyph-mask: ${svgToCssUrl(state.iconSvg)};`);
+      declarations.push('--task-state-glyph-opacity: 1;');
     }
+    rules.push(`.ck-content li[data-trilium-task-state="${name}"] .todo-list__label input[type='checkbox'] { ${declarations.join(' ')} }`);
   }
 
   return rules.join('\n');
@@ -1944,20 +2045,3 @@ function sanitizeCssColor(value: string | undefined): string | undefined {
   return undefined;
 }
 
-function withAlpha(color: string, alpha: number): string {
-  if (color.startsWith('#')) {
-    const hex = color.slice(1);
-    const normalized = hex.length === 3
-      ? hex.split('').map((c) => c + c).join('')
-      : hex;
-
-    if (/^[0-9a-f]{6}$/i.test(normalized)) {
-      const r = parseInt(normalized.slice(0, 2), 16);
-      const g = parseInt(normalized.slice(2, 4), 16);
-      const b = parseInt(normalized.slice(4, 6), 16);
-      return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-    }
-  }
-
-  return color;
-}
