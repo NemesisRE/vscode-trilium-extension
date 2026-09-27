@@ -115,6 +115,8 @@ import CopyLinkUrlButton from '../vendor/ckeditor5/src/plugins/copy_link_url';
 import CopyAnchorLinkButton from '../vendor/ckeditor5/src/plugins/copy_anchor_link';
 import MarkdownImportPlugin from '../vendor/ckeditor5/src/plugins/markdownimport';
 import TriliumSnippets from '../vendor/ckeditor5/src/plugins/snippets/snippets';
+import TriliumMentionUI from '../vendor/ckeditor5/src/plugins/mention/trilium_mention_ui';
+import TriliumSlashCommands from '../vendor/ckeditor5/src/plugins/mention/slash_commands';
 import emojiDefinitions from '../vendor/ckeditor5/src/emoji_definitions/en.json';
 
 // Import all CSS - esbuild will bundle it
@@ -273,6 +275,10 @@ export class TriliumEditor extends ClassicEditor {
     // Text snippets ("Templates"): a searchable dropdown of reusable text sourced from the
     // user's own #snippet/#textSnippet notes.
     TriliumSnippets,
+
+    // Slash ("/") command palette
+    TriliumMentionUI,
+    TriliumSlashCommands,
   ];
 
   public static override defaultConfig = {

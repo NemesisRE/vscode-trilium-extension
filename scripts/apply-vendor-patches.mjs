@@ -373,6 +373,90 @@ export function applyVendorPatches(vendorDir, logPrefix = '[patch-plugins]') {
     }
   }
 
+  // slash_commands.ts's catalog pulls in three entries this standalone extension can't build
+  // as vendored: the "icon" and "internal-link" entries import their commands from the
+  // vendor's own unported inline_icon_ui.ts/internallink.ts (both still full of
+  // glob.getComponentByEl()/EditorComponent/jQuery references - this extension never uses
+  // those originals, see the inline_icon.ts patch above), and "include-note" imports
+  // includenote.ts, which isn't ported at all yet (Tier 3c). Redirect the first two to this
+  // extension's own local reimplementations (src/ckeditor/inlineIconUi.ts,
+  // src/ckeditor/internalLink.ts - same command name, 'insertInternalLink') and drop the
+  // include-note entry entirely until Tier 3c lands, rather than dragging in code that fails
+  // the project's type-check.
+  const slashCommandsPath = path.join(vendorDir, 'ckeditor5', 'src', 'plugins', 'mention', 'slash_commands.ts');
+  if (fs.existsSync(slashCommandsPath)) {
+    let src = fs.readFileSync(slashCommandsPath, 'utf8');
+    const before = src;
+    src = src.replace(
+      'import noteIcon from "../../icons/note.svg?raw";\n',
+      '',
+    );
+    src = src.replace(
+      'import { COMMAND_NAME as INCLUDE_NOTE_COMMAND } from "../includenote.js";\n',
+      '',
+    );
+    src = src.replace(
+      'import InlineIconUI from "../inline_icon/inline_icon_ui.js";',
+      'import InlineIconUI from "../../../../../src/ckeditor/inlineIconUi.js";',
+    );
+    src = src.replace(
+      'import { COMMAND_NAME as INTERNAL_LINK_COMMAND } from "../internallink.js";',
+      'import { COMMAND_NAME as INTERNAL_LINK_COMMAND } from "../../../../../src/ckeditor/internalLink.js";',
+    );
+    src = src.replace(
+      '        {\n            id: "include-note",\n            title: t("Include note"),\n            description: t("Display the content of another note in this note"),\n            icon: noteIcon,\n            commandName: INCLUDE_NOTE_COMMAND\n        },\n',
+      '',
+    );
+    // The "AI assistant" entry and the per-quick-action entries only ever apply to an
+    // "AiAssistantUI" plugin this extension doesn't have and, per the Tier 3 scope doc, isn't
+    // planning to build (VS Code's own AI tooling already covers that ground) - `editor.plugins
+    // .get("AiAssistantUI")` resolves to the untyped `PluginInterface` fallback with no
+    // `quickActions`/`runQuickAction` members, which fails the type-check even though the
+    // `editor.plugins.has()` guard means it never runs here. Drop both along with the icon
+    // import only they used.
+    src = src.replace(
+      'import aiIcon from "../ai_assistant/theme/icons/ai.svg?raw";\n',
+      '',
+    );
+    src = src.replace(
+      '        {\n            id: "ai-assistant",\n            title: t("AI assistant"),\n            description: t("Ask AI to rewrite the selection or generate new content."),\n            aliases: [ "ask ai", "assistant" ],\n            icon: aiIcon,\n            commandName: "aiAssistant"\n        },\n',
+      '',
+    );
+    src = src.replace(
+      /\n\/\*\*\n \* One entry per AI quick action[\s\S]*?\nfunction buildAiQuickActionSlashCommands\(editor: Editor\): SlashCommandDefinition\[\] \{[\s\S]*?\n\}\n/,
+      '\n',
+    );
+    src = src.replace(
+      '        ...buildAiQuickActionSlashCommands(editor)\n',
+      '',
+    );
+    if (src !== before) {
+      fs.writeFileSync(slashCommandsPath, src, 'utf8');
+      console.log(`${logPrefix} patched ckeditor5/src/plugins/mention/slash_commands.ts`);
+    }
+  }
+
+  // SnippetsEditing seeds its live definitions collection from `snippets.definitions`, a config
+  // path with no `EditorConfig` augmentation in this repo (TriliumSnippets, which would add one,
+  // is a later Tier 3a item) - `editor.config.get()` falls back to the generic `{}` shape for an
+  // unrecognized path, which `setDefinitions()` then rejects. slash_commands.ts imports this file
+  // unconditionally for its snippet palette entries, so it has to type-check even before
+  // TriliumSnippets registers the plugin. Assert the shape explicitly instead, same as the
+  // config reads in cuttonote.ts/markdownimport.ts above.
+  const snippetsEditingPath = path.join(vendorDir, 'ckeditor5', 'src', 'plugins', 'snippets', 'snippetsediting.ts');
+  if (fs.existsSync(snippetsEditingPath)) {
+    let src = fs.readFileSync(snippetsEditingPath, 'utf8');
+    const before = src;
+    src = src.replace(
+      'const initial = editor.config.get("snippets.definitions") ?? [];',
+      'const initial = (editor.config.get("snippets.definitions") ?? []) as SnippetDefinition[];',
+    );
+    if (src !== before) {
+      fs.writeFileSync(snippetsEditingPath, src, 'utf8');
+      console.log(`${logPrefix} patched ckeditor5/src/plugins/snippets/snippetsediting.ts`);
+    }
+  }
+
   // Fresh vendor downloads can include the upstream CKEditor tsconfig with stale
   // monorepo-only settings that break the standalone extension type-check. Strip
   // the inherited base config and the declaration-only / extra ambient types that
