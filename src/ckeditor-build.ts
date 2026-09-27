@@ -85,6 +85,7 @@ import AutoformatMath from '../vendor/ckeditor5/src/plugins/math/autoformat_math
 import Mermaid from '../vendor/ckeditor5/src/plugins/mermaid/mermaid';
 import Collapsible from '../vendor/ckeditor5/src/plugins/collapsible/collapsible';
 import InlineIcon from '../vendor/ckeditor5/src/plugins/inline_icon/inline_icon';
+import FileAttachmentLink from './ckeditor/fileAttachmentLink';
 import InternalLink from './ckeditor/internalLink';
 import { SyntaxHighlighting } from './ckeditor/syntaxHighlighting';
 import TodoListMultistate from '../vendor/ckeditor5/src/plugins/todo_list_multistate/todo_list_multistate';
@@ -115,6 +116,7 @@ import CopyLinkUrlButton from '../vendor/ckeditor5/src/plugins/copy_link_url';
 import CopyAnchorLinkButton from '../vendor/ckeditor5/src/plugins/copy_anchor_link';
 import MarkdownImportPlugin from '../vendor/ckeditor5/src/plugins/markdownimport';
 import TriliumSnippets from '../vendor/ckeditor5/src/plugins/snippets/snippets';
+import Uploadfileplugin from '../vendor/ckeditor5/src/plugins/file_upload/uploadfileplugin';
 import MentionCustomization from '../vendor/ckeditor5/src/plugins/mention_customization';
 import TriliumEmojiMention from '../vendor/ckeditor5/src/plugins/mention/emoji_mention';
 import TriliumMentionUI from '../vendor/ckeditor5/src/plugins/mention/trilium_mention_ui';
@@ -277,6 +279,11 @@ export class TriliumEditor extends ClassicEditor {
     // Text snippets ("Templates"): a searchable dropdown of reusable text sourced from the
     // user's own #snippet/#textSnippet notes.
     TriliumSnippets,
+
+    // Generic (non-image) file attachments, dropped/pasted via CKEditor's standard
+    // FileRepository upload-adapter interface.
+    Uploadfileplugin,
+    FileAttachmentLink,
 
     // "@" note mentions, ":" emoji autocomplete and "/" slash commands, all hosted on the same TriliumMentionUI balloon.
     TriliumMentionUI,
