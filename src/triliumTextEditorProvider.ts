@@ -797,13 +797,18 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- connect-src needs blob: for the emoji picker: EmojiRepository always fetches its
+         definitions from a URL, so ckeditor-build.ts hands it a blob: URL wrapping the
+         already-vendored definitions file instead of CKEditor's own CDN - without blob:
+         here that fetch is CSP-blocked, the repository never finishes loading, and the
+         toolbar button stays permanently disabled. -->
     <meta http-equiv="Content-Security-Policy" content="
       default-src 'none';
       style-src ${webview.cspSource} 'unsafe-inline' https://cdn.jsdelivr.net;
       script-src 'nonce-${nonce}' ${webview.cspSource};
       font-src ${webview.cspSource} https://cdn.jsdelivr.net data:;
       img-src ${webview.cspSource} https: data: blob:;
-      connect-src ${webview.cspSource} https://cdn.jsdelivr.net;
+      connect-src ${webview.cspSource} https://cdn.jsdelivr.net blob:;
     ">
     <title>Trilium Text Editor</title>
     <!-- Load CKEditor CSS (bundled by esbuild) -->
