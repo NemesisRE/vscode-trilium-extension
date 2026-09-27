@@ -1990,7 +1990,7 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
                   label: 'Insert',
                   icon: 'plus',
                   items: [
-                    'link', 'internalLink', 'bookmark', '|',
+                    'link', 'internalLink', 'includeNote', 'bookmark', '|',
                     'collapsible', 'math', 'mermaid', 'horizontalLine', 'pageBreak', '|',
                     'dateTime', 'specialCharacters', 'emoji', 'insertIcon', 'insertTemplate',
                   ],
