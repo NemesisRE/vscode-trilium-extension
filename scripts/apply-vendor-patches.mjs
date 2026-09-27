@@ -373,6 +373,28 @@ export function applyVendorPatches(vendorDir, logPrefix = '[patch-plugins]') {
     }
   }
 
+  // mention_customization.ts's "create new note from this @mention" action calls
+  // glob.getComponentByEl(editorEl).createNoteForReferenceLink(title, intoInbox), which has no
+  // equivalent here. Redirect to a config callback (wired in triliumTextEditorProvider.ts to an
+  // ETAPI createNote() call, same "sub-note under the note being edited" shape as CutToNote)
+  // that returns the created note's id, then insert the reference the same way an existing-note
+  // pick does. The `#`/`~` attribute-editor branch above this one is left untouched - it's
+  // unreachable here since this extension never configures a `#`/`~` mention feed (no attribute
+  // editor), not a glob dependency.
+  const mentionCustomizationPath = path.join(vendorDir, 'ckeditor5', 'src', 'plugins', 'mention_customization.ts');
+  if (fs.existsSync(mentionCustomizationPath)) {
+    let src = fs.readFileSync(mentionCustomizationPath, 'utf8');
+    const before = src;
+    src = src.replace(
+      "\t\telse if (mention.action === 'create-note' || mention.action === 'create-child-note') {\n\t\t\tconst editorEl = this.editor.editing.view.getDomRoot();\n\t\t\tconst component = glob.getComponentByEl<EditorComponent>(editorEl);\n\t\t\tconst intoInbox = mention.action === 'create-note';\n\n\t\t\tcomponent.createNoteForReferenceLink(mention.noteTitle, intoInbox).then(notePath => {\n\t\t\t\tif (notePath) {\n\t\t\t\t\tthis.insertReference(range, notePath);\n\t\t\t\t}\n\t\t\t});\n\t\t}",
+      "\t\telse if (mention.action === 'create-note' || mention.action === 'create-child-note') {\n\t\t\tconst config = this.editor.config.get('mention') as { createNote?: (title: string, intoInbox: boolean) => Promise<string | undefined> } | undefined;\n\t\t\tconst intoInbox = mention.action === 'create-note';\n\n\t\t\tif (!config?.createNote) {\n\t\t\t\treturn;\n\t\t\t}\n\n\t\t\tvoid config.createNote(mention.noteTitle, intoInbox).then(notePath => {\n\t\t\t\tif (notePath) {\n\t\t\t\t\tthis.insertReference(range, notePath);\n\t\t\t\t}\n\t\t\t});\n\t\t}",
+    );
+    if (src !== before) {
+      fs.writeFileSync(mentionCustomizationPath, src, 'utf8');
+      console.log(`${logPrefix} patched ckeditor5/src/plugins/mention_customization.ts`);
+    }
+  }
+
   // slash_commands.ts's catalog pulls in three entries this standalone extension can't build
   // as vendored: the "icon" and "internal-link" entries import their commands from the
   // vendor's own unported inline_icon_ui.ts/internallink.ts (both still full of
