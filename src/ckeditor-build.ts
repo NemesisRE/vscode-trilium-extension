@@ -114,6 +114,8 @@ import CutToNotePlugin from '../vendor/ckeditor5/src/plugins/cuttonote';
 import CopyLinkUrlButton from '../vendor/ckeditor5/src/plugins/copy_link_url';
 import CopyAnchorLinkButton from '../vendor/ckeditor5/src/plugins/copy_anchor_link';
 import MarkdownImportPlugin from '../vendor/ckeditor5/src/plugins/markdownimport';
+import MentionCustomization from '../vendor/ckeditor5/src/plugins/mention_customization';
+import TriliumEmojiMention from '../vendor/ckeditor5/src/plugins/mention/emoji_mention';
 import TriliumMentionUI from '../vendor/ckeditor5/src/plugins/mention/trilium_mention_ui';
 import TriliumSlashCommands from '../vendor/ckeditor5/src/plugins/mention/slash_commands';
 import emojiDefinitions from '../vendor/ckeditor5/src/emoji_definitions/en.json';
@@ -271,8 +273,10 @@ export class TriliumEditor extends ClassicEditor {
     InlineIcon,
     InternalLink,
 
-    // Slash ("/") command palette
+    // "@" note mentions, ":" emoji autocomplete and "/" slash commands, all hosted on the same TriliumMentionUI balloon.
     TriliumMentionUI,
+    MentionCustomization,
+    TriliumEmojiMention,
     TriliumSlashCommands,
   ];
 
