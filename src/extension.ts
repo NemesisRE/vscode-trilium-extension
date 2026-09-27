@@ -1092,6 +1092,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const output = vscode.window.createOutputChannel('Trilium Notes');
   output.appendLine('Extension activated (v1.0.0)');
   treeProvider.setLogger((msg) => output.appendLine(`[tree] ${msg}`));
+  textEditorProvider.setLogger((msg) => output.appendLine(`[editor] ${msg}`));
 
   // Status bar item — shows connection state, click to (re)connect.
   const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);

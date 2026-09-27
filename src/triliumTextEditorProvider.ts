@@ -120,8 +120,18 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
   private readonly openDocumentsByUri = new Map<string, TriliumCustomDocument>();
   private readonly conflictTheirsByPath = new Map<string, string>();
   private readonly conflictOursByPath = new Map<string, string>();
+  /** Short-lived cache for breadcrumb ancestor lookups (title + parent), keyed by noteId. */
+  private readonly breadcrumbNoteCache = new Map<string, { title: string; parentNoteIds: string[]; expiresAt: number }>();
+  private static readonly BREADCRUMB_CACHE_TTL_MS = 60_000;
 
   private static readonly openBreadcrumbCommand = 'trilium._openBreadcrumbNote';
+
+  private _logger: ((msg: string) => void) | undefined;
+
+  /** Wires an output-channel logger for otherwise-silent catch blocks (same pattern as BacklinksProvider). */
+  public setLogger(fn: (msg: string) => void): void {
+    this._logger = fn;
+  }
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -243,7 +253,9 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
       for (const panel of document.panels) {
         void panel.webview.postMessage({ type: 'update', content });
       }
-    } catch { /* leave current state */ }
+    } catch (err) {
+      this._logger?.(`Failed to revert note ${document.noteId}: ${err}`);
+    }
   }
 
   /** Backup dirty content for hot-exit. Not called when auto-save is enabled. */
@@ -301,15 +313,16 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
             }
           }
           await this.refreshTreeOnEditorLoad();
-        } catch {
+        } catch (err) {
           // Keep the restored placeholder if the note cannot be loaded yet.
+          this._logger?.(`Failed to load note ${document.noteId} for editor: ${err}`);
         }
       })();
     }
 
     // Set initial HTML
     const taskStates = await this.loadTaskStates();
-    webviewPanel.webview.html = this.getHtmlForWebview(
+    webviewPanel.webview.html = await this.getHtmlForWebview(
       webviewPanel.webview,
       getEditorFontSize(),
       getEditorSpellcheck(),
@@ -419,12 +432,17 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
       const localContent = document.content;
       const serverContent = await client.getNoteContent(document.noteId);
 
-      const normalizedLocal = this.formatHtmlForDiff(localContent);
-      const normalizedSynced = this.formatHtmlForDiff(document.syncedContent);
-      const normalizedServer = this.formatHtmlForDiff(serverContent);
+      // Cheap raw-string check first: if the server's content is byte-identical to what
+      // we last synced (the common case — nobody else touched the note), there's no
+      // server-side drift and the expensive pretty-print below can be skipped entirely.
+      // Only fall back to the normalized comparison (which tolerates insignificant
+      // whitespace differences) when the raw strings actually differ.
+      const normalizedServer = serverContent === document.syncedContent ? undefined : this.formatHtmlForDiff(serverContent);
+      const hasServerDrift = normalizedServer !== undefined
+        && normalizedServer !== this.formatHtmlForDiff(document.syncedContent);
 
       // Upstream changed since we opened/synced this note.
-      if (normalizedServer !== normalizedSynced && normalizedServer !== normalizedLocal) {
+      if (hasServerDrift && normalizedServer !== this.formatHtmlForDiff(localContent)) {
         const choice = await vscode.window.showWarningMessage(
           `Trilium: "${document.title}" changed on the server.`,
           { modal: true },
@@ -564,8 +582,9 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
               description: note.type,
               note,
             }));
-          } catch {
+          } catch (err) {
             qp.items = [];
+            this._logger?.(`Note search failed for query "${query}": ${err}`);
           } finally {
             qp.busy = false;
           }
@@ -647,11 +666,30 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
     while (currentId && !visited.has(currentId)) {
       visited.add(currentId);
       try {
-        const note = await client.getNote(currentId);
-        parts.unshift({ noteId: currentId, title: note.title });
-        if (currentId === 'root' || note.parentNoteIds.length === 0) { break; }
-        currentId = note.parentNoteIds[0];
-      } catch {
+        const cached = this.breadcrumbNoteCache.get(currentId);
+        const now = Date.now();
+        let title: string;
+        let parentNoteIds: string[];
+
+        if (cached && cached.expiresAt > now) {
+          title = cached.title;
+          parentNoteIds = cached.parentNoteIds;
+        } else {
+          const note = await client.getNote(currentId);
+          title = note.title;
+          parentNoteIds = note.parentNoteIds;
+          this.breadcrumbNoteCache.set(currentId, {
+            title,
+            parentNoteIds,
+            expiresAt: now + TriliumTextEditorProvider.BREADCRUMB_CACHE_TTL_MS,
+          });
+        }
+
+        parts.unshift({ noteId: currentId, title });
+        if (currentId === 'root' || parentNoteIds.length === 0) { break; }
+        currentId = parentNoteIds[0];
+      } catch (err) {
+        this._logger?.(`Breadcrumb lookup stopped at note ${currentId}: ${err}`);
         break;
       }
     }
@@ -665,20 +703,17 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
     if (!client) { return 0; }
 
     try {
+      // ETAPI search results already include each note's full `attributes` array (same
+      // mapper as a direct getNote() call), so no per-result re-fetch is needed here -
+      // we search broadly for note.targetRelationCount > 0 (Trilium's search syntax has
+      // no "any relation, any name, pointing at X" predicate) and then filter client-side
+      // using the attributes already on hand. Same approach as backlinksProvider.ts.
       const { results } = await client.searchNotes('note.targetRelationCount > 0', { limit: 100 });
-      const checks = await Promise.all(results.map(async (candidate) => {
-        try {
-          const fullNote = await client.getNote(candidate.noteId);
-          return fullNote.attributes?.some(
-            (attr) => attr.type === 'relation' && attr.value === noteId,
-          ) ?? false;
-        } catch {
-          return false;
-        }
-      }));
-
-      return checks.filter(Boolean).length;
-    } catch {
+      return results.filter((candidate) =>
+        candidate.attributes?.some((attr) => attr.type === 'relation' && attr.value === noteId) ?? false,
+      ).length;
+    } catch (err) {
+      this._logger?.(`Failed to count backlinks for note ${noteId}: ${err}`);
       return 0;
     }
   }
@@ -723,46 +758,49 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
             iconSvg: '',
             color: (labels.get('color') ?? '').trim(),
           } satisfies EditorTaskStateDef;
-        } catch {
+        } catch (err) {
+          this._logger?.(`Failed to load task-state note ${noteId}: ${err}`);
           return null;
         }
       }));
 
       const validStates = states.flatMap((state): EditorTaskStateDef[] => (state ? [state] : []));
       return validStates.length > 0 ? mergeTaskStates(ANCHOR_TASK_STATES, validStates) : undefined;
-    } catch {
+    } catch (err) {
+      this._logger?.(`Failed to load task states: ${err}`);
       return undefined;
     }
   }
 
   /** Resolve each state's Boxicons class to the SVG bundled with the extension. */
-  private withTaskStateIcons(states: EditorTaskStateDef[]): EditorTaskStateDef[] {
+  private async withTaskStateIcons(states: EditorTaskStateDef[]): Promise<EditorTaskStateDef[]> {
     const svgRoot = getBundledBoxiconsSvgRoot(this.context.extensionPath);
 
-    return states.map((state) => {
+    return Promise.all(states.map(async (state) => {
       const relativePath = boxiconSvgRelativePath(state.icon);
       if (!relativePath) {
         return state;
       }
 
       try {
-        return { ...state, iconSvg: fs.readFileSync(path.join(svgRoot, relativePath), 'utf8') };
+        const iconSvg = await fs.promises.readFile(path.join(svgRoot, relativePath), 'utf8');
+        return { ...state, iconSvg };
       } catch {
         return state;
       }
-    });
+    }));
   }
 
   /**
    * Generate HTML for the webview with CKEditor 5.
    */
-  private getHtmlForWebview(
+  private async getHtmlForWebview(
     webview: vscode.Webview,
     fontSize: number,
     spellcheck: boolean,
     highlightTheme: string,
     taskStates: EditorTaskStateDef[] | undefined,
-  ): string {
+  ): Promise<string> {
     // Load CKEditor from out/ckeditor (CSS and JS are bundled separately by esbuild)
     const ckeditorUri = webview.asWebviewUri(
       vscode.Uri.joinPath(
@@ -784,7 +822,7 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
 
     // Generate a nonce for CSP
     const nonce = getNonce();
-    const effectiveTaskStates = this.withTaskStateIcons(
+    const effectiveTaskStates = await this.withTaskStateIcons(
       taskStates && taskStates.length > 0 ? taskStates : FALLBACK_TASK_STATES,
     );
     // Escape `<` so a task-state title/label containing `</script>` cannot break out
@@ -1483,12 +1521,16 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
           return doc.body.innerHTML;
         }
 
-        function normalizeOutgoingCodeBlockLanguages(html) {
+        // Combines the code-block-language and image-source rewrites into a single
+        // DOMParser pass over the outgoing HTML, instead of each normalizer parsing
+        // the whole document separately (this runs on every editor content change).
+        function normalizeOutgoingHtml(html) {
           if (!html || typeof html !== 'string') {
             return html;
           }
 
           const doc = new DOMParser().parseFromString(html, 'text/html');
+
           for (const code of doc.querySelectorAll('pre code[class]')) {
             const classes = Array.from(code.classList);
             const langClass = classes.find(cls => cls.startsWith('language-'));
@@ -1506,17 +1548,6 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
             code.classList.add('language-' + mapped);
           }
 
-          return doc.body.innerHTML;
-        }
-
-        function normalizeOutgoingImageSources(html) {
-          if (!html || typeof html !== 'string') {
-            return html;
-          }
-
-          const doc = new DOMParser().parseFromString(html, 'text/html');
-          let changed = false;
-
           for (const img of doc.querySelectorAll('img[src]')) {
             const src = img.getAttribute('src') ?? '';
             const mapped = uploadedImageUrlByDataUri.get(src);
@@ -1525,10 +1556,9 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
             }
 
             img.setAttribute('src', mapped);
-            changed = true;
           }
 
-          return changed ? doc.body.innerHTML : html;
+          return doc.body.innerHTML;
         }
 
         // Initialize TriliumEditor (custom CKEditor build with Trilium plugins)
@@ -1763,9 +1793,7 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
               if (isUpdatingFromExtension) {
                 return;
               }
-              const content = normalizeOutgoingImageSources(
-                normalizeOutgoingCodeBlockLanguages(editor.getData())
-              );
+              const content = normalizeOutgoingHtml(editor.getData());
               vscode.postMessage({
                 type: 'contentChanged',
                 content: content
@@ -1938,21 +1966,28 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
         // Proxy image fetches through the extension host to avoid CORS restrictions.
         // Only the DOM img.src property is updated — editor.getData() returns the
         // original relative URL, so saving back to Trilium is unaffected.
-        function rewriteTriliumImages() {
-          document.querySelectorAll('.ck-content img').forEach(img => {
-            const src = img.getAttribute('src') ?? '';
-            if (!src || img.dataset.triliumFixed) { return; }
-            if (src.startsWith('api/') || src.startsWith('/api/')) {
-              img.dataset.triliumFixed = '1';
-              const id = Math.random().toString(36).slice(2);
-              pendingImageFetches.set(id, img);
-              vscode.postMessage({ type: 'fetchImage', id, url: src });
-            }
-          });
+        function fixTriliumImage(img) {
+          const src = img.getAttribute('src') ?? '';
+          if (!src || img.dataset.triliumFixed) { return; }
+          if (src.startsWith('api/') || src.startsWith('/api/')) {
+            img.dataset.triliumFixed = '1';
+            const id = Math.random().toString(36).slice(2);
+            pendingImageFetches.set(id, img);
+            vscode.postMessage({ type: 'fetchImage', id, url: src });
+          }
         }
 
-        new MutationObserver(() => {
-          rewriteTriliumImages();
+        // Only inspect the nodes a mutation actually added, instead of re-scanning the
+        // whole document on every keystroke (typing constantly triggers childList
+        // mutations under #editor-container).
+        new MutationObserver(mutations => {
+          for (const mutation of mutations) {
+            mutation.addedNodes.forEach(node => {
+              if (!(node instanceof Element)) { return; }
+              if (node.matches('.ck-content img')) { fixTriliumImage(node); }
+              node.querySelectorAll('.ck-content img').forEach(fixTriliumImage);
+            });
+          }
         }).observe(document.body, { childList: true, subtree: true });
 
       })();
