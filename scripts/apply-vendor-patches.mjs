@@ -488,10 +488,17 @@ export function applyVendorPatches(vendorDir, logPrefix = '[patch-plugins]') {
   if (fs.existsSync(linkEmbedEditingPath)) {
     let src = fs.readFileSync(linkEmbedEditingPath, 'utf8');
     const before = src;
-    src = src.replace(
-      "import { preventCKEditorHandling } from '../widget_utils.js';",
-      "import { preventCKEditorHandling } from '../widget_utils.js';\nimport { renderLinkEmbed, renderLinkMention } from '../../../../../src/ckeditor/linkEmbedRender.js';",
-    );
+    // Unlike the replacements below, the search string here (the widget_utils import) is not
+    // itself removed by patching - it stays in the file with the new import appended after it -
+    // so a second call against an already-patched vendor/ tree (e.g. this repo's CI restoring a
+    // cached, already-patched vendor/ and then re-running this script) would insert a duplicate
+    // import. Guarded on the new import's own presence instead, same as insert_date_time.ts above.
+    if (!src.includes('linkEmbedRender.js')) {
+      src = src.replace(
+        "import { preventCKEditorHandling } from '../widget_utils.js';",
+        "import { preventCKEditorHandling } from '../widget_utils.js';\nimport { renderLinkEmbed, renderLinkMention } from '../../../../../src/ckeditor/linkEmbedRender.js';",
+      );
+    }
     src = src.replace(
       "                    const editorEl = editor.editing.view.getDomRoot();\n                    const component = glob.getComponentByEl<EditorComponent>(editorEl);\n                    component.renderLinkEmbed(domElement, { url, embedType, title, description, favicon, siteName, image }, true);",
       '                    renderLinkEmbed(domElement, { url, embedType, title, description, favicon, siteName, image }, true);',
