@@ -294,6 +294,85 @@ export function applyVendorPatches(vendorDir, logPrefix = '[patch-plugins]') {
     }
   }
 
+  // cuttonote.ts's "Cut selection into a sub-note" button executes through Trilium's own
+  // app-level command bus (glob.getComponentByEl(editorEl).triggerCommand('cutIntoNote')),
+  // which has no equivalent here. Redirect to a config callback (wired in
+  // triliumTextEditorProvider.ts to an ETAPI createNote() call) that returns whether the note
+  // was actually created, and only then remove the selection - so a cancelled/failed creation
+  // leaves the original content untouched. getSelectedHtml()/removeSelection() stay in place
+  // (self-contained, no glob dependency) - only the trailing saveNoteDetailNow call is dropped,
+  // since this extension's existing dirty-tracking/autosave already covers an immediate save.
+  const cutToNotePath = path.join(vendorDir, 'ckeditor5', 'src', 'plugins', 'cuttonote.ts');
+  if (fs.existsSync(cutToNotePath)) {
+    let src = fs.readFileSync(cutToNotePath, 'utf8');
+    const before = src;
+    src = src.replace(
+      "\t\t\t// Callback executed once the image is clicked.\n\t\t\tview.on('execute', () => {\n\t\t\t\tconst editorEl = this.editor.editing.view.getDomRoot();\n\t\t\t\tconst component = glob.getComponentByEl(editorEl);\n\n\t\t\t\tcomponent.triggerCommand('cutIntoNote');\n\t\t\t});",
+      "\t\t\tview.on('execute', () => {\n\t\t\t\tconst html = this.getSelectedHtml();\n\t\t\t\tconst config = this.editor.config.get('cutToNote') as { execute?: (html: string, textPreview: string) => Promise<boolean> } | undefined;\n\t\t\t\tif (!html || !config?.execute) {\n\t\t\t\t\treturn;\n\t\t\t\t}\n\t\t\t\tconst textPreview = html.replace(/<[^>]+>/g, ' ').replace(/\\s+/g, ' ').trim();\n\t\t\t\tvoid config.execute(html, textPreview).then((created) => {\n\t\t\t\t\tif (created) {\n\t\t\t\t\t\tthis.removeSelection();\n\t\t\t\t\t}\n\t\t\t\t});\n\t\t\t});",
+    );
+    src = src.replace(
+      "\tasync removeSelection() {\n\t\tconst model = this.editor.model;\n\n\t\tmodel.deleteContent(model.document.selection);\n\t\tthis.editor.execute(\"paragraph\");\n\n\t\tconst component = this.getComponent();\n\n\t\tawait component.triggerCommand('saveNoteDetailNow');\n\t}",
+      "\tasync removeSelection() {\n\t\tconst model = this.editor.model;\n\n\t\tmodel.deleteContent(model.document.selection);\n\t\tthis.editor.execute(\"paragraph\");\n\t}",
+    );
+    // Only remaining glob reference in the file once the two patches above land - this
+    // project's tsconfig doesn't compile vendor/ckeditor5/src/augmentation.ts (which declares
+    // the ambient `glob` type), so an unused method referencing it still fails the typecheck.
+    src = src.replace(
+      "\n\tgetComponent() {\n\t\tconst editorEl = this.editor.editing.view.getDomRoot();\n\n\t\treturn glob.getComponentByEl( editorEl );\n\t}\n",
+      "\n",
+    );
+    if (src !== before) {
+      fs.writeFileSync(cutToNotePath, src, 'utf8');
+      console.log(`${logPrefix} patched ckeditor5/src/plugins/cuttonote.ts`);
+    }
+  }
+
+  // copy_anchor_link.ts's "Copy anchor reference link" button (on the bookmark widget's
+  // balloon toolbar) resolves the current note through glob.getActiveContextNote() and the
+  // link's display title through glob.getReferenceLinkTitleSync() - both app-level lookups
+  // with no equivalent here. A bookmark is always an anchor within the note being edited, so
+  // both values are just the current note's own id/title, known once at editor creation -
+  // read from a small static config instead (wired in triliumTextEditorProvider.ts, which
+  // already has the note's id/title in scope when building the webview).
+  const copyAnchorLinkPath = path.join(vendorDir, 'ckeditor5', 'src', 'plugins', 'copy_anchor_link.ts');
+  if (fs.existsSync(copyAnchorLinkPath)) {
+    let src = fs.readFileSync(copyAnchorLinkPath, 'utf8');
+    const before = src;
+    src = src.replace(
+      '                    const noteId = glob.getActiveContextNote()?.noteId;',
+      "                    const noteId = (editor.config.get('copyAnchorLink') as { noteId?: string } | undefined)?.noteId;",
+    );
+    src = src.replace(
+      '                        const title = glob.getReferenceLinkTitleSync(href);',
+      "                        const title = (editor.config.get('copyAnchorLink') as { noteTitle?: string } | undefined)?.noteTitle || href;",
+    );
+    if (src !== before) {
+      fs.writeFileSync(copyAnchorLinkPath, src, 'utf8');
+      console.log(`${logPrefix} patched ckeditor5/src/plugins/copy_anchor_link.ts`);
+    }
+  }
+
+  // markdownimport.ts's "Markdown import from clipboard" button executes through Trilium's
+  // own app-level command bus (glob.getComponentByEl(editorEl).triggerCommand(
+  // 'pasteMarkdownIntoText')), which has no equivalent here. Redirect to a config callback
+  // (wired in triliumTextEditorProvider.ts to read the system clipboard via vscode.env.clipboard
+  // and convert Markdown to HTML with the extension's existing TempFileManager.markdownToHtml())
+  // that resolves the HTML to insert, then insert it at the current selection the same way
+  // CKEditor's own clipboard pipeline would.
+  const markdownImportPath = path.join(vendorDir, 'ckeditor5', 'src', 'plugins', 'markdownimport.ts');
+  if (fs.existsSync(markdownImportPath)) {
+    let src = fs.readFileSync(markdownImportPath, 'utf8');
+    const before = src;
+    src = src.replace(
+      "    execute() {\n\t\tconst editorEl = this.editor.editing.view.getDomRoot();\n\t\tconst component = glob.getComponentByEl(editorEl);\n\n\t\tcomponent.triggerCommand('pasteMarkdownIntoText');\n    }",
+      "    execute() {\n        const editor = this.editor;\n        const config = editor.config.get('markdownImport') as { execute?: () => Promise<string | undefined> } | undefined;\n        if (!config?.execute) {\n            return;\n        }\n        void config.execute().then((html) => {\n            if (!html) {\n                return;\n            }\n            const viewFragment = editor.data.processor.toView(html);\n            const modelFragment = editor.data.toModel(viewFragment);\n            editor.model.insertContent(modelFragment);\n        });\n    }",
+    );
+    if (src !== before) {
+      fs.writeFileSync(markdownImportPath, src, 'utf8');
+      console.log(`${logPrefix} patched ckeditor5/src/plugins/markdownimport.ts`);
+    }
+  }
+
   // Fresh vendor downloads can include the upstream CKEditor tsconfig with stale
   // monorepo-only settings that break the standalone extension type-check. Strip
   // the inherited base config and the declaration-only / extra ambient types that
