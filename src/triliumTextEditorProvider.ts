@@ -410,6 +410,31 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
           }
           break;
         }
+        case 'mentionSearch': {
+          const { id: mentionSearchId, query } = message as { type: string; id: string; query: string };
+          void this.searchNotesForMention(query).then(items => {
+            void webviewPanel.webview.postMessage({ type: 'mentionSearchResult', id: mentionSearchId, items });
+          }).catch(() => {
+            void webviewPanel.webview.postMessage({ type: 'mentionSearchResult', id: mentionSearchId, items: [] });
+          });
+          break;
+        }
+        case 'createNoteFromMention': {
+          const { id: mentionCreateId, title: mentionNoteTitle } = message as {
+            type: string; id: string; title: string;
+          };
+          if (!document.noteId) {
+            void webviewPanel.webview.postMessage({ type: 'createNoteFromMentionResult', id: mentionCreateId, notePath: undefined });
+            break;
+          }
+          void this.createNoteFromMention(document.noteId, mentionNoteTitle).then(notePath => {
+            void webviewPanel.webview.postMessage({ type: 'createNoteFromMentionResult', id: mentionCreateId, notePath });
+          }).catch((err: unknown) => {
+            void vscode.window.showErrorMessage(`Trilium Editor: failed to create note from mention: ${String(err)}`);
+            void webviewPanel.webview.postMessage({ type: 'createNoteFromMentionResult', id: mentionCreateId, notePath: undefined });
+          });
+          break;
+        }
         case 'cutToNote': {
           const { id: cutId, html: cutHtml, textPreview } = message as {
             type: string; id: string; html: string; textPreview: string;
@@ -682,6 +707,30 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
     const binary = Buffer.from(dataBase64, 'base64');
     await client.putAttachmentContentBinary(attachment.attachmentId, binary);
     return 'api/attachments/' + attachment.attachmentId + '/image/' + encodeURIComponent(filename);
+  }
+
+  /** Backs the "@" mention feed: searches notes as the user types after "@", mapped into the
+   * mention item shape mention_customization.ts's CustomMentionCommand expects. */
+  private async searchNotesForMention(
+    query: string,
+  ): Promise<Array<{ id: string; text: string; noteTitle: string; notePath: string }>> {
+    const client = this.getClient();
+    if (!client || !query.trim()) { return []; }
+
+    const { results } = await client.searchNotes(query, { limit: 20 });
+    return results.map(note => ({ id: `@${note.noteId}`, text: note.title, noteTitle: note.title, notePath: note.noteId }));
+  }
+
+  /** Backs the "@" mention feed's "Create note" entry: creates a sub-note under the note being
+   * edited, same shape as cutSelectionIntoSubNote, and returns its id so the mention can be
+   * inserted as a reference to it. */
+  private async createNoteFromMention(parentNoteId: string, title: string): Promise<string | undefined> {
+    const client = this.getClient();
+    if (!client || !title.trim()) { return undefined; }
+
+    const result = await client.createNote(parentNoteId, title, 'text', '');
+    await this.refreshTreeForNote(parentNoteId);
+    return result.note.noteId;
   }
 
   /** Backs the CutToNote toolbar button: creates a sub-note under the note being edited from
@@ -1460,6 +1509,8 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
         const uploadedImageUrlByDataUri = new Map();
         const pendingIconPicks = new Map();
         const pendingNotePicks = new Map();
+        const pendingMentionSearches = new Map();
+        const pendingMentionCreates = new Map();
         const pendingCutToNoteRequests = new Map();
         const pendingMarkdownImportRequests = new Map();
 
@@ -1799,6 +1850,43 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
                 vscode.postMessage({ type: 'showNotePicker', id });
               }),
             },
+            // "@" mention feed: note search-as-you-type plus a "Create note" entry, both
+            // resolved by the extension host's ETAPI client (see the 'mentionSearch' and
+            // 'createNoteFromMention' message handlers below). Picking an item routes through
+            // mention_customization.ts's CustomMentionCommand (see its vendor patch).
+            mention: {
+              feeds: [
+                {
+                  marker: '@',
+                  minimumCharacters: 1,
+                  allowSpaces: true,
+                  feed: (query) => new Promise((resolve) => {
+                    const id = Math.random().toString(36).slice(2);
+                    pendingMentionSearches.set(id, resolve);
+                    vscode.postMessage({ type: 'mentionSearch', id, query });
+                  }).then((items) => [
+                    ...items,
+                    { id: '@__create_note__:' + query, text: query, noteTitle: query, notePath: '', action: 'create-child-note' },
+                  ]),
+                  itemRenderer: (item) => {
+                    const button = document.createElement('button');
+                    button.type = 'button';
+                    button.tabIndex = -1;
+                    button.classList.add('ck', 'ck-button', 'ck-button_with-text');
+                    const label = document.createElement('span');
+                    label.classList.add('ck', 'ck-button__label');
+                    label.textContent = item.action ? 'Create note "' + item.noteTitle + '"' : item.noteTitle;
+                    button.append(label);
+                    return button;
+                  },
+                },
+              ],
+              createNote: (title, intoInbox) => new Promise((resolve) => {
+                const id = Math.random().toString(36).slice(2);
+                pendingMentionCreates.set(id, resolve);
+                vscode.postMessage({ type: 'createNoteFromMention', id, title, intoInbox });
+              }),
+            },
             // Read by copy_to_clipboard_button.ts (code block copy) and copy_link_url.ts.
             // Written directly in-webview, same as the image balloon's copyToClipboard above -
             // vscode.env.clipboard.writeText() only ever writes plain text, so it can't produce
@@ -2068,6 +2156,18 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
               const resolve = pendingNotePicks.get(message.id);
               pendingNotePicks.delete(message.id);
               resolve?.(message.note);
+              break;
+            }
+            case 'mentionSearchResult': {
+              const resolve = pendingMentionSearches.get(message.id);
+              pendingMentionSearches.delete(message.id);
+              resolve?.(message.items ?? []);
+              break;
+            }
+            case 'createNoteFromMentionResult': {
+              const resolve = pendingMentionCreates.get(message.id);
+              pendingMentionCreates.delete(message.id);
+              resolve?.(message.notePath);
               break;
             }
             case 'imageUploadResult': {
