@@ -7,6 +7,7 @@ import { showIconPickerPanel } from './iconPickerPanel';
 import { getBundledBoxiconsSvgRoot } from './noteTreeProvider';
 import { getEditorFontSize, getEditorHighlightTheme, getEditorSpellcheck } from './settings';
 import { boxiconSvgRelativePath, mergeTaskStates, svgToCssUrl, taskStateCssIdentifier } from './taskStateIcons';
+import { markdownToHtml } from './tempFileManager';
 
 interface EditorTaskStateDef {
   name: string;
@@ -315,6 +316,8 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
       getEditorSpellcheck(),
       getEditorHighlightTheme(),
       taskStates,
+      document.noteId,
+      document.title,
     );
 
     // Send initial content once webview is ready
@@ -392,6 +395,32 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
           if (targetNoteId) {
             void vscode.commands.executeCommand(TriliumTextEditorProvider.openBreadcrumbCommand, targetNoteId);
           }
+          break;
+        }
+        case 'cutToNote': {
+          const { id: cutId, html: cutHtml, textPreview } = message as {
+            type: string; id: string; html: string; textPreview: string;
+          };
+          if (!document.noteId) {
+            void webviewPanel.webview.postMessage({ type: 'cutToNoteResult', id: cutId, created: false });
+            break;
+          }
+          void this.cutSelectionIntoSubNote(document.noteId, cutHtml, textPreview).then(created => {
+            void webviewPanel.webview.postMessage({ type: 'cutToNoteResult', id: cutId, created });
+          }).catch((err: unknown) => {
+            void vscode.window.showErrorMessage(`Trilium Editor: failed to cut selection into a sub-note: ${String(err)}`);
+            void webviewPanel.webview.postMessage({ type: 'cutToNoteResult', id: cutId, created: false });
+          });
+          break;
+        }
+        case 'importMarkdown': {
+          const { id: importId } = message as { type: string; id: string };
+          void this.importMarkdownFromClipboard().then(html => {
+            void webviewPanel.webview.postMessage({ type: 'importMarkdownResult', id: importId, html });
+          }).catch((err: unknown) => {
+            void vscode.window.showErrorMessage(`Trilium Editor: failed to import Markdown from clipboard: ${String(err)}`);
+            void webviewPanel.webview.postMessage({ type: 'importMarkdownResult', id: importId, html: undefined });
+          });
           break;
         }
         case 'error':
@@ -636,6 +665,41 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
     return 'api/attachments/' + attachment.attachmentId + '/image/' + encodeURIComponent(filename);
   }
 
+  /** Backs the CutToNote toolbar button: creates a sub-note under the note being edited from
+   * the cut selection's HTML, and reports back whether it was actually created so the caller
+   * only removes the selection on success. */
+  private async cutSelectionIntoSubNote(
+    parentNoteId: string,
+    html: string,
+    textPreview: string,
+  ): Promise<boolean> {
+    const client = this.getClient();
+    if (!client) { return false; }
+
+    const title = await vscode.window.showInputBox({
+      title: 'Cut Selection into Sub-note',
+      prompt: 'Title for the new sub-note',
+      value: textPreview.slice(0, 50),
+    });
+    if (!title) {
+      return false;
+    }
+
+    await client.createNote(parentNoteId, title, 'text', html);
+    await this.refreshTreeForNote(parentNoteId);
+    return true;
+  }
+
+  /** Backs the Markdown-import toolbar button: reads the system clipboard and converts it
+   * from Markdown to HTML for insertion into the editor. */
+  private async importMarkdownFromClipboard(): Promise<string | undefined> {
+    const text = await vscode.env.clipboard.readText();
+    if (!text) {
+      return undefined;
+    }
+    return markdownToHtml(text);
+  }
+
   private async sendBreadcrumb(panel: vscode.WebviewPanel, noteId: string): Promise<void> {
     const client = this.getClient();
     if (!client) { return; }
@@ -762,6 +826,8 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
     spellcheck: boolean,
     highlightTheme: string,
     taskStates: EditorTaskStateDef[] | undefined,
+    noteId: string | undefined,
+    noteTitle: string | undefined,
   ): string {
     // Load CKEditor from out/ckeditor (CSS and JS are bundled separately by esbuild)
     const ckeditorUri = webview.asWebviewUri(
@@ -791,6 +857,10 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
     // of the inline script block below.
     const serializedTaskStates = JSON.stringify(effectiveTaskStates).replace(/</g, '\\u003c');
     const taskStateCss = renderTaskStateCss(effectiveTaskStates);
+    // Escaped the same way as serializedTaskStates, for the same reason (embedded in the
+    // inline script below).
+    const serializedNoteId = JSON.stringify(noteId ?? null).replace(/</g, '\\u003c');
+    const serializedNoteTitle = JSON.stringify(noteTitle ?? null).replace(/</g, '\\u003c');
 
     return `<!DOCTYPE html>
 <html lang="en">
@@ -1341,6 +1411,8 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
       (function() {
         const vscode = acquireVsCodeApi();
         const taskStates = ${serializedTaskStates};
+        const noteId = ${serializedNoteId};
+        const noteTitle = ${serializedNoteTitle};
         let editor;
         let isUpdatingFromExtension = false;
         let pendingExternalContent = '';
@@ -1350,6 +1422,8 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
         const uploadedImageUrlByDataUri = new Map();
         const pendingIconPicks = new Map();
         const pendingNotePicks = new Map();
+        const pendingCutToNoteRequests = new Map();
+        const pendingMarkdownImportRequests = new Map();
 
         const triliumToLocalLanguageMap = {
           'text-plain': 'plaintext',
@@ -1586,6 +1660,9 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
                 'outdent',
                 'indent',
                 '|',
+                'markdownImport',
+                'cutToNote',
+                '|',
                 'undo',
                 'redo',
                 '|',
@@ -1634,7 +1711,17 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
               ]
             },
             link: {
-              defaultProtocol: 'https://'
+              defaultProtocol: 'https://',
+              toolbar: ['linkPreview', 'copyLinkUrl', '|', 'editLink', 'linkProperties', 'unlink']
+            },
+            bookmark: {
+              toolbar: ['bookmarkPreview', 'copyAnchorLink', '|', 'editBookmark', 'removeBookmark']
+            },
+            // A bookmark is always an anchor within the note being edited, so both values are
+            // just this note's own id/title (see copy_anchor_link.ts's vendor patch).
+            copyAnchorLink: {
+              noteId,
+              noteTitle: noteTitle || undefined,
             },
             // Math plugin: lazy-load KaTeX library (bundled locally, see ckeditor-build.ts)
             math: {
@@ -1680,6 +1767,44 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
                 const id = Math.random().toString(36).slice(2);
                 pendingNotePicks.set(id, resolve);
                 vscode.postMessage({ type: 'showNotePicker', id });
+              }),
+            },
+            // Read by copy_to_clipboard_button.ts (code block copy) and copy_link_url.ts.
+            // Written directly in-webview, same as the image balloon's copyToClipboard above -
+            // vscode.env.clipboard.writeText() only ever writes plain text, so it can't produce
+            // the rich text/html entry copyHtml needs for a clickable anchor link.
+            clipboard: {
+              copy: (text) => {
+                navigator.clipboard.writeText(text)
+                  .catch(() => vscode.postMessage({ type: 'error', message: 'Failed to copy to clipboard.' }));
+              },
+              copyHtml: (html, plainText) => {
+                navigator.clipboard.write([
+                  new ClipboardItem({
+                    'text/html': new Blob([html], { type: 'text/html' }),
+                    'text/plain': new Blob([plainText], { type: 'text/plain' }),
+                  }),
+                ]).catch(() => vscode.postMessage({ type: 'error', message: 'Failed to copy to clipboard.' }));
+              },
+            },
+            // CutToNote plugin: creates a sub-note from the selection via the extension host's
+            // ETAPI client, then reports back whether it was actually created so the toolbar
+            // button only removes the selection on success (see cuttonote.ts's vendor patch).
+            cutToNote: {
+              execute: (html, textPreview) => new Promise((resolve) => {
+                const id = Math.random().toString(36).slice(2);
+                pendingCutToNoteRequests.set(id, resolve);
+                vscode.postMessage({ type: 'cutToNote', id, html, textPreview });
+              }),
+            },
+            // Markdown import plugin: reads the system clipboard and converts Markdown to HTML
+            // on the extension host (vscode.env.clipboard + TempFileManager.markdownToHtml() -
+            // see the 'importMarkdown' message handler below), same rationale as clipboard above.
+            markdownImport: {
+              execute: () => new Promise((resolve) => {
+                const id = Math.random().toString(36).slice(2);
+                pendingMarkdownImportRequests.set(id, resolve);
+                vscode.postMessage({ type: 'importMarkdown', id });
               }),
             },
             referenceLink: {
@@ -1930,6 +2055,18 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
                   pending.reject(new Error(message.error || 'Upload failed'));
                 }
               }
+              break;
+            }
+            case 'cutToNoteResult': {
+              const resolve = pendingCutToNoteRequests.get(message.id);
+              pendingCutToNoteRequests.delete(message.id);
+              resolve?.(!!message.created);
+              break;
+            }
+            case 'importMarkdownResult': {
+              const resolve = pendingMarkdownImportRequests.get(message.id);
+              pendingMarkdownImportRequests.delete(message.id);
+              resolve?.(message.html);
               break;
             }
           }
