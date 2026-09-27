@@ -49,8 +49,18 @@
 .ck-editor__editable.ck-content .todo-list li .todo-list__label input[type='checkbox']::after,
 .ck-editor__editable.ck-content .todo-list li .todo-list__label > span[contenteditable='false'] > input[type='checkbox']::after {
   content: '' !important;
+  box-sizing: border-box !important;
   position: absolute;
   inset: 12%;
+  /* CKEditor's own stock rule for this pseudo-element sets a small fixed width/height
+   * (sized for its own border-triangle checkmark shape) that our `inset` alone doesn't
+   * override - `inset` only maps to top/right/bottom/left, so without this the glyph
+   * mask below rendered into that leftover ~3x6px box instead of filling the checkbox,
+   * showing as a near-invisible sliver rather than a real icon (confirmed by reproducing
+   * the exact DOM CKEditor generates - <span contenteditable="false"><input>| - in a
+   * headless browser and inspecting the computed ::after box). */
+  width: auto !important;
+  height: auto !important;
   border: none !important;
   transform: none !important;
   background-color: var(--task-state-glyph-color, #fff) !important;
