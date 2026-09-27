@@ -215,6 +215,77 @@ export function applyVendorPatches(vendorDir, logPrefix = '[patch-plugins]') {
     }
   }
 
+  // Same "no @triliumnext/commons in this standalone extension" situation as the todo plugin
+  // above - these two clipboard-paste plugins only need the one shared attribute-name constant.
+  const clipboardPluginsDir = path.join(vendorDir, 'ckeditor5', 'src', 'plugins');
+  for (const fileName of ['clipboard_image_embed.ts', 'clipboard_bare_image.ts']) {
+    const filePath = path.join(clipboardPluginsDir, fileName);
+    if (!fs.existsSync(filePath)) {
+      continue;
+    }
+    let src = fs.readFileSync(filePath, 'utf8');
+    const before = src;
+    src = src.replaceAll('from "@triliumnext/commons"', 'from "../../../../src/ckeditor/triliumCommons"');
+    if (src !== before) {
+      fs.writeFileSync(filePath, src, 'utf8');
+      console.log(`${logPrefix} patched ckeditor5/src/plugins/${fileName}`);
+    }
+  }
+
+  // insert_date_time.ts formats "now" through Trilium's own app-level date service
+  // (glob.getComponentByEl(editorEl).formatDateTime(...), for the user's configured
+  // customDateTimeFormat) which has no equivalent here. Redirect to a small local formatter
+  // (src/ckeditor/insertDateTimeFormat.ts) covering the same fixed preset formats the plugin
+  // itself offers - there's no "custom format" setting in this extension to honour instead.
+  const insertDateTimePath = path.join(vendorDir, 'ckeditor5', 'src', 'plugins', 'insert_date_time.ts');
+  if (fs.existsSync(insertDateTimePath)) {
+    let src = fs.readFileSync(insertDateTimePath, 'utf8');
+    const before = src;
+    src = src.replace(
+      "import dateTimeIcon from '../icons/date-time.svg?raw';",
+      "import dateTimeIcon from '../icons/date-time.svg?raw';\nimport { formatDateTime } from '../../../../src/ckeditor/insertDateTimeFormat.js';",
+    );
+    src = src.replace(
+      /function formatNow\(editor: Editor, format\?: string\) \{\n[^\n]*\n[^\n]*\n\}/,
+      'function formatNow(editor: Editor, format?: string) {\n    return formatDateTime(new Date(), format);\n}',
+    );
+    if (src !== before) {
+      fs.writeFileSync(insertDateTimePath, src, 'utf8');
+      console.log(`${logPrefix} patched ckeditor5/src/plugins/insert_date_time.ts`);
+    }
+  }
+
+  // Two Tier-1 plugins (see the toolbar-parity work) don't compile cleanly under this repo's
+  // stricter tsconfig, same as the other type-only patches in this file - neither changes
+  // behaviour, just satisfies the type checker.
+  const copyToClipboardPath = path.join(vendorDir, 'ckeditor5', 'src', 'plugins', 'copy_to_clipboard_button.ts');
+  if (fs.existsSync(copyToClipboardPath)) {
+    let src = fs.readFileSync(copyToClipboardPath, 'utf8');
+    const before = src;
+    src = src.replace(
+      'this.executeCallback = this.editor.config.get("clipboard")?.copy;',
+      'this.executeCallback = (this.editor.config.get("clipboard") as { copy?: (text: string) => void } | undefined)?.copy;',
+    );
+    if (src !== before) {
+      fs.writeFileSync(copyToClipboardPath, src, 'utf8');
+      console.log(`${logPrefix} patched ckeditor5/src/plugins/copy_to_clipboard_button.ts`);
+    }
+  }
+
+  const moveBlockUpDownPath = path.join(vendorDir, 'ckeditor5', 'src', 'plugins', 'move_block_updown.ts');
+  if (fs.existsSync(moveBlockUpDownPath)) {
+    let src = fs.readFileSync(moveBlockUpDownPath, 'utf8');
+    const before = src;
+    src = src.replace(
+      "const keyMap = {\n    ArrowUp: 'moveBlockUp',\n    ArrowDown: 'moveBlockDown'\n};",
+      "const keyMap: Record<string, string> = {\n    ArrowUp: 'moveBlockUp',\n    ArrowDown: 'moveBlockDown'\n};",
+    );
+    if (src !== before) {
+      fs.writeFileSync(moveBlockUpDownPath, src, 'utf8');
+      console.log(`${logPrefix} patched ckeditor5/src/plugins/move_block_updown.ts`);
+    }
+  }
+
   // Fresh vendor downloads can include the upstream CKEditor tsconfig with stale
   // monorepo-only settings that break the standalone extension type-check. Strip
   // the inherited base config and the declaration-only / extra ambient types that

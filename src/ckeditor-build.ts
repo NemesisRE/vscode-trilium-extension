@@ -16,20 +16,25 @@ import {
   Autosave,
   BlockQuote,
   Bold,
+  Bookmark,
   ClassicEditor,
   Code,
   CodeBlock,
+  EmojiPicker,
+  EmojiRepository,
   Essentials,
   FindAndReplace,
   FontBackgroundColor,
   FontColor,
   FontFamily,
   FontSize,
+  GeneralHtmlSupport,
   Heading,
   Highlight,
   HorizontalLine,
   Image,
   ImageCaption,
+  ImageInline,
   ImageInsert,
   ImageResize,
   ImageStyle,
@@ -43,8 +48,10 @@ import {
   List,
   ListProperties,
   MediaEmbed,
+  PageBreak,
   Paragraph,
   PasteFromOffice,
+  PictureEditing,
   RemoveFormat,
   SpecialCharacters,
   SpecialCharactersArrows,
@@ -61,7 +68,9 @@ import {
   TableCellProperties,
   TableColumnResize,
   TableProperties,
+  TableSelection,
   TableToolbar,
+  TextTransformation,
   TodoList,
   Underline,
   type EditorConfig,
@@ -72,6 +81,7 @@ import Admonition from '../vendor/ckeditor5/src/plugins/admonition/admonition';
 import Footnotes from '../vendor/ckeditor5/src/plugins/footnotes/footnotes';
 import Kbd from '../vendor/ckeditor5/src/plugins/keyboard_marker/keyboard_marker';
 import Math from '../vendor/ckeditor5/src/plugins/math/math';
+import AutoformatMath from '../vendor/ckeditor5/src/plugins/math/autoformat_math';
 import Mermaid from '../vendor/ckeditor5/src/plugins/mermaid/mermaid';
 import Collapsible from '../vendor/ckeditor5/src/plugins/collapsible/collapsible';
 import InlineIcon from '../vendor/ckeditor5/src/plugins/inline_icon/inline_icon';
@@ -79,6 +89,27 @@ import InternalLink from './ckeditor/internalLink';
 import { SyntaxHighlighting } from './ckeditor/syntaxHighlighting';
 import TodoListMultistate from '../vendor/ckeditor5/src/plugins/todo_list_multistate/todo_list_multistate';
 import TodoListUncheckOnEnter from '../vendor/ckeditor5/src/plugins/todo_list_uncheck_on_enter';
+import ItalicAsEmPlugin from '../vendor/ckeditor5/src/plugins/italic_as_em';
+import StrikethroughAsDel from '../vendor/ckeditor5/src/plugins/strikethrough_as_del';
+import RemoveFormatLinksPlugin from '../vendor/ckeditor5/src/plugins/remove_format_links';
+import IndentBlockShortcutPlugin from '../vendor/ckeditor5/src/plugins/indent_block_shortcut';
+import InsertDateTimePlugin from '../vendor/ckeditor5/src/plugins/insert_date_time';
+import CodeBlockToolbar from '../vendor/ckeditor5/src/plugins/code_block_toolbar';
+import CodeBlockLanguageDropdown from '../vendor/ckeditor5/src/plugins/code_block_language_dropdown';
+import CodeBlockInsertParagraph from '../vendor/ckeditor5/src/plugins/code_block_insert_paragraph';
+import CodeBlockHljsClass from '../vendor/ckeditor5/src/plugins/code_block_hljs_class';
+import MoveBlockUpDownPlugin from '../vendor/ckeditor5/src/plugins/move_block_updown';
+import ScrollOnUndoRedoPlugin from '../vendor/ckeditor5/src/plugins/scroll_on_undo_redo';
+import InlineCodeNoSpellcheck from '../vendor/ckeditor5/src/plugins/inline_code_no_spellcheck';
+import InlineCodeToolbar from '../vendor/ckeditor5/src/plugins/inline_code_toolbar';
+import CollapsibleListItems from '../vendor/ckeditor5/src/plugins/collapsible_list_items';
+import TableIndent from '../vendor/ckeditor5/src/plugins/table_indent';
+import ImageActions from '../vendor/ckeditor5/src/plugins/image_actions';
+import ClipboardImageEmbed from '../vendor/ckeditor5/src/plugins/clipboard_image_embed';
+import ClipboardBareImage from '../vendor/ckeditor5/src/plugins/clipboard_bare_image';
+import FindInLinkWidgets from '../vendor/ckeditor5/src/plugins/find_in_link_widgets';
+import TriliumFormatPainter from '../vendor/ckeditor5/src/plugins/format_painter/format_painter';
+import emojiDefinitions from '../vendor/ckeditor5/src/emoji_definitions/en.json';
 
 // Import all CSS - esbuild will bundle it
 import 'ckeditor5/ckeditor5.css';
@@ -95,6 +126,15 @@ import './ckeditor/trilium-parity.css';
 import 'mathlive/fonts.css';
 import 'mathlive/static.css';
 
+// EmojiRepository always fetches its definitions from a URL (there's no "pass the data
+// directly" option) and defaults to CKEditor's own CDN when none is given. Bundle the
+// definitions file that's already vendored alongside the rest of Trilium's CKEditor package
+// (esbuild's built-in JSON loader parses it at build time) and hand it a blob: URL instead, so
+// the emoji picker works offline like everything else here.
+const emojiDefinitionsUrl = URL.createObjectURL(
+  new Blob([JSON.stringify(emojiDefinitions)], { type: 'application/json' }),
+);
+
 /**
  * TriliumEditor - Custom CKEditor 5 build with Trilium plugins.
  */
@@ -109,12 +149,17 @@ export class TriliumEditor extends ClassicEditor {
     // Text formatting
     Bold,
     Italic,
+    ItalicAsEmPlugin,
     Underline,
     Strikethrough,
+    StrikethroughAsDel,
     Code,
     Subscript,
     Superscript,
     RemoveFormat,
+    RemoveFormatLinksPlugin,
+    TextTransformation,
+    TriliumFormatPainter,
 
     // Paragraph formatting
     Alignment,
@@ -122,6 +167,7 @@ export class TriliumEditor extends ClassicEditor {
     Paragraph,
     Indent,
     IndentBlock,
+    IndentBlockShortcutPlugin,
 
     // Font styling
     FontFamily,
@@ -136,12 +182,24 @@ export class TriliumEditor extends ClassicEditor {
     TodoList,
     TodoListUncheckOnEnter,
     TodoListMultistate,
+    CollapsibleListItems,
 
     // Block elements
     BlockQuote,
     CodeBlock,
+    CodeBlockToolbar,
+    CodeBlockLanguageDropdown,
+    CodeBlockInsertParagraph,
+    CodeBlockHljsClass,
     SyntaxHighlighting,
+    InlineCodeNoSpellcheck,
+    InlineCodeToolbar,
     HorizontalLine,
+    PageBreak,
+    GeneralHtmlSupport,
+    Bookmark,
+    MoveBlockUpDownPlugin,
+    ScrollOnUndoRedoPlugin,
 
     // Tables
     Table,
@@ -150,15 +208,22 @@ export class TriliumEditor extends ClassicEditor {
     TableCellProperties,
     TableCaption,
     TableColumnResize,
+    TableSelection,
+    TableIndent,
 
     // Images
     Image,
     ImageCaption,
+    ImageInline,
     ImageInsert,
     ImageResize,
     ImageStyle,
     ImageToolbar,
     ImageUpload,
+    ImageActions,
+    PictureEditing,
+    ClipboardImageEmbed,
+    ClipboardBareImage,
     AutoImage,
     LinkImage,
 
@@ -166,8 +231,9 @@ export class TriliumEditor extends ClassicEditor {
     Link,
     AutoLink,
     MediaEmbed,
+    FindInLinkWidgets,
 
-    // Special characters
+    // Special characters & emoji
     SpecialCharacters,
     SpecialCharactersArrows,
     SpecialCharactersCurrency,
@@ -175,10 +241,13 @@ export class TriliumEditor extends ClassicEditor {
     SpecialCharactersLatin,
     SpecialCharactersMathematical,
     SpecialCharactersText,
+    EmojiRepository,
+    EmojiPicker,
 
     // Utilities
     FindAndReplace,
     PasteFromOffice,
+    InsertDateTimePlugin,
 
     // Trilium-specific plugins
     Admonition,
@@ -186,6 +255,7 @@ export class TriliumEditor extends ClassicEditor {
     Footnotes,
     Kbd,
     Math,
+    AutoformatMath,
     Mermaid,
     InlineIcon,
     InternalLink,
@@ -193,50 +263,63 @@ export class TriliumEditor extends ClassicEditor {
 
   public static override defaultConfig = {
     toolbar: {
+      // Grouped to mirror Trilium's own classic toolbar (apps/client/.../text/toolbar.ts,
+      // buildClassicToolbar) - same clustering and nested "Text formatting"/"Insert" dropdowns,
+      // trimmed to what this extension actually has plugins for. A few items Trilium's own
+      // toolbar doesn't show (fontFamily, mediaEmbed, highlight, findAndReplace) are kept since
+      // they already worked here and removing a working feature isn't "parity", just a
+      // regression - they're grouped at the end instead of mixed into Trilium's own layout.
       items: [
         'heading',
+        'fontSize',
         '|',
         'bold',
         'italic',
-        'underline',
-        'strikethrough',
+        {
+          label: 'Text formatting',
+          icon: 'text',
+          items: ['underline', 'strikethrough', '|', 'superscript', 'subscript', '|', 'kbd'],
+        },
+        'formatPainter',
         '|',
-        'fontSize',
-        'fontFamily',
         'fontColor',
         'fontBackgroundColor',
-        '|',
-        'alignment',
-        'outdent',
-        'indent',
+        'removeFormat',
         '|',
         'bulletedList',
         'numberedList',
         'todoList',
         'taskStateCycle',
         '|',
-        'link',
-        'internalLink',
         'insertImage',
-        'insertTable',
-        'mediaEmbed',
         'blockQuote',
-        'codeBlock',
-        'horizontalLine',
-        '|',
-        'math',
-        'mermaid',
         'admonition',
-        'collapsible',
-        'footnote',
-        'insertIcon',
+        'insertTable',
         '|',
-        'specialCharacters',
-        'highlight',
+        'code',
+        'codeBlock',
+        '|',
+        'footnote',
+        {
+          label: 'Insert',
+          icon: 'plus',
+          items: [
+            'link', 'internalLink', 'bookmark', '|',
+            'collapsible', 'math', 'mermaid', 'horizontalLine', 'pageBreak', '|',
+            'dateTime', 'specialCharacters', 'emoji', 'insertIcon',
+          ],
+        },
+        '|',
+        'alignment',
+        'outdent',
+        'indent',
         '|',
         'undo',
         'redo',
         '|',
+        'fontFamily',
+        'mediaEmbed',
+        'highlight',
         'findAndReplace',
       ],
       shouldNotGroupWhenFull: true,
@@ -248,6 +331,9 @@ export class TriliumEditor extends ClassicEditor {
       outputType: 'script',
       enablePreview: true,
     },
+    emoji: {
+      definitionsUrl: emojiDefinitionsUrl,
+    },
     image: {
       toolbar: [
         'imageTextAlternative',
@@ -256,6 +342,9 @@ export class TriliumEditor extends ClassicEditor {
         'imageStyle:block',
         'imageStyle:side',
         'linkImage',
+        '|',
+        'copyImageToClipboard',
+        'downloadImage',
       ],
     },
     table: {

@@ -1531,51 +1531,62 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
           .create(document.querySelector('#editor-container'), {
             licenseKey: 'GPL',
             taskStates,
-            // Override toolbar to match Trilium's layout more closely
+            // Override toolbar to match Trilium's layout more closely (grouped the same way
+            // as Trilium's own buildClassicToolbar - see ckeditor-build.ts's defaultConfig for
+            // the full rationale; this copy has to stay in sync by hand since it lives in a
+            // different bundle - the inline webview script can't import from ckeditor-build.ts).
             toolbar: {
               items: [
                 'heading',
+                'fontSize',
                 '|',
                 'bold',
                 'italic',
-                'underline',
-                'strikethrough',
+                {
+                  label: 'Text formatting',
+                  icon: 'text',
+                  items: ['underline', 'strikethrough', '|', 'superscript', 'subscript', '|', 'kbd'],
+                },
+                'formatPainter',
                 '|',
-                'fontSize',
-                'fontFamily',
                 'fontColor',
                 'fontBackgroundColor',
+                'removeFormat',
+                '|',
+                'bulletedList',
+                'numberedList',
+                'todoList',
+                'taskStateCycle',
+                '|',
+                'insertImage',
+                'blockQuote',
+                'admonition',
+                'insertTable',
+                '|',
+                'code',
+                'codeBlock',
+                '|',
+                'footnote',
+                {
+                  label: 'Insert',
+                  icon: 'plus',
+                  items: [
+                    'link', 'internalLink', 'bookmark', '|',
+                    'collapsible', 'math', 'mermaid', 'horizontalLine', 'pageBreak', '|',
+                    'dateTime', 'specialCharacters', 'emoji', 'insertIcon',
+                  ],
+                },
                 '|',
                 'alignment',
                 'outdent',
                 'indent',
                 '|',
-                'bulletedList',
-                'numberedList',
-                'todoList',
-                '|',
-                'link',
-                'internalLink',
-                'insertImage',
-                'insertTable',
-                'mediaEmbed',
-                'blockQuote',
-                'codeBlock',
-                'horizontalLine',
-                '|',
-                'math',
-                'mermaid',
-                'admonition',
-                'collapsible',
-                'footnote',
-                'insertIcon',
-                '|',
-                'specialCharacters',
-                'highlight',
-                '|',
                 'undo',
                 'redo',
                 '|',
+                'fontFamily',
+                'mediaEmbed',
+                'highlight',
                 'findAndReplace',
               ],
               shouldNotGroupWhenFull: true
@@ -1613,7 +1624,8 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
             image: {
               toolbar: [
                 'imageStyle:inline', 'imageStyle:block', 'imageStyle:side',
-                '|', 'toggleImageCaption', 'imageTextAlternative', 'linkImage'
+                '|', 'toggleImageCaption', 'imageTextAlternative', 'linkImage',
+                '|', 'copyImageToClipboard', 'downloadImage'
               ]
             },
             link: {
@@ -1630,6 +1642,22 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
             // Mermaid plugin: lazy-load Mermaid library (bundled locally, see ckeditor-build.ts)
             mermaid: {
               lazyLoad: loadMermaid,
+            },
+            // Image balloon "copy"/"download" buttons - both work directly against the image's
+            // src (a data:/blob: URL in the editing view), no extension-host round-trip needed.
+            imageActions: {
+              copyToClipboard: (src) => {
+                void fetch(src)
+                  .then(response => response.blob())
+                  .then(blob => navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]))
+                  .catch(() => vscode.postMessage({ type: 'error', message: 'Failed to copy image to clipboard.' }));
+              },
+              download: (src) => {
+                const link = document.createElement('a');
+                link.href = src;
+                link.download = 'image';
+                link.click();
+              },
             },
             // Inline icon plugin: the picker itself is a VS Code QuickPick, shown by the
             // extension host (see the 'showIconPicker' message handler below).
