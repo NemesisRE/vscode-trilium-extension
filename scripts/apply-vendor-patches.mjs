@@ -373,6 +373,32 @@ export function applyVendorPatches(vendorDir, logPrefix = '[patch-plugins]') {
     }
   }
 
+  // fileuploadcommand.ts inserts its upload placeholder as a `reference` element - the same
+  // model element name this extension's own referenceLink.ts uses for internal note links, whose
+  // click handler always treats `href` as a note id/path. A dropped file is not a note, so reusing
+  // that element would make clicking an in-progress or finished file attachment try to open it as
+  // one. Give file attachments their own `fileAttachment` element instead (see
+  // src/ckeditor/fileAttachmentLink.ts), and carry the original filename along from the start -
+  // upstream never sets one, since Trilium's own referencelink.ts resolves a display title by
+  // note id instead.
+  const fileUploadCommandPath = path.join(vendorDir, 'ckeditor5', 'src', 'plugins', 'file_upload', 'fileuploadcommand.ts');
+  if (fs.existsSync(fileUploadCommandPath)) {
+    let src = fs.readFileSync(fileUploadCommandPath, 'utf8');
+    const before = src;
+    src = src.replace(
+      "\tinsertFileLink( writer, model, { href: '', uploadId: loader.id }, file );",
+      "\tinsertFileLink( writer, model, { href: '', uploadId: loader.id, filename: file.name }, file );",
+    );
+    src = src.replace(
+      "const placeholder = writer.createElement( 'reference', attributes );",
+      "const placeholder = writer.createElement( 'fileAttachment', attributes );",
+    );
+    if (src !== before) {
+      fs.writeFileSync(fileUploadCommandPath, src, 'utf8');
+      console.log(`${logPrefix} patched ckeditor5/src/plugins/file_upload/fileuploadcommand.ts`);
+    }
+  }
+
   // Fresh vendor downloads can include the upstream CKEditor tsconfig with stale
   // monorepo-only settings that break the standalone extension type-check. Strip
   // the inherited base config and the declaration-only / extra ambient types that
