@@ -114,6 +114,7 @@ import CutToNotePlugin from '../vendor/ckeditor5/src/plugins/cuttonote';
 import CopyLinkUrlButton from '../vendor/ckeditor5/src/plugins/copy_link_url';
 import CopyAnchorLinkButton from '../vendor/ckeditor5/src/plugins/copy_anchor_link';
 import MarkdownImportPlugin from '../vendor/ckeditor5/src/plugins/markdownimport';
+import TriliumSnippets from '../vendor/ckeditor5/src/plugins/snippets/snippets';
 import emojiDefinitions from '../vendor/ckeditor5/src/emoji_definitions/en.json';
 
 // Import all CSS - esbuild will bundle it
@@ -268,6 +269,10 @@ export class TriliumEditor extends ClassicEditor {
     Mermaid,
     InlineIcon,
     InternalLink,
+
+    // Text snippets ("Templates"): a searchable dropdown of reusable text sourced from the
+    // user's own #snippet/#textSnippet notes.
+    TriliumSnippets,
   ];
 
   public static override defaultConfig = {
@@ -315,7 +320,7 @@ export class TriliumEditor extends ClassicEditor {
           items: [
             'link', 'internalLink', 'bookmark', '|',
             'collapsible', 'math', 'mermaid', 'horizontalLine', 'pageBreak', '|',
-            'dateTime', 'specialCharacters', 'emoji', 'insertIcon',
+            'dateTime', 'specialCharacters', 'emoji', 'insertIcon', 'insertTemplate',
           ],
         },
         '|',
