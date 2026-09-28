@@ -26,6 +26,13 @@ interface MediaEmbedFacadeEditorConfig {
  * `vscode.env.openExternal()`). `preventCKEditorHandling()` is still applied too, for the same
  * widget-selection/toolbar behavior our own widget gets - it just no longer needs to make the
  * anchor's own navigation work, since this plugin's own click listener replaces that entirely.
+ *
+ * `stopPropagation()` alongside `preventDefault()` matters here: VS Code's own webview host script
+ * has its own bubble-phase click listener on the webview window that opens any anchor's href itself
+ * (with its own "Do you want Code to open the external website?" confirmation) - and, per the actual
+ * observed behavior, it does that *regardless of `preventDefault()`*. Without also stopping
+ * propagation, both that native handling and our own explicit host round trip fire for the same
+ * click, opening the video twice.
  */
 export default class MediaEmbedFacadeClickHandling extends Plugin {
   public static get pluginName() {
@@ -48,6 +55,7 @@ export default class MediaEmbedFacadeClickHandling extends Plugin {
         preventCKEditorHandling(facade, editor);
         facade.addEventListener('click', (evt) => {
           evt.preventDefault();
+          evt.stopPropagation();
           openExternal?.(facade.href);
         });
       });
