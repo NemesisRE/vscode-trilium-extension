@@ -1,19 +1,33 @@
 import * as vscode from 'vscode';
-import { EtapiClient, Note } from './etapiClient';
+import { Attribute, EtapiClient, Note } from './etapiClient';
 
-interface KanbanSaveMessage {
-  type: 'save';
-  columns: { name: string; noteIds: string[] }[];
+interface KanbanMoveMessage {
+  type: 'move';
+  noteId: string;
+  toColumn: string;
+  columnNoteIds: string[];
 }
-type KanbanMessage = KanbanSaveMessage | { type: 'cancel' };
+type KanbanMessage = KanbanMoveMessage;
 
 interface CardEntry {
   noteId: string;
-  branchId: string;
   title: string;
 }
 
+interface ColumnState {
+  name: string;
+  cards: CardEntry[];
+}
+
+interface BoardState {
+  groupByLabel: string;
+  columns: ColumnState[];
+  attributeByNoteId: Map<string, Attribute | undefined>;
+  branchByNoteId: Map<string, string>;
+}
+
 const NO_VALUE_COLUMN = '';
+const REFRESH_INTERVAL_MS = 6000;
 
 function escapeHtml(input: string): string {
   return input
@@ -62,25 +76,51 @@ function getCardColumnValue(card: Note, groupByLabel: string): string {
   return attr?.value.trim() ?? NO_VALUE_COLUMN;
 }
 
-function buildHtml(
-  webview: vscode.Webview,
-  boardTitle: string,
-  groupByLabel: string,
-  columns: { name: string; cards: CardEntry[] }[],
-): string {
+async function loadBoardState(client: EtapiClient, boardNote: Note): Promise<BoardState> {
+  const parent = await client.getNote(boardNote.noteId);
+  const children = await Promise.all(parent.childNoteIds.map((id) => client.getNote(id)));
+  const groupByLabel = getBoardGroupByLabel(parent);
+
+  const branchByNoteId = new Map(
+    parent.childNoteIds.map((noteId, index) => [noteId, parent.childBranchIds[index]]),
+  );
+
+  const columnOrder: string[] = [];
+  const cardsByColumn = new Map<string, CardEntry[]>();
+  for (const child of children) {
+    const value = getCardColumnValue(child, groupByLabel);
+    if (!cardsByColumn.has(value)) {
+      columnOrder.push(value);
+      cardsByColumn.set(value, []);
+    }
+    cardsByColumn.get(value)!.push({ noteId: child.noteId, title: child.title });
+  }
+  // Keep an explicit "no value" column visible even when every card already has
+  // the label, so there's somewhere to drag a card back to remove it.
+  if (!cardsByColumn.has(NO_VALUE_COLUMN)) {
+    columnOrder.unshift(NO_VALUE_COLUMN);
+    cardsByColumn.set(NO_VALUE_COLUMN, []);
+  }
+
+  const attributeByNoteId = new Map(children.map((c) => [
+    c.noteId,
+    (c.attributes ?? []).find((a) => a.type === 'label' && a.name === groupByLabel),
+  ]));
+
+  return {
+    groupByLabel,
+    columns: columnOrder.map((name) => ({ name, cards: cardsByColumn.get(name) ?? [] })),
+    attributeByNoteId,
+    branchByNoteId: branchByNoteId as Map<string, string>,
+  };
+}
+
+function buildHtml(webview: vscode.Webview, boardTitle: string, initialState: BoardState): string {
   const nonce = createNonce();
-  const columnsHtml = columns.map((col) => {
-    const cardsHtml = col.cards.map((card) => (
-      `<li class="card" draggable="true" data-note-id="${escapeHtml(card.noteId)}">${escapeHtml(card.title)}</li>`
-    )).join('\n');
-    const label = col.name === NO_VALUE_COLUMN ? `(no ${escapeHtml(groupByLabel)})` : escapeHtml(col.name);
-    return [
-      `<div class="column" data-column="${escapeHtml(col.name)}">`,
-      `  <div class="columnHeader">${label}</div>`,
-      `  <ul class="cardList">${cardsHtml}</ul>`,
-      '</div>',
-    ].join('\n');
-  }).join('\n');
+  const initialPayload = {
+    groupByLabel: initialState.groupByLabel,
+    columns: initialState.columns,
+  };
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -92,7 +132,8 @@ function buildHtml(
   <style>
     body { font-family: var(--vscode-font-family); color: var(--vscode-foreground); background: var(--vscode-editor-background); margin: 0; }
     .wrap { padding: 14px; display: grid; gap: 10px; }
-    .header { font-size: 13px; color: var(--vscode-descriptionForeground); }
+    .header { font-size: 13px; color: var(--vscode-descriptionForeground); display: flex; justify-content: space-between; gap: 8px; }
+    .syncState { font-size: 11px; color: var(--vscode-descriptionForeground); }
     .parent { font-weight: 600; margin-top: 4px; }
     .board { display: flex; gap: 10px; align-items: flex-start; overflow-x: auto; padding-bottom: 4px; }
     .column {
@@ -130,53 +171,61 @@ function buildHtml(
       border-radius: 4px;
       padding: 4px 8px;
     }
-    .actions { display: flex; gap: 8px; justify-content: flex-end; }
     button {
       border: 1px solid var(--vscode-button-border, transparent);
-      background: var(--vscode-button-background);
-      color: var(--vscode-button-foreground);
+      background: var(--vscode-button-secondaryBackground);
+      color: var(--vscode-button-secondaryForeground);
       border-radius: 4px;
       padding: 6px 10px;
       cursor: pointer;
-    }
-    button.secondary {
-      background: var(--vscode-button-secondaryBackground);
-      color: var(--vscode-button-secondaryForeground);
     }
   </style>
 </head>
 <body>
   <div class="wrap">
     <div>
-      <div class="header">Board &middot; grouped by #${escapeHtml(groupByLabel)}</div>
+      <div class="header">
+        <span>Board &middot; grouped by #<span id="groupByLabel"></span></span>
+        <span class="syncState" id="syncState">synced</span>
+      </div>
       <div class="parent">${escapeHtml(boardTitle)}</div>
     </div>
-    <div class="board" id="board">${columnsHtml}</div>
+    <div class="board" id="board"></div>
     <div class="addColumn">
       <input id="newColumnName" type="text" placeholder="New column value" />
-      <button class="secondary" id="addColumnBtn">Add Column</button>
-    </div>
-    <div class="actions">
-      <button class="secondary" id="cancelBtn">Cancel</button>
-      <button id="saveBtn">Save Board</button>
+      <button id="addColumnBtn">Add Column</button>
     </div>
   </div>
   <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
     const board = document.getElementById('board');
+    const groupByLabelEl = document.getElementById('groupByLabel');
+    const syncStateEl = document.getElementById('syncState');
     let dragged = null;
+    let dragging = false;
+
+    function cardEl(card) {
+      const li = document.createElement('li');
+      li.className = 'card';
+      li.draggable = true;
+      li.dataset.noteId = card.noteId;
+      li.textContent = card.title;
+      attachCard(li);
+      return li;
+    }
 
     function attachCard(card) {
       card.addEventListener('dragstart', () => {
         dragged = card;
+        dragging = true;
         card.classList.add('dragging');
       });
       card.addEventListener('dragend', () => {
         card.classList.remove('dragging');
         dragged = null;
+        dragging = false;
       });
     }
-    board.querySelectorAll('.card').forEach(attachCard);
 
     function attachList(list) {
       list.addEventListener('dragover', (event) => {
@@ -195,132 +244,148 @@ function buildHtml(
       list.addEventListener('drop', (event) => {
         event.preventDefault();
         list.classList.remove('dragover');
+        if (!dragged) { return; }
+        const noteId = dragged.dataset.noteId;
+        const toColumn = list.closest('.column').dataset.column;
+        const columnNoteIds = Array.from(list.querySelectorAll('.card')).map((c) => c.dataset.noteId);
+        syncStateEl.textContent = 'saving…';
+        vscode.postMessage({ type: 'move', noteId, toColumn, columnNoteIds });
       });
     }
-    board.querySelectorAll('.cardList').forEach(attachList);
+
+    function columnEl(col, groupByLabel) {
+      const div = document.createElement('div');
+      div.className = 'column';
+      div.dataset.column = col.name;
+      const header = document.createElement('div');
+      header.className = 'columnHeader';
+      header.textContent = col.name === '' ? '(no ' + groupByLabel + ')' : col.name;
+      const list = document.createElement('ul');
+      list.className = 'cardList';
+      col.cards.forEach((card) => list.appendChild(cardEl(card)));
+      attachList(list);
+      div.appendChild(header);
+      div.appendChild(list);
+      return div;
+    }
+
+    function render(state) {
+      groupByLabelEl.textContent = state.groupByLabel;
+      board.innerHTML = '';
+      state.columns.forEach((col) => board.appendChild(columnEl(col, state.groupByLabel)));
+    }
 
     document.getElementById('addColumnBtn').addEventListener('click', () => {
       const input = document.getElementById('newColumnName');
       const name = input.value.trim();
       if (!name) { return; }
       if (board.querySelector('.column[data-column="' + CSS.escape(name) + '"]')) { return; }
-      const col = document.createElement('div');
-      col.className = 'column';
-      col.dataset.column = name;
-      col.innerHTML = '<div class="columnHeader"></div><ul class="cardList"></ul>';
-      col.querySelector('.columnHeader').textContent = name;
+      const col = columnEl({ name, cards: [] }, groupByLabelEl.textContent);
       board.appendChild(col);
-      attachList(col.querySelector('.cardList'));
       input.value = '';
     });
 
-    document.getElementById('cancelBtn').addEventListener('click', () => {
-      vscode.postMessage({ type: 'cancel' });
+    window.addEventListener('message', (event) => {
+      const msg = event.data;
+      if (msg.type === 'synced') {
+        syncStateEl.textContent = 'synced';
+        return;
+      }
+      if (msg.type === 'saveFailed') {
+        syncStateEl.textContent = 'save failed';
+        return;
+      }
+      if (msg.type === 'refresh') {
+        if (dragging) { return; } // don't yank a card out from under an in-progress drag
+        render({ groupByLabel: msg.groupByLabel, columns: msg.columns });
+        syncStateEl.textContent = 'synced';
+      }
     });
 
-    document.getElementById('saveBtn').addEventListener('click', () => {
-      const columns = Array.from(board.querySelectorAll('.column')).map((col) => ({
-        name: col.dataset.column,
-        noteIds: Array.from(col.querySelectorAll('.card')).map((c) => c.dataset.noteId),
-      }));
-      vscode.postMessage({ type: 'save', columns });
-    });
+    render(${JSON.stringify(initialPayload)});
   </script>
 </body>
 </html>`;
 }
 
 export async function openKanbanViewPanel(client: EtapiClient, boardNote: Note): Promise<void> {
-  const children = await Promise.all(boardNote.childNoteIds.map((id) => client.getNote(id)));
-  const groupByLabel = getBoardGroupByLabel(boardNote);
-
-  const entries: CardEntry[] = boardNote.childNoteIds.map((noteId, index) => {
-    const child = children.find((n) => n.noteId === noteId);
-    const branchId = boardNote.childBranchIds[index];
-    if (!child || !branchId) {
-      throw new Error(`Missing child note or branch mapping for ${noteId}`);
-    }
-    return { noteId, branchId, title: child.title };
-  });
-
-  const columnOrder: string[] = [];
-  const cardsByColumn = new Map<string, CardEntry[]>();
-  for (const child of children) {
-    const value = getCardColumnValue(child, groupByLabel);
-    if (!cardsByColumn.has(value)) {
-      columnOrder.push(value);
-      cardsByColumn.set(value, []);
-    }
-    const entry = entries.find((e) => e.noteId === child.noteId);
-    if (entry) {
-      cardsByColumn.get(value)!.push(entry);
-    }
-  }
-  // Keep an explicit "no value" column visible even when every card already has
-  // the label, so there's somewhere to drag a card back to remove it.
-  if (!cardsByColumn.has(NO_VALUE_COLUMN)) {
-    columnOrder.unshift(NO_VALUE_COLUMN);
-    cardsByColumn.set(NO_VALUE_COLUMN, []);
-  }
-
-  const columns = columnOrder.map((name) => ({ name, cards: cardsByColumn.get(name) ?? [] }));
+  let state = await loadBoardState(client, boardNote);
 
   const panel = vscode.window.createWebviewPanel(
     'triliumKanbanView',
     boardNote.title,
     vscode.ViewColumn.Active,
-    { enableScripts: true, retainContextWhenHidden: false },
+    { enableScripts: true, retainContextWhenHidden: true },
   );
 
-  panel.webview.html = buildHtml(panel.webview, boardNote.title, groupByLabel, columns);
+  panel.webview.html = buildHtml(panel.webview, boardNote.title, state);
 
-  const attributeByNoteId = new Map(children.map((c) => [
-    c.noteId,
-    (c.attributes ?? []).find((a) => a.type === 'label' && a.name === groupByLabel),
-  ]));
-  const branchByNoteId = new Map(entries.map((e) => [e.noteId, e.branchId]));
-
-  const disposable = panel.webview.onDidReceiveMessage(async (msg: KanbanMessage) => {
-    if (msg.type === 'cancel') {
-      panel.dispose();
-      return;
-    }
-    if (msg.type !== 'save') {
-      return;
-    }
-
-    try {
-      for (const column of msg.columns) {
-        await Promise.all(column.noteIds.map(async (noteId, index) => {
-          const branchId = branchByNoteId.get(noteId);
-          if (!branchId) {
-            throw new Error(`Missing branch for note ${noteId}`);
-          }
-          await client.patchBranch(branchId, { notePosition: (index + 1) * 10 });
-
-          const existing = attributeByNoteId.get(noteId);
-          if (column.name === NO_VALUE_COLUMN) {
-            if (existing) {
-              await client.deleteAttribute(existing.attributeId);
-            }
-            return;
-          }
-          if (existing) {
-            if (existing.value !== column.name) {
-              await client.patchAttribute(existing.attributeId, { value: column.name });
-            }
-          } else {
-            await client.createAttribute(noteId, 'label', groupByLabel, column.name);
-          }
-        }));
+  async function persistMove(msg: KanbanMoveMessage): Promise<void> {
+    await Promise.all(msg.columnNoteIds.map(async (noteId, index) => {
+      const branchId = state.branchByNoteId.get(noteId);
+      if (!branchId) {
+        throw new Error(`Missing branch for note ${noteId}`);
       }
-      await client.refreshNoteOrdering(boardNote.noteId);
-      panel.dispose();
-      void vscode.window.showInformationMessage(`Trilium: Saved board "${boardNote.title}".`);
+      await client.patchBranch(branchId, { notePosition: (index + 1) * 10 });
+    }));
+
+    const existing = state.attributeByNoteId.get(msg.noteId);
+    if (msg.toColumn === NO_VALUE_COLUMN) {
+      if (existing) {
+        await client.deleteAttribute(existing.attributeId);
+      }
+    } else if (existing) {
+      if (existing.value !== msg.toColumn) {
+        await client.patchAttribute(existing.attributeId, { value: msg.toColumn });
+      }
+    } else {
+      await client.createAttribute(msg.noteId, 'label', state.groupByLabel, msg.toColumn);
+    }
+
+    await client.refreshNoteOrdering(boardNote.noteId);
+  }
+
+  const messageDisposable = panel.webview.onDidReceiveMessage(async (msg: KanbanMessage) => {
+    if (msg.type !== 'move') {
+      return;
+    }
+    try {
+      await persistMove(msg);
+      // Re-fetch so our local attribute/branch maps (used by the next move and by
+      // the refresh poll's diff) reflect what was just written.
+      state = await loadBoardState(client, boardNote);
+      lastSignature = JSON.stringify(state.columns);
+      void panel.webview.postMessage({ type: 'synced' });
     } catch (err) {
-      void vscode.window.showErrorMessage(`Trilium: Failed to save board: ${err}`);
+      void panel.webview.postMessage({ type: 'saveFailed' });
+      void vscode.window.showErrorMessage(`Trilium: Failed to save board move: ${err}`);
     }
   });
 
-  panel.onDidDispose(() => disposable.dispose());
+  let lastSignature = JSON.stringify(state.columns);
+  const refreshTimer = setInterval(async () => {
+    if (!panel.visible) {
+      return;
+    }
+    try {
+      const fresh = await loadBoardState(client, boardNote);
+      const signature = JSON.stringify(fresh.columns);
+      if (signature !== lastSignature) {
+        state = fresh;
+        lastSignature = signature;
+        void panel.webview.postMessage({
+          type: 'refresh',
+          groupByLabel: fresh.groupByLabel,
+          columns: fresh.columns,
+        });
+      }
+    } catch {
+      // Transient fetch failures (e.g. momentarily disconnected) just skip this tick.
+    }
+  }, REFRESH_INTERVAL_MS);
+
+  panel.onDidDispose(() => {
+    clearInterval(refreshTimer);
+    messageDisposable.dispose();
+  });
 }
