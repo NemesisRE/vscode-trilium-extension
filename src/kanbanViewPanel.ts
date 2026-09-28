@@ -7,7 +7,11 @@ interface KanbanMoveMessage {
   toColumn: string;
   columnNoteIds: string[];
 }
-type KanbanMessage = KanbanMoveMessage;
+interface KanbanReorderColumnsMessage {
+  type: 'reorderColumns';
+  columnNames: string[];
+}
+type KanbanMessage = KanbanMoveMessage | KanbanReorderColumnsMessage;
 
 interface CardEntry {
   noteId: string;
@@ -24,10 +28,12 @@ interface BoardState {
   columns: ColumnState[];
   attributeByNoteId: Map<string, Attribute | undefined>;
   branchByNoteId: Map<string, string>;
+  columnOrderAttribute: Attribute | undefined;
 }
 
 const NO_VALUE_COLUMN = '';
 const REFRESH_INTERVAL_MS = 6000;
+const COLUMN_ORDER_LABEL = 'board:columnOrder';
 
 function escapeHtml(input: string): string {
   return input
@@ -76,6 +82,53 @@ function getCardColumnValue(card: Note, groupByLabel: string): string {
   return attr?.value.trim() ?? NO_VALUE_COLUMN;
 }
 
+/**
+ * Reads the board's persisted column order from a `#board:columnOrder` label on the
+ * board note itself (JSON array of column values, `""` standing in for the "no value"
+ * column). Returns null when missing or unparseable, so callers fall back to
+ * discovering an order from the cards instead.
+ */
+function getPersistedColumnOrder(boardNote: Note): string[] | null {
+  const attr = (boardNote.attributes ?? []).find(
+    (a) => a.type === 'label' && a.name === COLUMN_ORDER_LABEL,
+  );
+  if (!attr) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(attr.value);
+    if (Array.isArray(parsed) && parsed.every((v) => typeof v === 'string')) {
+      return parsed;
+    }
+  } catch {
+    // fall through to null below
+  }
+  return null;
+}
+
+/**
+ * Combines the persisted column order with the columns actually discovered from the
+ * current cards: persisted columns keep their saved position (even if currently
+ * empty), and any newly-seen column value is appended once, in first-seen order.
+ * This is what keeps the column order stable across reloads/polls instead of being
+ * re-derived from card fetch order every time.
+ */
+function mergeColumnOrder(persisted: string[] | null, discovered: string[]): string[] {
+  const discoveredSet = new Set(discovered);
+  const merged = (persisted ?? []).filter((name) => discoveredSet.has(name));
+  const mergedSet = new Set(merged);
+  for (const name of discovered) {
+    if (!mergedSet.has(name)) {
+      merged.push(name);
+      mergedSet.add(name);
+    }
+  }
+  if (!mergedSet.has(NO_VALUE_COLUMN)) {
+    merged.unshift(NO_VALUE_COLUMN);
+  }
+  return merged;
+}
+
 async function loadBoardState(client: EtapiClient, boardNote: Note): Promise<BoardState> {
   const parent = await client.getNote(boardNote.noteId);
   const children = await Promise.all(parent.childNoteIds.map((id) => client.getNote(id)));
@@ -85,12 +138,12 @@ async function loadBoardState(client: EtapiClient, boardNote: Note): Promise<Boa
     parent.childNoteIds.map((noteId, index) => [noteId, parent.childBranchIds[index]]),
   );
 
-  const columnOrder: string[] = [];
+  const discoveredOrder: string[] = [];
   const cardsByColumn = new Map<string, CardEntry[]>();
   for (const child of children) {
     const value = getCardColumnValue(child, groupByLabel);
     if (!cardsByColumn.has(value)) {
-      columnOrder.push(value);
+      discoveredOrder.push(value);
       cardsByColumn.set(value, []);
     }
     cardsByColumn.get(value)!.push({ noteId: child.noteId, title: child.title });
@@ -98,8 +151,28 @@ async function loadBoardState(client: EtapiClient, boardNote: Note): Promise<Boa
   // Keep an explicit "no value" column visible even when every card already has
   // the label, so there's somewhere to drag a card back to remove it.
   if (!cardsByColumn.has(NO_VALUE_COLUMN)) {
-    columnOrder.unshift(NO_VALUE_COLUMN);
     cardsByColumn.set(NO_VALUE_COLUMN, []);
+  }
+
+  const persistedOrder = getPersistedColumnOrder(parent);
+  const columnOrder = mergeColumnOrder(persistedOrder, discoveredOrder);
+
+  const columnOrderAttribute = (parent.attributes ?? []).find(
+    (a) => a.type === 'label' && a.name === COLUMN_ORDER_LABEL,
+  );
+
+  // Self-heal: if the merged order doesn't match what's persisted (first run, or a
+  // new column value just appeared), persist it so the order is stable next time
+  // instead of being re-derived from card fetch order on every load/poll.
+  const serializedOrder = JSON.stringify(columnOrder);
+  let finalColumnOrderAttribute = columnOrderAttribute;
+  if (!persistedOrder || JSON.stringify(persistedOrder) !== serializedOrder) {
+    if (columnOrderAttribute) {
+      await client.patchAttribute(columnOrderAttribute.attributeId, { value: serializedOrder });
+      finalColumnOrderAttribute = { ...columnOrderAttribute, value: serializedOrder };
+    } else {
+      await client.createAttribute(parent.noteId, 'label', COLUMN_ORDER_LABEL, serializedOrder);
+    }
   }
 
   const attributeByNoteId = new Map(children.map((c) => [
@@ -112,6 +185,7 @@ async function loadBoardState(client: EtapiClient, boardNote: Note): Promise<Boa
     columns: columnOrder.map((name) => ({ name, cards: cardsByColumn.get(name) ?? [] })),
     attributeByNoteId,
     branchByNoteId: branchByNoteId as Map<string, string>,
+    columnOrderAttribute: finalColumnOrderAttribute,
   };
 }
 
@@ -163,6 +237,9 @@ function buildHtml(webview: vscode.Webview, boardTitle: string, initialState: Bo
     }
     .card.dragging { opacity: 0.5; }
     .cardList.dragover { outline: 1px dashed var(--vscode-focusBorder); }
+    .columnHeader { cursor: grab; }
+    .column.draggingColumn { opacity: 0.5; }
+    .board.dragover { outline: 1px dashed var(--vscode-focusBorder); }
     .addColumn { display: flex; gap: 6px; }
     .addColumn input {
       background: var(--vscode-input-background);
@@ -203,6 +280,7 @@ function buildHtml(webview: vscode.Webview, boardTitle: string, initialState: Bo
     const syncStateEl = document.getElementById('syncState');
     let dragged = null;
     let dragging = false;
+    let draggedColumn = null;
 
     function cardEl(card) {
       const li = document.createElement('li');
@@ -215,12 +293,14 @@ function buildHtml(webview: vscode.Webview, boardTitle: string, initialState: Bo
     }
 
     function attachCard(card) {
-      card.addEventListener('dragstart', () => {
+      card.addEventListener('dragstart', (event) => {
+        event.stopPropagation();
         dragged = card;
         dragging = true;
         card.classList.add('dragging');
       });
-      card.addEventListener('dragend', () => {
+      card.addEventListener('dragend', (event) => {
+        event.stopPropagation();
         card.classList.remove('dragging');
         dragged = null;
         dragging = false;
@@ -229,9 +309,10 @@ function buildHtml(webview: vscode.Webview, boardTitle: string, initialState: Bo
 
     function attachList(list) {
       list.addEventListener('dragover', (event) => {
-        event.preventDefault();
-        list.classList.add('dragover');
         if (!dragged) { return; }
+        event.preventDefault();
+        event.stopPropagation();
+        list.classList.add('dragover');
         const siblings = Array.from(list.querySelectorAll('.card')).filter((c) => c !== dragged);
         let next = null;
         for (const sib of siblings) {
@@ -242,14 +323,53 @@ function buildHtml(webview: vscode.Webview, boardTitle: string, initialState: Bo
       });
       list.addEventListener('dragleave', () => list.classList.remove('dragover'));
       list.addEventListener('drop', (event) => {
-        event.preventDefault();
-        list.classList.remove('dragover');
         if (!dragged) { return; }
+        event.preventDefault();
+        event.stopPropagation();
+        list.classList.remove('dragover');
         const noteId = dragged.dataset.noteId;
         const toColumn = list.closest('.column').dataset.column;
         const columnNoteIds = Array.from(list.querySelectorAll('.card')).map((c) => c.dataset.noteId);
         syncStateEl.textContent = 'saving…';
         vscode.postMessage({ type: 'move', noteId, toColumn, columnNoteIds });
+      });
+    }
+
+    function attachColumn(div) {
+      div.draggable = true;
+      div.addEventListener('dragstart', (event) => {
+        draggedColumn = div;
+        dragging = true;
+        div.classList.add('draggingColumn');
+      });
+      div.addEventListener('dragend', () => {
+        div.classList.remove('draggingColumn');
+        draggedColumn = null;
+        dragging = false;
+      });
+    }
+
+    function attachBoard(container) {
+      container.addEventListener('dragover', (event) => {
+        if (!draggedColumn) { return; }
+        event.preventDefault();
+        container.classList.add('dragover');
+        const siblings = Array.from(container.querySelectorAll('.column')).filter((c) => c !== draggedColumn);
+        let next = null;
+        for (const sib of siblings) {
+          const rect = sib.getBoundingClientRect();
+          if (event.clientX < rect.left + rect.width / 2) { next = sib; break; }
+        }
+        if (next) { container.insertBefore(draggedColumn, next); } else { container.appendChild(draggedColumn); }
+      });
+      container.addEventListener('dragleave', () => container.classList.remove('dragover'));
+      container.addEventListener('drop', (event) => {
+        if (!draggedColumn) { return; }
+        event.preventDefault();
+        container.classList.remove('dragover');
+        const columnNames = Array.from(container.querySelectorAll('.column')).map((c) => c.dataset.column);
+        syncStateEl.textContent = 'saving…';
+        vscode.postMessage({ type: 'reorderColumns', columnNames });
       });
     }
 
@@ -264,10 +384,13 @@ function buildHtml(webview: vscode.Webview, boardTitle: string, initialState: Bo
       list.className = 'cardList';
       col.cards.forEach((card) => list.appendChild(cardEl(card)));
       attachList(list);
+      attachColumn(div);
       div.appendChild(header);
       div.appendChild(list);
       return div;
     }
+
+    attachBoard(board);
 
     function render(state) {
       groupByLabelEl.textContent = state.groupByLabel;
@@ -345,12 +468,24 @@ export async function openKanbanViewPanel(client: EtapiClient, boardNote: Note):
     await client.refreshNoteOrdering(boardNote.noteId);
   }
 
-  const messageDisposable = panel.webview.onDidReceiveMessage(async (msg: KanbanMessage) => {
-    if (msg.type !== 'move') {
-      return;
+  async function persistColumnOrder(msg: KanbanReorderColumnsMessage): Promise<void> {
+    const serializedOrder = JSON.stringify(msg.columnNames);
+    if (state.columnOrderAttribute) {
+      await client.patchAttribute(state.columnOrderAttribute.attributeId, { value: serializedOrder });
+    } else {
+      await client.createAttribute(boardNote.noteId, 'label', COLUMN_ORDER_LABEL, serializedOrder);
     }
+  }
+
+  const messageDisposable = panel.webview.onDidReceiveMessage(async (msg: KanbanMessage) => {
     try {
-      await persistMove(msg);
+      if (msg.type === 'move') {
+        await persistMove(msg);
+      } else if (msg.type === 'reorderColumns') {
+        await persistColumnOrder(msg);
+      } else {
+        return;
+      }
       // Re-fetch so our local attribute/branch maps (used by the next move and by
       // the refresh poll's diff) reflect what was just written.
       state = await loadBoardState(client, boardNote);
@@ -358,7 +493,7 @@ export async function openKanbanViewPanel(client: EtapiClient, boardNote: Note):
       void panel.webview.postMessage({ type: 'synced' });
     } catch (err) {
       void panel.webview.postMessage({ type: 'saveFailed' });
-      void vscode.window.showErrorMessage(`Trilium: Failed to save board move: ${err}`);
+      void vscode.window.showErrorMessage(`Trilium: Failed to save board change: ${err}`);
     }
   });
 
