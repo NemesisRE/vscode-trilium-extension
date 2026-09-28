@@ -36,6 +36,9 @@ describe('mediaEmbedFacade', () => {
       assert.match(html, /href="https:\/\/youtube\.com\/watch\?v=dQw4w9WgXcQ"/);
       assert.match(html, /src="https:\/\/img\.youtube\.com\/vi\/dQw4w9WgXcQ\/hqdefault\.jpg"/);
       assert.match(html, /target="_blank"/);
+      // Without this, CKEditor's own widget system swallows the click as a "select this widget"
+      // gesture instead of letting the anchor navigate - see the comment above videoFacadeHtml().
+      assert.match(html, /data-cke-ignore-events="true"/);
     });
 
     it('reconstructs the external URL whether the match kept its protocol or not', () => {
@@ -53,6 +56,7 @@ describe('mediaEmbedFacade', () => {
       assert.equal(html.includes('<img'), false);
       assert.match(html, /class="link-embed-video-facade"/);
       assert.match(html, /href="https:\/\/vimeo\.com\/12345"/);
+      assert.match(html, /data-cke-ignore-events="true"/);
     });
   });
 

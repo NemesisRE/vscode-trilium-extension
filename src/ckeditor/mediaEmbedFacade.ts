@@ -38,7 +38,14 @@ function videoFacadeHtml(href: string, title: string, thumbnailSrc?: string): st
   const thumbnail = thumbnailSrc
     ? `<img class="link-embed-video-thumbnail" src="${escapeHtmlAttr(thumbnailSrc)}" alt="" loading="lazy">`
     : '';
-  return `<div class="link-embed-video"><a class="link-embed-video-facade" href="${escapeHtmlAttr(href)}" target="_blank" rel="noopener noreferrer" title="${escapeHtmlAttr(title)}">${thumbnail}<span class="link-embed-video-play"></span></a></div>`;
+  // data-cke-ignore-events: CKEditor's own widget system listens for mousedown/click through its
+  // view-document event pipeline and, unlike our own vendored linkEmbed widget, this raw provider
+  // HTML has no chance to run preventCKEditorHandling()-style JS against the constructed DOM node
+  // (see widget_utils.ts) to opt out of it. This attribute is the one opt-out CKEditor's engine
+  // itself recognizes from markup alone — an event is never dispatched to the view at all when its
+  // target sits inside an element carrying it — so it's what makes the link actually clickable
+  // instead of being swallowed as a "select this widget" gesture.
+  return `<div class="link-embed-video"><a class="link-embed-video-facade" href="${escapeHtmlAttr(href)}" target="_blank" rel="noopener noreferrer" title="${escapeHtmlAttr(title)}" data-cke-ignore-events="true">${thumbnail}<span class="link-embed-video-play"></span></a></div>`;
 }
 
 export const mediaEmbedProviders = [
