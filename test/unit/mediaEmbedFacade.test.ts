@@ -35,7 +35,10 @@ describe('mediaEmbedFacade', () => {
       assert.match(html, /class="link-embed-video-facade"/);
       assert.match(html, /href="https:\/\/youtube\.com\/watch\?v=dQw4w9WgXcQ"/);
       assert.match(html, /src="https:\/\/img\.youtube\.com\/vi\/dQw4w9WgXcQ\/hqdefault\.jpg"/);
-      assert.match(html, /target="_blank"/);
+      // No target="_blank": VS Code's webview sandbox blocks window.open() (no allow-popups), so a
+      // plain <a href> is required for the webview host's own anchor-click interception to open it
+      // externally - see the comment above videoFacadeHtml().
+      assert.equal(/target=/.test(html), false);
       // Without this, CKEditor's own widget system swallows the click as a "select this widget"
       // gesture instead of letting the anchor navigate - see the comment above videoFacadeHtml().
       assert.match(html, /data-cke-ignore-events="true"/);

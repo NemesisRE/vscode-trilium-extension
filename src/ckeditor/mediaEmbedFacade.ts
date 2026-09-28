@@ -38,14 +38,22 @@ function videoFacadeHtml(href: string, title: string, thumbnailSrc?: string): st
   const thumbnail = thumbnailSrc
     ? `<img class="link-embed-video-thumbnail" src="${escapeHtmlAttr(thumbnailSrc)}" alt="" loading="lazy">`
     : '';
+  // No target="_blank" here: VS Code's webview host script auto-intercepts a plain <a href> click
+  // (bubble-phase listener on the webview window) and opens it via the workbench, but that only
+  // fires for plain anchors — target="_blank" instead goes through the browser's native
+  // window.open(), which the webview's sandboxed iframe blocks (no allow-popups permission), so the
+  // click silently does nothing. linkEmbedRender.ts's own video facade already follows this same
+  // rule (it only sets target="_blank" for the non-editable/"card" rendering, never inside the
+  // editor); this one is only ever rendered inside the live editing view, so it must never set it.
+  //
   // data-cke-ignore-events: CKEditor's own widget system listens for mousedown/click through its
   // view-document event pipeline and, unlike our own vendored linkEmbed widget, this raw provider
   // HTML has no chance to run preventCKEditorHandling()-style JS against the constructed DOM node
   // (see widget_utils.ts) to opt out of it. This attribute is the one opt-out CKEditor's engine
   // itself recognizes from markup alone — an event is never dispatched to the view at all when its
-  // target sits inside an element carrying it — so it's what makes the link actually clickable
-  // instead of being swallowed as a "select this widget" gesture.
-  return `<div class="link-embed-video"><a class="link-embed-video-facade" href="${escapeHtmlAttr(href)}" target="_blank" rel="noopener noreferrer" title="${escapeHtmlAttr(title)}" data-cke-ignore-events="true">${thumbnail}<span class="link-embed-video-play"></span></a></div>`;
+  // target sits inside an element carrying it — so it stops CKEditor's own widget-selection gesture
+  // from getting there first.
+  return `<div class="link-embed-video"><a class="link-embed-video-facade" href="${escapeHtmlAttr(href)}" rel="noopener noreferrer" title="${escapeHtmlAttr(title)}" data-cke-ignore-events="true">${thumbnail}<span class="link-embed-video-play"></span></a></div>`;
 }
 
 export const mediaEmbedProviders = [
