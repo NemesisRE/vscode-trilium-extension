@@ -125,6 +125,7 @@ import TriliumEmojiMention from '../vendor/ckeditor5/src/plugins/mention/emoji_m
 import TriliumMentionUI from '../vendor/ckeditor5/src/plugins/mention/trilium_mention_ui';
 import TriliumSlashCommands from '../vendor/ckeditor5/src/plugins/mention/slash_commands';
 import LinkEmbedToolbar from '../vendor/ckeditor5/src/plugins/link_embed/link_embed_toolbar';
+import { mediaEmbedProviders } from './ckeditor/mediaEmbedFacade';
 import emojiDefinitions from '../vendor/ckeditor5/src/emoji_definitions/en.json';
 
 // Import all CSS - esbuild will bundle it
@@ -374,6 +375,11 @@ export class TriliumEditor extends ClassicEditor {
     },
     emoji: {
       definitionsUrl: emojiDefinitionsUrl,
+    },
+    // Replaces the four preview-capable providers' live <iframe> with the same click-to-open
+    // facade linkEmbedRender.ts's own YouTube widget uses — see mediaEmbedFacade.ts for why.
+    mediaEmbed: {
+      providers: mediaEmbedProviders,
     },
     // Adds the "Copy URL"/"Copy anchor link" buttons Trilium's own config includes
     // (apps/client/.../text/config.ts) onto the stock link/bookmark balloon toolbars,
