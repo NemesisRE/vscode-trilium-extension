@@ -518,7 +518,9 @@ export class NoteItem extends vscode.TreeItem {
     // Open all notes on click, including section notes with children.
     // Collapsing/expanding remains available via the disclosure arrow.
     let commandId: string;
-    if (type === 'text' || type === 'code' || type === 'mermaid' || type === 'canvas') {
+    if (type === 'text' || type === 'code' || type === 'mermaid' || type === 'canvas' || type === 'doc') {
+      // doc notes render their sanitized HTML content inside trilium.openNote
+      // itself - they must go through that command, not straight to the browser.
       commandId = 'trilium.openNote';
     } else if (type === 'mindMap') {
       commandId = 'trilium.openMindMap';
