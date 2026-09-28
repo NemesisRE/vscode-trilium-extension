@@ -2617,7 +2617,7 @@ function cssString(value: string): string {
  * nonce, no 'unsafe-inline') already blocks all of this from executing; stripping it here too
  * is defense in depth, not the only safeguard.
  */
-function sanitizeIncludedNoteHtml(html: string): string {
+export function sanitizeIncludedNoteHtml(html: string): string {
   return html
     .replace(/<script\b[\s\S]*?<\/script>/gi, '')
     .replace(/<style\b[\s\S]*?<\/style>/gi, '')

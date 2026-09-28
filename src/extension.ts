@@ -17,6 +17,7 @@ import { AttributesViewProvider } from './attributesViewProvider';
 import { TriliumTextEditorProvider } from './triliumTextEditorProvider';
 import { VirtualDocumentProvider, createVirtualDocumentUri } from './virtualDocumentProvider';
 import { openReorderChildrenPanel } from './reorderChildrenPanel';
+import { openDocNotePanel } from './docNotePanel';
 import { RecentNotesProvider } from './recentNotesProvider';
 import { BacklinksProvider } from './backlinksProvider';
 import { protectedNoteWarningMessage } from './protectedNoteUtils';
@@ -2170,6 +2171,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
 
       const { note } = item;
+
+      // doc notes are static, server-authored HTML with no editing affordances
+      // in Trilium's own UI either - render them read-only instead of warning.
+      if (note.type === 'doc') {
+        await openDocNotePanel(client, note);
+        await maybeAutoRevealOpenedNote(note.noteId, treeProvider, treeView);
+        return;
+      }
+
       const editableTypes: Note['type'][] = ['text', 'code', 'mermaid', 'canvas', 'mindMap'];
       if (!(editableTypes as string[]).includes(note.type)) {
         const action = await vscode.window.showWarningMessage(
@@ -3269,6 +3279,14 @@ async function openNoteInEditor(
   treeView: vscode.TreeView<NoteItem>,
   notePathOrId?: string,
 ): Promise<void> {
+  // doc notes are static, server-authored HTML with no editing affordances
+  // in Trilium's own UI either - render them read-only instead of warning.
+  if (note.type === 'doc') {
+    await openDocNotePanel(client, note);
+    await maybeAutoRevealOpenedNote(note.noteId, treeProvider, treeView);
+    return;
+  }
+
   const editableTypes: Note['type'][] = ['text', 'code', 'mermaid', 'canvas', 'mindMap'];
   if (!(editableTypes as string[]).includes(note.type)) {
     const action = await vscode.window.showWarningMessage(
