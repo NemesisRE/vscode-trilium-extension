@@ -2170,6 +2170,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
 
       const { note } = item;
+
+      // Web view notes embed an external URL by design; open it directly
+      // instead of warning that the note "cannot be rendered natively".
+      if (note.type === 'webView') {
+        await openNoteInBrowser(note, item.path, false);
+        return;
+      }
+
       const editableTypes: Note['type'][] = ['text', 'code', 'mermaid', 'canvas', 'mindMap'];
       if (!(editableTypes as string[]).includes(note.type)) {
         const action = await vscode.window.showWarningMessage(
@@ -3269,6 +3277,13 @@ async function openNoteInEditor(
   treeView: vscode.TreeView<NoteItem>,
   notePathOrId?: string,
 ): Promise<void> {
+  // Web view notes embed an external URL by design; open it directly
+  // instead of warning that the note "cannot be rendered natively".
+  if (note.type === 'webView') {
+    await openNoteInBrowser(note, notePathOrId, false);
+    return;
+  }
+
   const editableTypes: Note['type'][] = ['text', 'code', 'mermaid', 'canvas', 'mindMap'];
   if (!(editableTypes as string[]).includes(note.type)) {
     const action = await vscode.window.showWarningMessage(
