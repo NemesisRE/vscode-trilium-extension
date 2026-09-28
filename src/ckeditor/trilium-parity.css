@@ -350,6 +350,21 @@
   background: #000;
 }
 
+/* Root cause of the native MediaEmbed facade being unclickable (mediaEmbedFacade.ts /
+ * mediaEmbedFacadeClick.ts): CKEditor's own ckeditor5-media-embed CSS sets `pointer-events: none`
+ * on every direct child of `.ck-media__wrapper` that isn't `.ck-media__placeholder` while editing -
+ * by design, so a plain click selects the widget instead of interacting with the embedded content.
+ * Our facade (rendered as that wrapper's content via the `mediaEmbed.providers[].html` config) is
+ * exactly such a child, so the browser never even hit-tested a click as landing on it at all - no
+ * amount of JS click/mousedown handling could have worked before this. `!important` matches that
+ * rule's own specificity margin; this only re-enables pointer events for our own facade markup,
+ * never CKEditor's own `.ck-media__placeholder` fallback (instagram/twitter/etc.), which is
+ * correctly left alone to keep its default "click selects the widget" behavior.
+ */
+.ck-media__wrapper > .link-embed-video {
+  pointer-events: auto !important;
+}
+
 /* A live YouTube <iframe> never plays inside a VS Code webview - VS Code's own outer webview
  * sandbox lacks 'allow-presentation' (and related flags) and there's no extension-facing way to
  * add it (microsoft/vscode#196975, closed as not planned), which surfaces to the user as YouTube's
