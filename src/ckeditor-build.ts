@@ -87,7 +87,10 @@ import Collapsible from '../vendor/ckeditor5/src/plugins/collapsible/collapsible
 import InlineIcon from '../vendor/ckeditor5/src/plugins/inline_icon/inline_icon';
 import FileAttachmentLink from './ckeditor/fileAttachmentLink';
 import InternalLink from './ckeditor/internalLink';
+import IncludeNote from '../vendor/ckeditor5/src/plugins/includenote';
+import IncludeNoteToolbar from '../vendor/ckeditor5/src/plugins/include_note_toolbar';
 import { SyntaxHighlighting } from './ckeditor/syntaxHighlighting';
+import { getHighlightJs, mapCodeBlockLanguage } from './ckeditor/highlightSupport';
 import TodoListMultistate from '../vendor/ckeditor5/src/plugins/todo_list_multistate/todo_list_multistate';
 import TodoListUncheckOnEnter from '../vendor/ckeditor5/src/plugins/todo_list_uncheck_on_enter';
 import ItalicAsEmPlugin from '../vendor/ckeditor5/src/plugins/italic_as_em';
@@ -275,6 +278,8 @@ export class TriliumEditor extends ClassicEditor {
     Mermaid,
     InlineIcon,
     InternalLink,
+    IncludeNote,
+    IncludeNoteToolbar,
 
     // Text snippets ("Templates"): a searchable dropdown of reusable text sourced from the
     // user's own #snippet/#textSnippet notes.
@@ -335,7 +340,7 @@ export class TriliumEditor extends ClassicEditor {
           label: 'Insert',
           icon: 'plus',
           items: [
-            'link', 'internalLink', 'bookmark', '|',
+            'link', 'internalLink', 'includeNote', 'bookmark', '|',
             'collapsible', 'math', 'mermaid', 'horizontalLine', 'pageBreak', '|',
             'dateTime', 'specialCharacters', 'emoji', 'insertIcon', 'insertTemplate',
           ],
@@ -453,4 +458,24 @@ export async function loadKatex() {
 export async function loadMermaid() {
   const mermaid = await import('mermaid');
   return mermaid.default;
+}
+
+// Used by the IncludeNote preview renderer (wired in triliumTextEditorProvider.ts) to
+// highlight an included code note's content with the same highlight.js pipeline the editor's
+// own code blocks use (see syntaxHighlighting.ts). Only this bundle has highlight.js loaded -
+// the webview's own inline script can't import it directly (see the note by ckeditorUri's
+// import above) - so it's exposed here the same way loadKatex/loadMermaid are. Returns null
+// for a language highlight.js doesn't recognize (including 'plaintext'/unset), letting the
+// caller fall back to a plain, unhighlighted rendering.
+export function highlightCodeForIncludedNote(code: string, language: string | null | undefined): string | null {
+  const mapped = mapCodeBlockLanguage(language);
+  if (!mapped) {
+    return null;
+  }
+
+  try {
+    return getHighlightJs().highlight(code, { language: mapped, ignoreIllegals: true }).value;
+  } catch {
+    return null;
+  }
 }

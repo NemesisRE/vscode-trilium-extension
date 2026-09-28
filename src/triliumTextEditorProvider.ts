@@ -21,6 +21,15 @@ interface EditorTaskStateDef {
   color: string;
 }
 
+/** Shape sent to the webview for includenote.ts's renderNote config callback to render. */
+type IncludedNotePreview =
+  | { kind: 'text'; title: string; html: string }
+  | { kind: 'code'; title: string; code: string; mime: string }
+  | { kind: 'image'; title: string; dataUri: string }
+  | { kind: 'mermaid'; title: string; source: string }
+  | { kind: 'fallback'; title: string; noteType: string }
+  | { kind: 'error' };
+
 // `none`/`done` map to the native checkbox and are never stored as `data-trilium-task-state`,
 // but they still need menu entries, so they carry checkbox icons of their own.
 const ANCHOR_TASK_STATES: EditorTaskStateDef[] = [
@@ -384,8 +393,8 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
           break;
         }
         case 'showNotePicker': {
-          const { id: notePickId } = message as { type: string; id: string };
-          void this.showNotePickerQuickPick().then(note => {
+          const { id: notePickId, title: notePickTitle } = message as { type: string; id: string; title?: string };
+          void this.showNotePickerQuickPick(notePickTitle).then(note => {
             void webviewPanel.webview.postMessage({ type: 'notePickerResult', id: notePickId, note });
           });
           break;
@@ -429,6 +438,13 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
           if (targetNoteId) {
             void vscode.commands.executeCommand(TriliumTextEditorProvider.openBreadcrumbCommand, targetNoteId);
           }
+          break;
+        }
+        case 'renderIncludedNote': {
+          const { id: renderId, noteId: includedNoteId } = message as { type: string; id: string; noteId: string };
+          void this.fetchIncludedNotePreview(includedNoteId).then(preview => {
+            void webviewPanel.webview.postMessage({ type: 'renderIncludedNoteResult', id: renderId, preview });
+          });
           break;
         }
         case 'mentionSearch': {
@@ -624,11 +640,13 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
   }
 
   /**
-   * Trilium's own internal-link picker opens through its app-level note-picker dialog,
-   * which has no equivalent here. Reuses the same debounced-search QuickPick pattern as
-   * the "Search Notes..." command instead.
+   * Trilium's own internal-link/include-note pickers open through its app-level note-picker
+   * dialog, which has no equivalent here. Reuses the same debounced-search QuickPick pattern
+   * as the "Search Notes..." command instead - shared by internalLink.ts's pickNote and
+   * includenote.ts's pickNote (see the includeNote config wiring below), distinguished only
+   * by the QuickPick's title.
    */
-  private async showNotePickerQuickPick(): Promise<{ href: string; title: string } | undefined> {
+  private async showNotePickerQuickPick(title = 'Insert Internal Link'): Promise<{ href: string; title: string } | undefined> {
     const client = this.getClient();
     if (!client) {
       return undefined;
@@ -638,7 +656,7 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
 
     return new Promise((resolve) => {
       const qp = vscode.window.createQuickPick<NoteSearchItem>();
-      qp.title = 'Insert Internal Link';
+      qp.title = title;
       qp.placeholder = 'Type to search notes…';
       qp.matchOnDescription = true;
 
@@ -681,6 +699,50 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
 
       qp.show();
     });
+  }
+
+  /**
+   * Fetches and shapes an included note's content for includenote.ts's renderNote config
+   * callback (see the vendor patch in apply-vendor-patches.mjs) to render inline. Each note
+   * type this extension already knows how to open gets its own preview kind; anything else
+   * (search/book/relationMap/render/noteMap/webView/shortcut/doc/contentWidget/launcher -
+   * Trilium's own structural/system note types - plus canvas and mindMap, which have no
+   * headless renderer here) falls back to a plain "open note" link, same as a fetch failure.
+   */
+  private async fetchIncludedNotePreview(noteId: string): Promise<IncludedNotePreview> {
+    const client = this.getClient();
+    if (!client) {
+      return { kind: 'error' };
+    }
+
+    try {
+      const note = await client.getNote(noteId);
+
+      switch (note.type) {
+        case 'text': {
+          const content = await client.getNoteContent(noteId);
+          return { kind: 'text', title: note.title, html: sanitizeIncludedNoteHtml(content) };
+        }
+        case 'code': {
+          const code = await client.getNoteContent(noteId);
+          return { kind: 'code', title: note.title, code, mime: note.mime };
+        }
+        case 'image': {
+          const buffer = await client.getNoteContentBuffer(noteId);
+          const dataUri = `data:${note.mime};base64,${Buffer.from(buffer).toString('base64')}`;
+          return { kind: 'image', title: note.title, dataUri };
+        }
+        case 'mermaid': {
+          const source = await client.getNoteContent(noteId);
+          return { kind: 'mermaid', title: note.title, source };
+        }
+        default:
+          return { kind: 'fallback', title: note.title, noteType: note.type };
+      }
+    } catch (err) {
+      this._logger?.(`Failed to render included note ${noteId}: ${err}`);
+      return { kind: 'error' };
+    }
   }
 
   private async fetchImageDataUri(relativeUrl: string): Promise<string> {
@@ -1583,7 +1645,7 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
     <div id="editor-container"></div>
 
     <script type="module" nonce="${nonce}">
-      import { TriliumEditor, loadKatex, loadMermaid } from '${ckeditorUri}';
+      import { TriliumEditor, loadKatex, loadMermaid, highlightCodeForIncludedNote } from '${ckeditorUri}';
 
       (function() {
         const vscode = acquireVsCodeApi();
@@ -1605,6 +1667,7 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
         const pendingMentionCreates = new Map();
         const pendingCutToNoteRequests = new Map();
         const pendingMarkdownImportRequests = new Map();
+        const pendingIncludeNoteRenders = new Map();
 
         const triliumToLocalLanguageMap = {
           'text-plain': 'plaintext',
@@ -1675,6 +1738,110 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
           markdown: 'text-x-markdown',
           diff: 'text-x-diff',
         };
+
+        // IncludeNote plugin: requests a preview from the extension host (see the
+        // 'renderIncludedNote' message handler and fetchIncludedNotePreview() in
+        // triliumTextEditorProvider.ts) and renders the widget's content once it arrives -
+        // see the 'renderIncludedNoteResult' case below. boxSize only affects the CSS sizing
+        // CKEditor already applies to the enclosing <section> (see includenote.ts), so it
+        // isn't needed here.
+        function renderIncludedNote(noteId, domElement, _boxSize) {
+          const id = Math.random().toString(36).slice(2);
+          pendingIncludeNoteRenders.set(id, { domElement, noteId });
+          domElement.textContent = '';
+          domElement.classList.add('include-note-loading');
+          vscode.postMessage({ type: 'renderIncludedNote', id, noteId });
+        }
+
+        async function applyIncludedNotePreview(domElement, noteId, preview) {
+          domElement.classList.remove('include-note-loading');
+          domElement.textContent = '';
+
+          const header = document.createElement('div');
+          header.className = 'include-note-header';
+          const titleEl = document.createElement('span');
+          titleEl.className = 'include-note-title';
+          titleEl.textContent = preview.title || '';
+          titleEl.addEventListener('click', () => vscode.postMessage({ type: 'openBreadcrumbNote', noteId }));
+          header.appendChild(titleEl);
+
+          const body = document.createElement('div');
+          body.className = 'include-note-content';
+
+          domElement.appendChild(header);
+          domElement.appendChild(body);
+
+          const renderFallbackLink = () => {
+            body.textContent = '';
+            const link = document.createElement('a');
+            link.href = '#';
+            link.className = 'include-note-fallback-link';
+            link.textContent = 'Open note';
+            link.addEventListener('click', (evt) => {
+              evt.preventDefault();
+              vscode.postMessage({ type: 'openBreadcrumbNote', noteId });
+            });
+            body.appendChild(link);
+          };
+
+          switch (preview.kind) {
+            case 'text': {
+              body.classList.add('include-note-content-text');
+              // Already sanitized on the extension host (sanitizeIncludedNoteHtml) before
+              // being sent here.
+              body.innerHTML = preview.html;
+              break;
+            }
+            case 'code': {
+              body.classList.add('include-note-content-code');
+              const localLanguage = triliumToLocalLanguageMap[preview.mime.replace('/', '-')] || null;
+              const highlighted = highlightCodeForIncludedNote(preview.code, localLanguage);
+              const codeEl = document.createElement('code');
+              codeEl.className = 'hljs' + (localLanguage ? ' language-' + localLanguage : '');
+              if (highlighted != null) {
+                // highlight.js escapes the source itself; this is markup, not raw text.
+                codeEl.innerHTML = highlighted;
+              } else {
+                codeEl.textContent = preview.code;
+              }
+              const preEl = document.createElement('pre');
+              preEl.appendChild(codeEl);
+              body.appendChild(preEl);
+              break;
+            }
+            case 'image': {
+              body.classList.add('include-note-content-image');
+              const img = document.createElement('img');
+              img.src = preview.dataUri;
+              img.alt = preview.title || '';
+              body.appendChild(img);
+              break;
+            }
+            case 'mermaid': {
+              body.classList.add('include-note-content-mermaid');
+              try {
+                const mermaid = await loadMermaid();
+                const renderId = 'include-note-mermaid-' + Math.random().toString(36).slice(2);
+                const rendered = await mermaid.render(renderId, preview.source);
+                body.innerHTML = rendered.svg;
+              } catch {
+                renderFallbackLink();
+              }
+              break;
+            }
+            case 'fallback': {
+              titleEl.textContent = preview.title || preview.noteType;
+              renderFallbackLink();
+              break;
+            }
+            case 'error':
+            default: {
+              titleEl.textContent = 'Note unavailable';
+              renderFallbackLink();
+              break;
+            }
+          }
+        }
 
         function normalizeIncomingCodeBlockLanguages(html) {
           if (!html || typeof html !== 'string') {
@@ -1823,7 +1990,7 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
                   label: 'Insert',
                   icon: 'plus',
                   items: [
-                    'link', 'internalLink', 'bookmark', '|',
+                    'link', 'internalLink', 'includeNote', 'bookmark', '|',
                     'collapsible', 'math', 'mermaid', 'horizontalLine', 'pageBreak', '|',
                     'dateTime', 'specialCharacters', 'emoji', 'insertIcon', 'insertTemplate',
                   ],
@@ -2023,6 +2190,20 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
                 if (noteId) {
                   vscode.postMessage({ type: 'openBreadcrumbNote', noteId });
                 }
+              },
+            },
+            // IncludeNote plugin: the note picker reuses the same QuickPick as internalLink
+            // (see showNotePickerQuickPick in triliumTextEditorProvider.ts), and the preview
+            // itself is rendered here from an extension-host fetch - see renderIncludedNote()
+            // below and includenote.ts's vendor patch.
+            includeNote: {
+              pickNote: () => new Promise((resolve) => {
+                const id = Math.random().toString(36).slice(2);
+                pendingNotePicks.set(id, (note) => resolve(note ? { noteId: note.href.replace(/^#/, '') } : undefined));
+                vscode.postMessage({ type: 'showNotePicker', id, title: 'Insert Included Note' });
+              }),
+              renderNote: (noteId, domElement, boxSize) => {
+                renderIncludedNote(noteId, domElement, boxSize);
               },
             },
             // Text snippets: the initial list fetched from #snippet/#textSnippet notes when this
@@ -2320,6 +2501,14 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
               resolve?.(message.html);
               break;
             }
+            case 'renderIncludedNoteResult': {
+              const pending = pendingIncludeNoteRenders.get(message.id);
+              pendingIncludeNoteRenders.delete(message.id);
+              if (pending) {
+                void applyIncludedNotePreview(pending.domElement, pending.noteId, message.preview);
+              }
+              break;
+            }
           }
         });
 
@@ -2416,6 +2605,27 @@ function renderTaskStateCss(states: EditorTaskStateDef[]): string {
 
 function cssString(value: string): string {
   return value.replace(/[\\"]/g, '\\$&');
+}
+
+/**
+ * Strips the executable surface out of a text note's HTML before it's set as an included
+ * note's innerHTML in the webview. The main editor never renders arbitrary notes' HTML this
+ * way (its own content goes through CKEditor's data pipeline, which only ever produces markup
+ * its own schema allows) - an included note's HTML instead comes straight from ETAPI, so it
+ * could contain a `<script>`/`onclick=`/`javascript:` left over from another Trilium client
+ * (e.g. an ETAPI import) with no schema to constrain it. The webview's CSP (script-src with a
+ * nonce, no 'unsafe-inline') already blocks all of this from executing; stripping it here too
+ * is defense in depth, not the only safeguard.
+ */
+function sanitizeIncludedNoteHtml(html: string): string {
+  return html
+    .replace(/<script\b[\s\S]*?<\/script>/gi, '')
+    .replace(/<style\b[\s\S]*?<\/style>/gi, '')
+    .replace(/\son[a-z]+\s*=\s*"[^"]*"/gi, '')
+    .replace(/\son[a-z]+\s*=\s*'[^']*'/gi, '')
+    .replace(/\son[a-z]+\s*=\s*[^\s>]+/gi, '')
+    .replace(/(href|src)(\s*=\s*)"(\s*javascript:[^"]*)"/gi, '$1$2"#"')
+    .replace(/(href|src)(\s*=\s*)'(\s*javascript:[^']*)'/gi, "$1$2'#'");
 }
 
 function sanitizeCssColor(value: string | undefined): string | undefined {

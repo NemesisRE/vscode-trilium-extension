@@ -1,7 +1,27 @@
 import { strict as assert } from 'assert';
 import * as vscode from 'vscode';
 import { TriliumCustomDocument, TriliumTextEditorProvider } from '../../src/triliumTextEditorProvider';
-import type { EtapiClient } from '../../src/etapiClient';
+import type { EtapiClient, Note } from '../../src/etapiClient';
+
+function makeNote(overrides: Partial<Note>): Note {
+  return {
+    noteId: 'n1',
+    title: 'Test note',
+    type: 'text',
+    mime: 'text/html',
+    isProtected: false,
+    blobId: 'b1',
+    childNoteIds: [],
+    parentNoteIds: [],
+    childBranchIds: [],
+    parentBranchIds: [],
+    dateCreated: '2024-01-01 00:00:00.000+0000',
+    dateModified: '2024-01-01 00:00:00.000+0000',
+    utcDateCreated: '2024-01-01 00:00:00.000Z',
+    utcDateModified: '2024-01-01 00:00:00.000Z',
+    ...overrides,
+  } as Note;
+}
 
 type WarningMessageFn = typeof vscode.window.showWarningMessage;
 type ErrorMessageFn = typeof vscode.window.showErrorMessage;
@@ -214,5 +234,84 @@ describe('TriliumTextEditorProvider', () => {
     assert.strictEqual(panel.title, 'Loaded Title');
     assert.deepStrictEqual(rootRefreshCalls, ['refresh']);
     assert.deepStrictEqual(panelMessages, [{ type: 'update', content: '<p>loaded</p>' }]);
+  });
+});
+
+describe('TriliumTextEditorProvider.fetchIncludedNotePreview (IncludeNote)', () => {
+  it('returns an error result when not connected', async () => {
+    const provider = createProvider(undefined as unknown as EtapiClient);
+
+    const preview = await (provider as any).fetchIncludedNotePreview('n1');
+    assert.deepStrictEqual(preview, { kind: 'error' });
+  });
+
+  it('sanitizes a text note before rendering it', async () => {
+    const client = {
+      getNote: async () => makeNote({ type: 'text', title: 'Text note' }),
+      getNoteContent: async () => '<p>hello</p><script>alert(1)</script><a href="javascript:evil()">x</a>',
+    } as unknown as EtapiClient;
+    const provider = createProvider(client);
+
+    const preview = await (provider as any).fetchIncludedNotePreview('n1');
+    assert.strictEqual(preview.kind, 'text');
+    assert.strictEqual(preview.title, 'Text note');
+    assert.ok(!preview.html.includes('<script'), 'script tag should be stripped');
+    assert.ok(!preview.html.includes('javascript:'), 'javascript: URL should be neutralized');
+    assert.ok(preview.html.includes('<p>hello</p>'), 'benign markup should survive');
+  });
+
+  it('returns raw code and mime for a code note', async () => {
+    const client = {
+      getNote: async () => makeNote({ type: 'code', title: 'Script', mime: 'application/javascript' }),
+      getNoteContent: async () => 'console.log(1);',
+    } as unknown as EtapiClient;
+    const provider = createProvider(client);
+
+    const preview = await (provider as any).fetchIncludedNotePreview('n1');
+    assert.deepStrictEqual(preview, { kind: 'code', title: 'Script', code: 'console.log(1);', mime: 'application/javascript' });
+  });
+
+  it('returns a base64 data URI for an image note', async () => {
+    const client = {
+      getNote: async () => makeNote({ type: 'image', title: 'Pic', mime: 'image/png' }),
+      getNoteContentBuffer: async () => Uint8Array.from([1, 2, 3]).buffer,
+    } as unknown as EtapiClient;
+    const provider = createProvider(client);
+
+    const preview = await (provider as any).fetchIncludedNotePreview('n1');
+    assert.strictEqual(preview.kind, 'image');
+    assert.strictEqual(preview.title, 'Pic');
+    assert.strictEqual(preview.dataUri, `data:image/png;base64,${Buffer.from([1, 2, 3]).toString('base64')}`);
+  });
+
+  it('returns the raw source for a mermaid note', async () => {
+    const client = {
+      getNote: async () => makeNote({ type: 'mermaid', title: 'Diagram' }),
+      getNoteContent: async () => 'graph TD; A-->B;',
+    } as unknown as EtapiClient;
+    const provider = createProvider(client);
+
+    const preview = await (provider as any).fetchIncludedNotePreview('n1');
+    assert.deepStrictEqual(preview, { kind: 'mermaid', title: 'Diagram', source: 'graph TD; A-->B;' });
+  });
+
+  it('falls back to a plain link for note types with no preview renderer', async () => {
+    const client = {
+      getNote: async () => makeNote({ type: 'canvas', title: 'Sketch' }),
+    } as unknown as EtapiClient;
+    const provider = createProvider(client);
+
+    const preview = await (provider as any).fetchIncludedNotePreview('n1');
+    assert.deepStrictEqual(preview, { kind: 'fallback', title: 'Sketch', noteType: 'canvas' });
+  });
+
+  it('returns an error result when the fetch fails', async () => {
+    const client = {
+      getNote: async () => { throw new Error('not found'); },
+    } as unknown as EtapiClient;
+    const provider = createProvider(client);
+
+    const preview = await (provider as any).fetchIncludedNotePreview('missing');
+    assert.deepStrictEqual(preview, { kind: 'error' });
   });
 });
