@@ -20,11 +20,17 @@ interface KanbanDeleteColumnMessage {
   type: 'deleteColumn';
   columnName: string;
 }
+interface KanbanSetColumnColorMessage {
+  type: 'setColumnColor';
+  columnName: string;
+  color: string | undefined;
+}
 type KanbanMessage =
   | KanbanMoveMessage
   | KanbanReorderColumnsMessage
   | KanbanArchiveColumnMessage
-  | KanbanDeleteColumnMessage;
+  | KanbanDeleteColumnMessage
+  | KanbanSetColumnColorMessage;
 
 interface CardEntry {
   noteId: string;
@@ -36,6 +42,7 @@ interface ColumnState {
   cards: CardEntry[];
   archived: boolean;
   displayName?: string;
+  color?: string;
 }
 
 /**
@@ -272,6 +279,7 @@ async function loadBoardState(client: EtapiClient, boardNote: Note): Promise<Boa
         cards: cardsByColumn.get(name) ?? [],
         archived: entry?.archived === true,
         displayName: entry?.displayName,
+        color: entry?.color,
       };
     }),
     attributeByNoteId,
@@ -310,6 +318,7 @@ function buildHtml(webview: vscode.Webview, boardTitle: string, initialState: Bo
       display: flex;
       flex-direction: column;
     }
+    .column { border-top: 3px solid var(--vscode-editorWidget-border); }
     .columnHeader {
       padding: 8px 10px;
       font-weight: 600;
@@ -343,6 +352,15 @@ function buildHtml(webview: vscode.Webview, boardTitle: string, initialState: Bo
       border-color: transparent;
     }
     .columnActions button:hover { background: var(--vscode-toolbar-hoverBackground, var(--vscode-button-secondaryBackground)); }
+    .columnColor {
+      width: 20px;
+      height: 20px;
+      padding: 0;
+      border: 1px solid var(--vscode-editorWidget-border);
+      border-radius: 3px;
+      background: none;
+      cursor: pointer;
+    }
     .column.draggingColumn { opacity: 0.5; }
     .column.archived { opacity: 0.5; }
     .board.dragover { outline: 1px dashed var(--vscode-focusBorder); }
@@ -494,6 +512,7 @@ function buildHtml(webview: vscode.Webview, boardTitle: string, initialState: Bo
       div.className = 'column' + (col.archived ? ' archived' : '');
       div.dataset.column = col.name;
       div.dataset.archived = col.archived ? 'true' : 'false';
+      div.style.borderTopColor = col.color || '';
       const header = document.createElement('div');
       header.className = 'columnHeader';
       const title = document.createElement('span');
@@ -503,6 +522,28 @@ function buildHtml(webview: vscode.Webview, boardTitle: string, initialState: Bo
 
       const actions = document.createElement('div');
       actions.className = 'columnActions';
+      const colorInput = document.createElement('input');
+      colorInput.type = 'color';
+      colorInput.className = 'columnColor';
+      colorInput.title = 'Column color';
+      colorInput.value = col.color || '#808080';
+      colorInput.addEventListener('click', (event) => event.stopPropagation());
+      colorInput.addEventListener('change', () => {
+        syncStateEl.textContent = 'saving…';
+        vscode.postMessage({ type: 'setColumnColor', columnName: col.name, color: colorInput.value });
+      });
+      actions.appendChild(colorInput);
+      if (col.color) {
+        const clearColorBtn = document.createElement('button');
+        clearColorBtn.textContent = '✕';
+        clearColorBtn.title = 'Clear column color';
+        clearColorBtn.addEventListener('click', (event) => {
+          event.stopPropagation();
+          syncStateEl.textContent = 'saving…';
+          vscode.postMessage({ type: 'setColumnColor', columnName: col.name, color: undefined });
+        });
+        actions.appendChild(clearColorBtn);
+      }
       const archiveBtn = document.createElement('button');
       archiveBtn.textContent = col.archived ? 'Unarchive' : 'Archive';
       archiveBtn.title = col.archived ? 'Unarchive column' : 'Archive column';
@@ -666,6 +707,21 @@ export async function openKanbanViewPanel(client: EtapiClient, boardNote: Note):
     });
   }
 
+  async function persistSetColumnColor(msg: KanbanSetColumnColorMessage): Promise<void> {
+    await withFreshBoardColumns((columns) => {
+      const existing = columns.find((c) => c.value === msg.columnName);
+      if (existing) {
+        if (msg.color) {
+          existing.color = msg.color;
+        } else {
+          delete existing.color;
+        }
+      } else if (msg.color) {
+        columns.push({ value: msg.columnName, color: msg.color });
+      }
+    });
+  }
+
   async function persistDeleteColumn(msg: KanbanDeleteColumnMessage): Promise<void> {
     const confirm = await vscode.window.showWarningMessage(
       `Delete column "${msg.columnName}"? Cards in it will move to Inbox (the label is removed, notes are kept).`,
@@ -702,6 +758,8 @@ export async function openKanbanViewPanel(client: EtapiClient, boardNote: Note):
         await persistArchiveColumn(msg);
       } else if (msg.type === 'deleteColumn') {
         await persistDeleteColumn(msg);
+      } else if (msg.type === 'setColumnColor') {
+        await persistSetColumnColor(msg);
       } else {
         return;
       }
