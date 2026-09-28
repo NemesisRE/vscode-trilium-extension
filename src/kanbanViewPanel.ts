@@ -11,7 +11,20 @@ interface KanbanReorderColumnsMessage {
   type: 'reorderColumns';
   columnNames: string[];
 }
-type KanbanMessage = KanbanMoveMessage | KanbanReorderColumnsMessage;
+interface KanbanArchiveColumnMessage {
+  type: 'archiveColumn';
+  columnName: string;
+  archived: boolean;
+}
+interface KanbanDeleteColumnMessage {
+  type: 'deleteColumn';
+  columnName: string;
+}
+type KanbanMessage =
+  | KanbanMoveMessage
+  | KanbanReorderColumnsMessage
+  | KanbanArchiveColumnMessage
+  | KanbanDeleteColumnMessage;
 
 interface CardEntry {
   noteId: string;
@@ -21,10 +34,28 @@ interface CardEntry {
 interface ColumnState {
   name: string;
   cards: CardEntry[];
+  archived: boolean;
+  displayName?: string;
 }
 
+/**
+ * Matches Trilium's own `BoardColumnData` (apps/client/src/widgets/collections/board/index.tsx
+ * in TriliumNext/Trilium) field-for-field, so metadata it stores per column - notably `color`
+ * and `icon` - round-trips through this extension instead of being silently dropped.
+ */
 interface BoardColumnData {
   value: string;
+  id?: string;
+  icon?: string;
+  color?: string;
+  archived?: boolean;
+  collapsed?: boolean;
+  keepCollapsed?: boolean;
+  nested?: boolean;
+  displayName?: string;
+  limit?: number;
+  orderBy?: string;
+  descendingOrder?: boolean;
   [key: string]: unknown;
 }
 
@@ -33,10 +64,6 @@ interface BoardState {
   columns: ColumnState[];
   attributeByNoteId: Map<string, Attribute | undefined>;
   branchByNoteId: Map<string, string>;
-  boardJson: Record<string, unknown>;
-  boardJsonAttachmentId: string | undefined;
-  columnsKey: string;
-  columnEntries: BoardColumnData[];
 }
 
 const NO_VALUE_COLUMN = '';
@@ -147,25 +174,40 @@ async function saveBoardJson(
   return created.attachmentId;
 }
 
+function parseBoardColumns(boardJson: Record<string, unknown>, columnsKey: string): BoardColumnData[] {
+  return Array.isArray(boardJson[columnsKey])
+    ? (boardJson[columnsKey] as unknown[]).filter(
+      (c): c is BoardColumnData => !!c && typeof c === 'object' && typeof (c as BoardColumnData).value === 'string',
+    )
+    : [];
+}
+
 /**
- * Combines the persisted column order with the columns actually discovered from the
- * current cards: persisted columns keep their saved position (even if currently
- * empty - dropping them would erase columns a user deliberately created or kept
- * around), and any newly-seen column value is appended once, in first-seen order.
+ * Appends genuinely new, non-inbox column values discovered from cards to the
+ * persisted list, without touching the position of any existing entry. The inbox
+ * (`""`) is deliberately never force-added here: Trilium treats it as implicit and
+ * doesn't require a stored entry for it, so persisting one on every load/poll just
+ * because some card happens to lack the label would cause a write on almost every
+ * poll - and each such write is a read-modify-write race against anything the user
+ * or Trilium's own client changes (e.g. a column color) in between our last read
+ * and that write.
  */
-function mergeColumnOrder(persisted: string[], discovered: string[]): string[] {
+function computeStorageColumnOrder(persisted: string[], discovered: string[]): string[] {
   const merged = [...persisted];
   const mergedSet = new Set(merged);
   for (const name of discovered) {
-    if (!mergedSet.has(name)) {
-      merged.push(name);
-      mergedSet.add(name);
+    if (name === NO_VALUE_COLUMN || mergedSet.has(name)) {
+      continue;
     }
-  }
-  if (!mergedSet.has(NO_VALUE_COLUMN)) {
-    merged.unshift(NO_VALUE_COLUMN);
+    merged.push(name);
+    mergedSet.add(name);
   }
   return merged;
+}
+
+/** The storage order, plus the inbox pinned at the front for display if it has no stored position. */
+function computeDisplayColumnOrder(storageOrder: string[]): string[] {
+  return storageOrder.includes(NO_VALUE_COLUMN) ? storageOrder : [NO_VALUE_COLUMN, ...storageOrder];
 }
 
 async function loadBoardState(client: EtapiClient, boardNote: Note): Promise<BoardState> {
@@ -195,27 +237,26 @@ async function loadBoardState(client: EtapiClient, boardNote: Note): Promise<Boa
 
   const columnsKey = boardColumnsKey(groupByLabel);
   const { json: boardJson, attachmentId } = await loadBoardJson(client, parent.noteId);
-  const rawColumns = Array.isArray(boardJson[columnsKey])
-    ? (boardJson[columnsKey] as unknown[]).filter(
-      (c): c is BoardColumnData => !!c && typeof c === 'object' && typeof (c as BoardColumnData).value === 'string',
-    )
-    : [];
+  const rawColumns = parseBoardColumns(boardJson, columnsKey);
   const persistedOrder = rawColumns.map((c) => c.value);
 
-  const columnOrder = mergeColumnOrder(persistedOrder, discoveredOrder);
+  const storageOrder = computeStorageColumnOrder(persistedOrder, discoveredOrder);
 
-  // Self-heal: if the merged order doesn't match what Trilium's own board.json has
-  // (first run, or a new column value just appeared), write it back - the same
-  // attachment Trilium's native Kanban board itself reads/writes - so the order is
-  // stable and visible upstream, instead of being re-derived from card fetch order.
-  let finalBoardJson = boardJson;
-  let finalAttachmentId = attachmentId;
+  // Self-heal: only write back when a genuinely new (non-inbox) column value showed
+  // up that isn't tracked yet - never just to reorder or to add an implicit inbox
+  // entry. That keeps writes rare (instead of on almost every poll) and avoids
+  // clobbering metadata (colors, archived flags, ...) Trilium's own client - or the
+  // user, moments earlier - may have written to the same attachment in between.
   const columnEntryByValue = new Map(rawColumns.map((c) => [c.value, c]));
-  const columnEntries = columnOrder.map((name) => columnEntryByValue.get(name) ?? { value: name });
-  if (JSON.stringify(persistedOrder) !== JSON.stringify(columnOrder)) {
-    finalBoardJson = { ...boardJson, [columnsKey]: columnEntries };
-    finalAttachmentId = await saveBoardJson(client, parent.noteId, attachmentId, finalBoardJson);
+  if (JSON.stringify(persistedOrder) !== JSON.stringify(storageOrder)) {
+    const columnEntries = storageOrder.map((name) => columnEntryByValue.get(name) ?? { value: name });
+    await saveBoardJson(client, parent.noteId, attachmentId, { ...boardJson, [columnsKey]: columnEntries });
+    for (const entry of columnEntries) {
+      columnEntryByValue.set(entry.value, entry);
+    }
   }
+
+  const displayOrder = computeDisplayColumnOrder(storageOrder);
 
   const attributeByNoteId = new Map(children.map((c) => [
     c.noteId,
@@ -224,13 +265,17 @@ async function loadBoardState(client: EtapiClient, boardNote: Note): Promise<Boa
 
   return {
     groupByLabel,
-    columns: columnOrder.map((name) => ({ name, cards: cardsByColumn.get(name) ?? [] })),
+    columns: displayOrder.map((name) => {
+      const entry = columnEntryByValue.get(name);
+      return {
+        name,
+        cards: cardsByColumn.get(name) ?? [],
+        archived: entry?.archived === true,
+        displayName: entry?.displayName,
+      };
+    }),
     attributeByNoteId,
     branchByNoteId: branchByNoteId as Map<string, string>,
-    boardJson: finalBoardJson,
-    boardJsonAttachmentId: finalAttachmentId,
-    columnsKey,
-    columnEntries,
   };
 }
 
@@ -282,9 +327,27 @@ function buildHtml(webview: vscode.Webview, boardTitle: string, initialState: Bo
     }
     .card.dragging { opacity: 0.5; }
     .cardList.dragover { outline: 1px dashed var(--vscode-focusBorder); }
-    .columnHeader { cursor: grab; }
+    .columnHeader {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      cursor: grab;
+    }
+    .columnTitle { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .columnActions { display: flex; gap: 2px; flex: 0 0 auto; }
+    .columnActions button {
+      padding: 2px 5px;
+      font-size: 11px;
+      background: transparent;
+      border-color: transparent;
+    }
+    .columnActions button:hover { background: var(--vscode-toolbar-hoverBackground, var(--vscode-button-secondaryBackground)); }
     .column.draggingColumn { opacity: 0.5; }
+    .column.archived { opacity: 0.5; }
     .board.dragover { outline: 1px dashed var(--vscode-focusBorder); }
+    .toolbar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .toolbar label { font-size: 12px; color: var(--vscode-descriptionForeground); display: flex; align-items: center; gap: 4px; }
     .addColumn { display: flex; gap: 6px; }
     .addColumn input {
       background: var(--vscode-input-background);
@@ -313,9 +376,12 @@ function buildHtml(webview: vscode.Webview, boardTitle: string, initialState: Bo
       <div class="parent">${escapeHtml(boardTitle)}</div>
     </div>
     <div class="board" id="board"></div>
-    <div class="addColumn">
-      <input id="newColumnName" type="text" placeholder="New column value" />
-      <button id="addColumnBtn">Add Column</button>
+    <div class="toolbar">
+      <div class="addColumn">
+        <input id="newColumnName" type="text" placeholder="New column value" />
+        <button id="addColumnBtn">Add Column</button>
+      </div>
+      <label><input type="checkbox" id="showArchived" /> Show archived columns</label>
     </div>
   </div>
   <script nonce="${nonce}">
@@ -418,13 +484,47 @@ function buildHtml(webview: vscode.Webview, boardTitle: string, initialState: Bo
       });
     }
 
+    function columnTitle(col, groupByLabel) {
+      if (col.displayName) { return col.displayName; }
+      return col.name === '' ? 'Inbox' : col.name;
+    }
+
     function columnEl(col, groupByLabel) {
       const div = document.createElement('div');
-      div.className = 'column';
+      div.className = 'column' + (col.archived ? ' archived' : '');
       div.dataset.column = col.name;
+      div.dataset.archived = col.archived ? 'true' : 'false';
       const header = document.createElement('div');
       header.className = 'columnHeader';
-      header.textContent = col.name === '' ? '(no ' + groupByLabel + ')' : col.name;
+      const title = document.createElement('span');
+      title.className = 'columnTitle';
+      title.textContent = columnTitle(col, groupByLabel);
+      header.appendChild(title);
+
+      const actions = document.createElement('div');
+      actions.className = 'columnActions';
+      const archiveBtn = document.createElement('button');
+      archiveBtn.textContent = col.archived ? 'Unarchive' : 'Archive';
+      archiveBtn.title = col.archived ? 'Unarchive column' : 'Archive column';
+      archiveBtn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        syncStateEl.textContent = 'saving…';
+        vscode.postMessage({ type: 'archiveColumn', columnName: col.name, archived: !col.archived });
+      });
+      actions.appendChild(archiveBtn);
+      if (col.name !== '') {
+        const deleteBtn = document.createElement('button');
+        deleteBtn.textContent = 'Delete';
+        deleteBtn.title = 'Delete column';
+        deleteBtn.addEventListener('click', (event) => {
+          event.stopPropagation();
+          syncStateEl.textContent = 'saving…';
+          vscode.postMessage({ type: 'deleteColumn', columnName: col.name });
+        });
+        actions.appendChild(deleteBtn);
+      }
+      header.appendChild(actions);
+
       const list = document.createElement('ul');
       list.className = 'cardList';
       col.cards.forEach((card) => list.appendChild(cardEl(card)));
@@ -436,12 +536,22 @@ function buildHtml(webview: vscode.Webview, boardTitle: string, initialState: Bo
     }
 
     attachBoard(board);
+    let lastState = null;
+    const showArchivedEl = document.getElementById('showArchived');
 
     function render(state) {
+      lastState = state;
       groupByLabelEl.textContent = state.groupByLabel;
       board.innerHTML = '';
-      state.columns.forEach((col) => board.appendChild(columnEl(col, state.groupByLabel)));
+      const showArchived = showArchivedEl.checked;
+      state.columns
+        .filter((col) => showArchived || !col.archived)
+        .forEach((col) => board.appendChild(columnEl(col, state.groupByLabel)));
     }
+
+    showArchivedEl.addEventListener('change', () => {
+      if (lastState) { render(lastState); }
+    });
 
     document.getElementById('addColumnBtn').addEventListener('click', () => {
       const input = document.getElementById('newColumnName');
@@ -516,11 +626,70 @@ export async function openKanbanViewPanel(client: EtapiClient, boardNote: Note):
     await client.refreshNoteOrdering(boardNote.noteId);
   }
 
+  // All of the functions below re-fetch board.json immediately before writing to it
+  // (rather than reusing the possibly several-seconds-stale `state.boardJson`), so a
+  // column color or other metadata someone set - in Trilium's own client, or via a
+  // different action here moments earlier - can't get clobbered by a write built off
+  // an outdated snapshot.
+  async function withFreshBoardColumns<T>(
+    mutate: (columns: BoardColumnData[]) => T,
+  ): Promise<T> {
+    const { json, attachmentId } = await loadBoardJson(client, boardNote.noteId);
+    const columnsKey = boardColumnsKey(state.groupByLabel);
+    const columns = parseBoardColumns(json, columnsKey);
+    const result = mutate(columns);
+    await saveBoardJson(client, boardNote.noteId, attachmentId, { ...json, [columnsKey]: columns });
+    return result;
+  }
+
   async function persistColumnOrder(msg: KanbanReorderColumnsMessage): Promise<void> {
-    const entryByValue = new Map(state.columnEntries.map((c) => [c.value, c]));
-    const newColumns: BoardColumnData[] = msg.columnNames.map((name) => entryByValue.get(name) ?? { value: name });
-    const newBoardJson = { ...state.boardJson, [state.columnsKey]: newColumns };
-    await saveBoardJson(client, boardNote.noteId, state.boardJsonAttachmentId, newBoardJson);
+    await withFreshBoardColumns((columns) => {
+      const entryByValue = new Map(columns.map((c) => [c.value, c]));
+      const newColumns = msg.columnNames
+        // Never force-persist a bare inbox stub - only keep it if it already carried
+        // saved customization (color, archived, displayName, ...).
+        .filter((name) => name !== NO_VALUE_COLUMN || entryByValue.has(NO_VALUE_COLUMN))
+        .map((name) => entryByValue.get(name) ?? { value: name });
+      columns.length = 0;
+      columns.push(...newColumns);
+    });
+  }
+
+  async function persistArchiveColumn(msg: KanbanArchiveColumnMessage): Promise<void> {
+    await withFreshBoardColumns((columns) => {
+      const existing = columns.find((c) => c.value === msg.columnName);
+      if (existing) {
+        existing.archived = msg.archived;
+      } else {
+        columns.push({ value: msg.columnName, archived: msg.archived });
+      }
+    });
+  }
+
+  async function persistDeleteColumn(msg: KanbanDeleteColumnMessage): Promise<void> {
+    const confirm = await vscode.window.showWarningMessage(
+      `Delete column "${msg.columnName}"? Cards in it will move to Inbox (the label is removed, notes are kept).`,
+      { modal: true },
+      'Delete',
+    );
+    if (confirm !== 'Delete') {
+      return;
+    }
+    const column = state.columns.find((c) => c.name === msg.columnName);
+    if (column) {
+      await Promise.all(column.cards.map(async (card) => {
+        const attr = state.attributeByNoteId.get(card.noteId);
+        if (attr) {
+          await client.deleteAttribute(attr.attributeId);
+        }
+      }));
+    }
+    await withFreshBoardColumns((columns) => {
+      const index = columns.findIndex((c) => c.value === msg.columnName);
+      if (index !== -1) {
+        columns.splice(index, 1);
+      }
+    });
   }
 
   const messageDisposable = panel.webview.onDidReceiveMessage(async (msg: KanbanMessage) => {
@@ -529,6 +698,10 @@ export async function openKanbanViewPanel(client: EtapiClient, boardNote: Note):
         await persistMove(msg);
       } else if (msg.type === 'reorderColumns') {
         await persistColumnOrder(msg);
+      } else if (msg.type === 'archiveColumn') {
+        await persistArchiveColumn(msg);
+      } else if (msg.type === 'deleteColumn') {
+        await persistDeleteColumn(msg);
       } else {
         return;
       }
@@ -536,7 +709,7 @@ export async function openKanbanViewPanel(client: EtapiClient, boardNote: Note):
       // the refresh poll's diff) reflect what was just written.
       state = await loadBoardState(client, boardNote);
       lastSignature = JSON.stringify(state.columns);
-      void panel.webview.postMessage({ type: 'synced' });
+      void panel.webview.postMessage({ type: 'refresh', groupByLabel: state.groupByLabel, columns: state.columns });
     } catch (err) {
       void panel.webview.postMessage({ type: 'saveFailed' });
       void vscode.window.showErrorMessage(`Trilium: Failed to save board change: ${err}`);
