@@ -23,17 +23,25 @@ interface ColumnState {
   cards: CardEntry[];
 }
 
+interface BoardColumnData {
+  value: string;
+  [key: string]: unknown;
+}
+
 interface BoardState {
   groupByLabel: string;
   columns: ColumnState[];
   attributeByNoteId: Map<string, Attribute | undefined>;
   branchByNoteId: Map<string, string>;
-  columnOrderAttribute: Attribute | undefined;
+  boardJson: Record<string, unknown>;
+  boardJsonAttachmentId: string | undefined;
+  columnsKey: string;
+  columnEntries: BoardColumnData[];
 }
 
 const NO_VALUE_COLUMN = '';
 const REFRESH_INTERVAL_MS = 6000;
-const COLUMN_ORDER_LABEL = 'board:columnOrder';
+const BOARD_JSON_ATTACHMENT_TITLE = 'board.json';
 
 function escapeHtml(input: string): string {
   return input
@@ -83,39 +91,70 @@ function getCardColumnValue(card: Note, groupByLabel: string): string {
 }
 
 /**
- * Reads the board's persisted column order from a `#board:columnOrder` label on the
- * board note itself (JSON array of column values, `""` standing in for the "no value"
- * column). Returns null when missing or unparseable, so callers fall back to
- * discovering an order from the cards instead.
+ * The key holding a board's column list inside its `board.json` viewConfig attachment.
+ * This mirrors Trilium's own `boardColumnsKey()` (packages/commons/src/lib/board_columns.ts):
+ * the default `#status` grouping's columns live under `"columns"`, any other
+ * `#board:groupBy` value gets its own `"<label>ViewColumns"` key so different
+ * groupings don't clobber each other's column list/order.
  */
-function getPersistedColumnOrder(boardNote: Note): string[] | null {
-  const attr = (boardNote.attributes ?? []).find(
-    (a) => a.type === 'label' && a.name === COLUMN_ORDER_LABEL,
+function boardColumnsKey(groupByLabel: string): string {
+  return groupByLabel === 'status' ? 'columns' : `${groupByLabel}ViewColumns`;
+}
+
+/**
+ * Reads and parses the board note's `board.json` viewConfig attachment - the same
+ * attachment Trilium's own native Kanban board reads/writes column order from/to
+ * (apps/client/src/widgets/collections/view_mode_storage.ts). Returns an empty object
+ * and no attachment id when none exists yet.
+ */
+async function loadBoardJson(
+  client: EtapiClient,
+  boardNoteId: string,
+): Promise<{ json: Record<string, unknown>; attachmentId: string | undefined }> {
+  const attachments = await client.getNoteAttachments(boardNoteId);
+  const attachment = attachments.find(
+    (a) => a.role === 'viewConfig' && a.title === BOARD_JSON_ATTACHMENT_TITLE,
   );
-  if (!attr) {
-    return null;
+  if (!attachment) {
+    return { json: {}, attachmentId: undefined };
   }
   try {
-    const parsed = JSON.parse(attr.value);
-    if (Array.isArray(parsed) && parsed.every((v) => typeof v === 'string')) {
-      return parsed;
+    const buf = await client.getAttachmentContent(attachment.attachmentId);
+    const parsed = JSON.parse(Buffer.from(buf).toString('utf-8'));
+    if (parsed && typeof parsed === 'object') {
+      return { json: parsed as Record<string, unknown>, attachmentId: attachment.attachmentId };
     }
   } catch {
-    // fall through to null below
+    // fall through to an empty config below
   }
-  return null;
+  return { json: {}, attachmentId: attachment.attachmentId };
+}
+
+async function saveBoardJson(
+  client: EtapiClient,
+  boardNoteId: string,
+  attachmentId: string | undefined,
+  json: Record<string, unknown>,
+): Promise<string> {
+  const content = JSON.stringify(json);
+  if (attachmentId) {
+    await client.putAttachmentContentBinary(attachmentId, Buffer.from(content, 'utf-8'));
+    return attachmentId;
+  }
+  const created = await client.createAttachment(
+    boardNoteId, 'viewConfig', 'application/json', BOARD_JSON_ATTACHMENT_TITLE, content,
+  );
+  return created.attachmentId;
 }
 
 /**
  * Combines the persisted column order with the columns actually discovered from the
  * current cards: persisted columns keep their saved position (even if currently
- * empty), and any newly-seen column value is appended once, in first-seen order.
- * This is what keeps the column order stable across reloads/polls instead of being
- * re-derived from card fetch order every time.
+ * empty - dropping them would erase columns a user deliberately created or kept
+ * around), and any newly-seen column value is appended once, in first-seen order.
  */
-function mergeColumnOrder(persisted: string[] | null, discovered: string[]): string[] {
-  const discoveredSet = new Set(discovered);
-  const merged = (persisted ?? []).filter((name) => discoveredSet.has(name));
+function mergeColumnOrder(persisted: string[], discovered: string[]): string[] {
+  const merged = [...persisted];
   const mergedSet = new Set(merged);
   for (const name of discovered) {
     if (!mergedSet.has(name)) {
@@ -154,25 +193,28 @@ async function loadBoardState(client: EtapiClient, boardNote: Note): Promise<Boa
     cardsByColumn.set(NO_VALUE_COLUMN, []);
   }
 
-  const persistedOrder = getPersistedColumnOrder(parent);
+  const columnsKey = boardColumnsKey(groupByLabel);
+  const { json: boardJson, attachmentId } = await loadBoardJson(client, parent.noteId);
+  const rawColumns = Array.isArray(boardJson[columnsKey])
+    ? (boardJson[columnsKey] as unknown[]).filter(
+      (c): c is BoardColumnData => !!c && typeof c === 'object' && typeof (c as BoardColumnData).value === 'string',
+    )
+    : [];
+  const persistedOrder = rawColumns.map((c) => c.value);
+
   const columnOrder = mergeColumnOrder(persistedOrder, discoveredOrder);
 
-  const columnOrderAttribute = (parent.attributes ?? []).find(
-    (a) => a.type === 'label' && a.name === COLUMN_ORDER_LABEL,
-  );
-
-  // Self-heal: if the merged order doesn't match what's persisted (first run, or a
-  // new column value just appeared), persist it so the order is stable next time
-  // instead of being re-derived from card fetch order on every load/poll.
-  const serializedOrder = JSON.stringify(columnOrder);
-  let finalColumnOrderAttribute = columnOrderAttribute;
-  if (!persistedOrder || JSON.stringify(persistedOrder) !== serializedOrder) {
-    if (columnOrderAttribute) {
-      await client.patchAttribute(columnOrderAttribute.attributeId, { value: serializedOrder });
-      finalColumnOrderAttribute = { ...columnOrderAttribute, value: serializedOrder };
-    } else {
-      await client.createAttribute(parent.noteId, 'label', COLUMN_ORDER_LABEL, serializedOrder);
-    }
+  // Self-heal: if the merged order doesn't match what Trilium's own board.json has
+  // (first run, or a new column value just appeared), write it back - the same
+  // attachment Trilium's native Kanban board itself reads/writes - so the order is
+  // stable and visible upstream, instead of being re-derived from card fetch order.
+  let finalBoardJson = boardJson;
+  let finalAttachmentId = attachmentId;
+  const columnEntryByValue = new Map(rawColumns.map((c) => [c.value, c]));
+  const columnEntries = columnOrder.map((name) => columnEntryByValue.get(name) ?? { value: name });
+  if (JSON.stringify(persistedOrder) !== JSON.stringify(columnOrder)) {
+    finalBoardJson = { ...boardJson, [columnsKey]: columnEntries };
+    finalAttachmentId = await saveBoardJson(client, parent.noteId, attachmentId, finalBoardJson);
   }
 
   const attributeByNoteId = new Map(children.map((c) => [
@@ -185,7 +227,10 @@ async function loadBoardState(client: EtapiClient, boardNote: Note): Promise<Boa
     columns: columnOrder.map((name) => ({ name, cards: cardsByColumn.get(name) ?? [] })),
     attributeByNoteId,
     branchByNoteId: branchByNoteId as Map<string, string>,
-    columnOrderAttribute: finalColumnOrderAttribute,
+    boardJson: finalBoardJson,
+    boardJsonAttachmentId: finalAttachmentId,
+    columnsKey,
+    columnEntries,
   };
 }
 
@@ -469,12 +514,10 @@ export async function openKanbanViewPanel(client: EtapiClient, boardNote: Note):
   }
 
   async function persistColumnOrder(msg: KanbanReorderColumnsMessage): Promise<void> {
-    const serializedOrder = JSON.stringify(msg.columnNames);
-    if (state.columnOrderAttribute) {
-      await client.patchAttribute(state.columnOrderAttribute.attributeId, { value: serializedOrder });
-    } else {
-      await client.createAttribute(boardNote.noteId, 'label', COLUMN_ORDER_LABEL, serializedOrder);
-    }
+    const entryByValue = new Map(state.columnEntries.map((c) => [c.value, c]));
+    const newColumns: BoardColumnData[] = msg.columnNames.map((name) => entryByValue.get(name) ?? { value: name });
+    const newBoardJson = { ...state.boardJson, [state.columnsKey]: newColumns };
+    await saveBoardJson(client, boardNote.noteId, state.boardJsonAttachmentId, newBoardJson);
   }
 
   const messageDisposable = panel.webview.onDidReceiveMessage(async (msg: KanbanMessage) => {
