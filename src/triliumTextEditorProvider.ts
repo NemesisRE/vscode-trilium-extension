@@ -974,6 +974,7 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
       font-src ${webview.cspSource} https://cdn.jsdelivr.net data:;
       img-src ${webview.cspSource} https: data: blob:;
       connect-src ${webview.cspSource} https://cdn.jsdelivr.net blob:;
+      frame-src https://www.youtube-nocookie.com;
     ">
     <title>Trilium Text Editor</title>
     <!-- Load CKEditor CSS (bundled by esbuild) -->
