@@ -128,9 +128,15 @@ describe('NoteItem', () => {
   });
 
   it('attaches openInBrowser command to leaf external notes', () => {
-    const item = new NoteItem(makeNote({ type: 'book', childNoteIds: [] }));
+    const item = new NoteItem(makeNote({ type: 'noteMap', childNoteIds: [] }));
     assert.ok(item.command, 'leaf external note should have a command');
     assert.strictEqual((item.command as { command: string }).command, 'trilium.openInBrowser');
+  });
+
+  it('attaches openNote command to webView notes (they resolve their target URL inside that command)', () => {
+    const item = new NoteItem(makeNote({ type: 'webView', childNoteIds: [] }));
+    assert.ok(item.command, 'webView note should have a command');
+    assert.strictEqual((item.command as { command: string }).command, 'trilium.openNote');
   });
 
   it('attaches openFile command to file notes', () => {
