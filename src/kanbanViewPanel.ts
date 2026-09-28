@@ -361,23 +361,28 @@ function buildHtml(webview: vscode.Webview, boardTitle: string, initialState: Bo
       border-radius: 3px;
       padding: 1px 4px;
     }
-    .columnActions { display: flex; gap: 2px; flex: 0 0 auto; }
-    .columnActions button {
-      padding: 2px 5px;
-      font-size: 11px;
+    .contextMenu {
+      position: fixed;
+      display: none;
+      flex-direction: column;
+      min-width: 150px;
+      z-index: 1000;
+      background: var(--vscode-menu-background, var(--vscode-editorWidget-background));
+      color: var(--vscode-menu-foreground, var(--vscode-foreground));
+      border: 1px solid var(--vscode-menu-border, var(--vscode-editorWidget-border));
+      border-radius: 4px;
+      padding: 4px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+    }
+    .contextMenu button {
+      text-align: left;
       background: transparent;
       border-color: transparent;
-    }
-    .columnActions button:hover { background: var(--vscode-toolbar-hoverBackground, var(--vscode-button-secondaryBackground)); }
-    .columnColor {
-      width: 20px;
-      height: 20px;
-      padding: 0;
-      border: 1px solid var(--vscode-editorWidget-border);
       border-radius: 3px;
-      background: none;
-      cursor: pointer;
+      padding: 6px 10px;
+      font-size: 13px;
     }
+    .contextMenu button:hover { background: var(--vscode-list-hoverBackground, var(--vscode-toolbar-hoverBackground)); }
     .column.draggingColumn { opacity: 0.5; }
     .column.archived { opacity: 0.5; }
     .board.dragover { outline: 1px dashed var(--vscode-focusBorder); }
@@ -419,14 +424,47 @@ function buildHtml(webview: vscode.Webview, boardTitle: string, initialState: Bo
       <label><input type="checkbox" id="showArchived" /> Show archived columns</label>
     </div>
   </div>
+  <div class="contextMenu" id="columnContextMenu"></div>
   <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
     const board = document.getElementById('board');
     const groupByLabelEl = document.getElementById('groupByLabel');
     const syncStateEl = document.getElementById('syncState');
+    const contextMenu = document.getElementById('columnContextMenu');
     let dragged = null;
     let dragging = false;
     let draggedColumn = null;
+
+    function hideContextMenu() {
+      contextMenu.style.display = 'none';
+    }
+
+    function openContextMenu(items, x, y) {
+      contextMenu.innerHTML = '';
+      items.forEach((item) => {
+        const btn = document.createElement('button');
+        btn.textContent = item.label;
+        btn.addEventListener('click', () => {
+          hideContextMenu();
+          item.onClick();
+        });
+        contextMenu.appendChild(btn);
+      });
+      contextMenu.style.display = 'flex';
+      // Clamp so the menu never opens off the right/bottom edge of the panel.
+      const maxLeft = Math.max(0, window.innerWidth - contextMenu.offsetWidth - 4);
+      const maxTop = Math.max(0, window.innerHeight - contextMenu.offsetHeight - 4);
+      contextMenu.style.left = Math.min(x, maxLeft) + 'px';
+      contextMenu.style.top = Math.min(y, maxTop) + 'px';
+    }
+
+    document.addEventListener('click', hideContextMenu);
+    document.addEventListener('contextmenu', (event) => {
+      if (!event.target.closest('.columnHeader')) { hideContextMenu(); }
+    });
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') { hideContextMenu(); }
+    });
 
     function cardEl(card) {
       const li = document.createElement('li');
@@ -559,59 +597,49 @@ function buildHtml(webview: vscode.Webview, boardTitle: string, initialState: Bo
         });
       }
 
-      const actions = document.createElement('div');
-      actions.className = 'columnActions';
-      const renameBtn = document.createElement('button');
-      renameBtn.textContent = '✎';
-      renameBtn.title = 'Rename column';
-      renameBtn.addEventListener('click', (event) => {
-        event.stopPropagation();
-        startRename();
-      });
-      actions.appendChild(renameBtn);
+      // Not shown - clicked programmatically from the "Set Color" context menu item
+      // so the native color picker can open without a permanently visible swatch.
       const colorInput = document.createElement('input');
       colorInput.type = 'color';
-      colorInput.className = 'columnColor';
-      colorInput.title = 'Column color';
+      colorInput.style.display = 'none';
       colorInput.value = col.color || '#808080';
-      colorInput.addEventListener('click', (event) => event.stopPropagation());
       colorInput.addEventListener('change', () => {
         syncStateEl.textContent = 'saving…';
         vscode.postMessage({ type: 'setColumnColor', columnName: col.name, color: colorInput.value });
       });
-      actions.appendChild(colorInput);
-      if (col.color) {
-        const clearColorBtn = document.createElement('button');
-        clearColorBtn.textContent = '✕';
-        clearColorBtn.title = 'Clear column color';
-        clearColorBtn.addEventListener('click', (event) => {
-          event.stopPropagation();
-          syncStateEl.textContent = 'saving…';
-          vscode.postMessage({ type: 'setColumnColor', columnName: col.name, color: undefined });
-        });
-        actions.appendChild(clearColorBtn);
-      }
-      const archiveBtn = document.createElement('button');
-      archiveBtn.textContent = col.archived ? 'Unarchive' : 'Archive';
-      archiveBtn.title = col.archived ? 'Unarchive column' : 'Archive column';
-      archiveBtn.addEventListener('click', (event) => {
+      div.appendChild(colorInput);
+
+      header.addEventListener('contextmenu', (event) => {
+        event.preventDefault();
         event.stopPropagation();
-        syncStateEl.textContent = 'saving…';
-        vscode.postMessage({ type: 'archiveColumn', columnName: col.name, archived: !col.archived });
-      });
-      actions.appendChild(archiveBtn);
-      if (col.name !== '') {
-        const deleteBtn = document.createElement('button');
-        deleteBtn.textContent = 'Delete';
-        deleteBtn.title = 'Delete column';
-        deleteBtn.addEventListener('click', (event) => {
-          event.stopPropagation();
-          syncStateEl.textContent = 'saving…';
-          vscode.postMessage({ type: 'deleteColumn', columnName: col.name });
+        const items = [
+          { label: 'Rename', onClick: startRename },
+          { label: 'Set Color…', onClick: () => colorInput.click() },
+        ];
+        if (col.color) {
+          items.push({
+            label: 'Clear Color', onClick: () => {
+              syncStateEl.textContent = 'saving…';
+              vscode.postMessage({ type: 'setColumnColor', columnName: col.name, color: undefined });
+            },
+          });
+        }
+        items.push({
+          label: col.archived ? 'Unarchive' : 'Archive', onClick: () => {
+            syncStateEl.textContent = 'saving…';
+            vscode.postMessage({ type: 'archiveColumn', columnName: col.name, archived: !col.archived });
+          },
         });
-        actions.appendChild(deleteBtn);
-      }
-      header.appendChild(actions);
+        if (col.name !== '') {
+          items.push({
+            label: 'Delete…', onClick: () => {
+              syncStateEl.textContent = 'saving…';
+              vscode.postMessage({ type: 'deleteColumn', columnName: col.name });
+            },
+          });
+        }
+        openContextMenu(items, event.clientX, event.clientY);
+      });
 
       const list = document.createElement('ul');
       list.className = 'cardList';
