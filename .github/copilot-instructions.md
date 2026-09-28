@@ -26,23 +26,16 @@
 
 Never rely on recalled API shapes for a package you haven't verified at the resolved version. If the docs fetch fails or the API surface is ambiguous, surface the uncertainty to the user before writing code.
 
-### Always Present a Plan First
-- Before writing or modifying any code, configuration, or file, produce a concise numbered plan describing:
-  1. What will be changed and why
-  2. Which files will be created, modified, or deleted
-  3. Any assumptions that require user confirmation
-- **Wait for explicit user approval** before executing the plan.
-- If a step becomes unclear during execution, pause and re-confirm rather than making a judgment call.
-
-### Approval Handshake (Strict)
-- Do not edit files, run patch tools, execute write operations or any other potentially destructive actions until the user gives explicit approval.
-- The required approval phrase is **"APPROVE PLAN"** (exact words, case-insensitive).
-- If approval is missing or ambiguous, ask for approval and stop.
-
-### Ask When in Doubt
-- If the user's intent is ambiguous, ask a focused clarifying question before proceeding.
-- If two valid implementation approaches exist with meaningful trade-offs, present them briefly and ask which to use.
-- Do not silently pick the "easier" or "faster" option without disclosure.
+### Work Autonomously, but Know What Needs Sign-off
+- For a normal task (a bug fix, a small feature, a refactor the user described), just do it: make the change, verify it (build/lint/test as applicable), and report what changed. No upfront plan-and-wait step is required.
+- Before doing something **hard to undo or broad in effect**, stop and ask first instead of proceeding silently:
+  - adding, removing, or upgrading a dependency
+  - a change that touches many files or restructures existing code beyond what the task needs
+  - lowering `engines.vscode`, changing activation events to `*`, or other manifest changes with wide behavioral impact
+  - anything destructive (deleting files/data, force-pushing, rewriting history)
+  - a breaking change (`!` / `BREAKING CHANGE:`)
+- If the user's intent is ambiguous, or two valid implementations have a real trade-off, ask a focused question rather than guessing — but don't block small, clearly-scoped work on approval that wasn't requested.
+- If a fact about an API, version, or behavior is uncertain, resolve it via documentation lookup (see above) before proceeding; only ask the user when the lookup itself is inconclusive.
 
 ### Conventional Commits and Branch Naming
 - Use Conventional Commit prefixes in commit messages and PR titles: `feat`, `fix`, `chore`, `docs`, and optional breaking marker `!` (for example `feat(api)!: remove legacy endpoint`).
@@ -92,7 +85,7 @@ Never rely on recalled API shapes for a package you haven't verified at the reso
 ## Code Quality Rules
 
 - Match the existing code style in each file before introducing new patterns.
-- Do not add new dependencies without listing them in the plan and getting approval.
+- Do not add new dependencies without asking first (see "Work Autonomously" above).
 - Do not refactor, rename, or restructure existing code unless it is directly required by the task.
 - Prefer small, focused changes over large rewrites.
 - Remove dead code only when explicitly asked.
@@ -109,7 +102,7 @@ Never rely on recalled API shapes for a package you haven't verified at the reso
 
 ## Upstream Documentation Sources
 
-When referencing or verifying information, use these canonical sources:
+When referencing or verifying information, use these canonical sources — fetch live, never rely on training-data recall (versions and APIs both go stale):
 
 | Topic | Source |
 |---|---|
@@ -118,25 +111,13 @@ When referencing or verifying information, use these canonical sources:
 | VS Code Contribution Points | https://code.visualstudio.com/api/references/contribution-points |
 | VS Code Built-in Commands | https://code.visualstudio.com/api/references/commands |
 | Trilium Notes API / Docs | https://github.com/TriliumNext/trilium-notes/wiki (or upstream repo) |
-| npm package versions | https://www.npmjs.com (fetch live, do not guess) |
+| Latest stable version of an npm package | Fetch `https://registry.npmjs.org/{package}/latest`, read the `version` field |
+| Latest version of a GitHub Action | The action's GitHub releases page (e.g. `https://github.com/{owner}/{repo}/releases/latest`) |
+| Current stable Node.js LTS | `https://nodejs.org/dist/index.json` |
+| TypeScript compiler option validity | https://www.typescriptlang.org/tsconfig or installed `typescript/lib/typescript.d.ts` |
+| VS Code minimum engine version | `node_modules/@types/vscode/index.d.ts` — use the lowest version that exposes every API the code uses |
 
-### Version Lookup Policy
-
-**Never use training-data version numbers.** Versions in the model's training data are stale by definition. For every version reference — npm packages, GitHub Actions, Node.js, TypeScript compiler options, VS Code engine ranges — look it up at the authoritative source before writing it.
-
-| What you need | How to get it |
-|---|---|
-| Latest stable version of an npm package | Fetch `https://registry.npmjs.org/{package}/latest` and read the `version` field |
-| Latest version of a GitHub Action | Fetch the action's GitHub releases page (e.g. `https://github.com/{owner}/{repo}/releases/latest`) |
-| Current stable Node.js LTS | Fetch `https://nodejs.org/en/download/` or `https://nodejs.org/dist/index.json` |
-| TypeScript compiler option validity | Fetch `https://www.typescriptlang.org/tsconfig` or check installed `typescript/lib/typescript.d.ts` |
-| VS Code minimum engine version | Check `node_modules/@types/vscode/index.d.ts` — use the lowest version that exposes every API the code uses |
-
-Apply this policy whenever:
-- Adding or upgrading a dependency in `package.json`
-- Writing or updating a GitHub Actions workflow (`uses: action@vX`)
-- Setting `engines.node`, `engines.vscode`, or any `"target"` / `"lib"` in `tsconfig.json`
-- Answering any question that requires knowing the "latest" or "current" version of anything
+This applies whenever adding/upgrading a dependency, writing or bumping a GitHub Actions `uses:` pin, setting `engines.node`/`engines.vscode`/`target`/`lib`, or answering any "what's the latest/current version of X" question.
 
 ---
 
