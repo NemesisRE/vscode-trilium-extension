@@ -451,6 +451,9 @@ function buildHtml(webview: vscode.Webview, boardTitle: string, initialState: Bo
       const col = columnEl({ name, cards: [] }, groupByLabelEl.textContent);
       board.appendChild(col);
       input.value = '';
+      const columnNames = Array.from(board.querySelectorAll('.column')).map((c) => c.dataset.column);
+      syncStateEl.textContent = 'saving…';
+      vscode.postMessage({ type: 'reorderColumns', columnNames });
     });
 
     window.addEventListener('message', (event) => {
