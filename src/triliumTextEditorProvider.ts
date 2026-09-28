@@ -1118,7 +1118,11 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
          definitions from a URL, so ckeditor-build.ts hands it a blob: URL wrapping the
          already-vendored definitions file instead of CKEditor's own CDN - without blob:
          here that fetch is CSP-blocked, the repository never finishes loading, and the
-         toolbar button stays permanently disabled. -->
+         toolbar button stays permanently disabled.
+         frame-src needs both YouTube hosts: our own LinkEmbed video widget (linkEmbedRender.ts)
+         always embeds via youtube-nocookie.com, but CKEditor core's built-in MediaEmbed feature
+         (the pre-existing "mediaEmbed" toolbar button) hardcodes youtube.com/embed/... for its
+         own YouTube provider and isn't ours to redirect. -->
     <meta http-equiv="Content-Security-Policy" content="
       default-src 'none';
       style-src ${webview.cspSource} 'unsafe-inline' https://cdn.jsdelivr.net;
@@ -1126,7 +1130,7 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
       font-src ${webview.cspSource} https://cdn.jsdelivr.net data:;
       img-src ${webview.cspSource} https: data: blob:;
       connect-src ${webview.cspSource} https://cdn.jsdelivr.net blob:;
-      frame-src https://www.youtube-nocookie.com;
+      frame-src https://www.youtube-nocookie.com https://www.youtube.com;
     ">
     <title>Trilium Text Editor</title>
     <!-- Load CKEditor CSS (bundled by esbuild) -->
