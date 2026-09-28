@@ -3,21 +3,29 @@ import { preventCKEditorHandling } from '../../vendor/ckeditor5/src/plugins/widg
 
 const WIRED_ATTR = 'data-media-embed-facade-wired';
 
+interface MediaEmbedFacadeEditorConfig {
+  openExternal?: (url: string) => void;
+}
+
 /**
- * CKEditor core's MediaEmbed providers only get a `html: match => string` config callback (see
- * mediaEmbedFacade.ts), unlike our own vendored linkEmbed widget (link_embed_editing.ts), which
- * builds its preview via `writer.createUIElement(...)` and so gets a render callback with direct
- * access to both the constructed DOM node and the editor instance. There is no equivalent hook here
- * to call `preventCKEditorHandling()` (widget_utils.ts) against the facade's `<a>` at creation time.
+ * Makes the native MediaEmbed facade's <a> (mediaEmbedFacade.ts) actually open its video when
+ * clicked. Two earlier fixes on PR #127 (dropping target="_blank", then wiring
+ * preventCKEditorHandling() the same way our own linkEmbed widget does) both turned out to target
+ * the wrong layer: live testing (a synthetic .click() confirmed on the exact wired anchor, in the
+ * page's own devtools console) showed the click's default action *was* firing - the browser was
+ * genuinely trying to navigate this webview's own nested iframe to the video URL in place - and
+ * that in-place navigation is what VS Code's outer webview host itself blocks, as a "framing"
+ * attempt against its own frame-src CSP ("Framing '...' violates ... frame-src 'self'"), before its
+ * usual open-this-link-externally handling ever gets a chance to run. CKEditor was never the
+ * problem; a plain anchor click just isn't a reliable way to leave this specific webview at all.
  *
- * `data-cke-ignore-events` on the anchor (still set by mediaEmbedFacade.ts) stops CKEditor's own
- * mousedown-observer-based widget-select gesture from firing for it, but two rounds of live testing
- * on PR #127 confirmed that alone isn't enough to make the click reliably reach the anchor's own
- * default action - the native `contenteditable="false"` focus/selection shift, and CKEditor's
- * WidgetTypeAround overlay mutating the DOM around the widget on selection, can still interfere with
- * the native mousedown -> mouseup -> click sequence a plain anchor relies on. So this plugin
- * re-applies, after the fact, the exact same fix our own widget already uses successfully: as soon
- * as a facade anchor appears in the DOM, wire it up with `preventCKEditorHandling()` directly.
+ * The fix is to stop relying on anchor navigation for this facade altogether and instead go through
+ * the extension host explicitly - the same round trip openBreadcrumbNote/openAttachment already use
+ * (see the `mediaEmbedFacade.openExternal` editor config callback wired in
+ * triliumTextEditorProvider.ts, which posts an `openExternalLink` message the host handles with
+ * `vscode.env.openExternal()`). `preventCKEditorHandling()` is still applied too, for the same
+ * widget-selection/toolbar behavior our own widget gets - it just no longer needs to make the
+ * anchor's own navigation work, since this plugin's own click listener replaces that entirely.
  */
 export default class MediaEmbedFacadeClickHandling extends Plugin {
   public static get pluginName() {
@@ -32,10 +40,16 @@ export default class MediaEmbedFacadeClickHandling extends Plugin {
 
   private _wireFacades(): void {
     const editor = this.editor;
+    const openExternal = (editor.config.get('mediaEmbedFacade') as MediaEmbedFacadeEditorConfig | undefined)?.openExternal;
+
     for (const domRoot of editor.editing.view.domRoots.values()) {
       domRoot.querySelectorAll<HTMLAnchorElement>(`.link-embed-video-facade:not([${WIRED_ATTR}])`).forEach((facade) => {
         facade.setAttribute(WIRED_ATTR, 'true');
         preventCKEditorHandling(facade, editor);
+        facade.addEventListener('click', (evt) => {
+          evt.preventDefault();
+          openExternal?.(facade.href);
+        });
       });
     }
   }

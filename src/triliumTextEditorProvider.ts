@@ -448,6 +448,13 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
           }
           break;
         }
+        case 'openExternalLink': {
+          const { url: externalUrl } = message as { type: string; url?: string };
+          if (externalUrl && /^https?:\/\//i.test(externalUrl)) {
+            void vscode.env.openExternal(vscode.Uri.parse(externalUrl));
+          }
+          break;
+        }
         case 'renderIncludedNote': {
           const { id: renderId, noteId: includedNoteId } = message as { type: string; id: string; noteId: string };
           void this.fetchIncludedNotePreview(includedNoteId).then(preview => {
@@ -2219,6 +2226,17 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
                 if (noteId) {
                   vscode.postMessage({ type: 'openBreadcrumbNote', noteId });
                 }
+              },
+            },
+            // MediaEmbed facade (see mediaEmbedFacadeClick.ts): a plain <a> click's default
+            // navigation, with no target, tries to navigate this webview's own nested iframe to the
+            // external URL in place - VS Code's outer webview host blocks that itself, as a "framing"
+            // attempt against its own frame-src CSP, before its usual link-opening behavior ever gets
+            // a chance to run. Going through the host instead - the same way openBreadcrumbNote and
+            // openAttachment already do - is unaffected by that, since it's not a navigation at all.
+            mediaEmbedFacade: {
+              openExternal: (url) => {
+                vscode.postMessage({ type: 'openExternalLink', url });
               },
             },
             // IncludeNote plugin: the note picker reuses the same QuickPick as internalLink
