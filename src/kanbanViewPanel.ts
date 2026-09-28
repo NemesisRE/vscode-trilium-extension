@@ -25,12 +25,18 @@ interface KanbanSetColumnColorMessage {
   columnName: string;
   color: string | undefined;
 }
+interface KanbanRenameColumnMessage {
+  type: 'renameColumn';
+  columnName: string;
+  newTitle: string;
+}
 type KanbanMessage =
   | KanbanMoveMessage
   | KanbanReorderColumnsMessage
   | KanbanArchiveColumnMessage
   | KanbanDeleteColumnMessage
-  | KanbanSetColumnColorMessage;
+  | KanbanSetColumnColorMessage
+  | KanbanRenameColumnMessage;
 
 interface CardEntry {
   noteId: string;
@@ -344,6 +350,17 @@ function buildHtml(webview: vscode.Webview, boardTitle: string, initialState: Bo
       cursor: grab;
     }
     .columnTitle { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .columnTitleInput {
+      flex: 1 1 auto;
+      min-width: 0;
+      font: inherit;
+      font-weight: 600;
+      background: var(--vscode-input-background);
+      color: var(--vscode-input-foreground);
+      border: 1px solid var(--vscode-focusBorder);
+      border-radius: 3px;
+      padding: 1px 4px;
+    }
     .columnActions { display: flex; gap: 2px; flex: 0 0 auto; }
     .columnActions button {
       padding: 2px 5px;
@@ -520,8 +537,38 @@ function buildHtml(webview: vscode.Webview, boardTitle: string, initialState: Bo
       title.textContent = columnTitle(col, groupByLabel);
       header.appendChild(title);
 
+      function startRename() {
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'columnTitleInput';
+        input.value = columnTitle(col, groupByLabel);
+        header.replaceChild(input, title);
+        input.focus();
+        input.select();
+        input.addEventListener('click', (event) => event.stopPropagation());
+        input.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter') { input.blur(); }
+          if (event.key === 'Escape') { input.value = columnTitle(col, groupByLabel); input.blur(); }
+        });
+        input.addEventListener('blur', () => {
+          header.replaceChild(title, input);
+          const newTitle = input.value.trim();
+          if (!newTitle || newTitle === columnTitle(col, groupByLabel)) { return; }
+          syncStateEl.textContent = 'saving…';
+          vscode.postMessage({ type: 'renameColumn', columnName: col.name, newTitle });
+        });
+      }
+
       const actions = document.createElement('div');
       actions.className = 'columnActions';
+      const renameBtn = document.createElement('button');
+      renameBtn.textContent = '✎';
+      renameBtn.title = 'Rename column';
+      renameBtn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        startRename();
+      });
+      actions.appendChild(renameBtn);
       const colorInput = document.createElement('input');
       colorInput.type = 'color';
       colorInput.className = 'columnColor';
@@ -748,6 +795,61 @@ export async function openKanbanViewPanel(client: EtapiClient, boardNote: Note):
     });
   }
 
+  async function persistRenameColumn(msg: KanbanRenameColumnMessage): Promise<void> {
+    if (msg.columnName === NO_VALUE_COLUMN) {
+      // The inbox isn't identified by a label value, so "renaming" it is purely a
+      // display override (matches Trilium's own setColumnTitle: no card writes).
+      await withFreshBoardColumns((columns) => {
+        const existing = columns.find((c) => c.value === NO_VALUE_COLUMN);
+        if (existing) {
+          existing.displayName = msg.newTitle;
+        } else {
+          columns.push({ value: NO_VALUE_COLUMN, displayName: msg.newTitle });
+        }
+      });
+      return;
+    }
+
+    const oldValue = msg.columnName;
+    const newValue = msg.newTitle;
+    if (oldValue === newValue) {
+      return;
+    }
+
+    // A normal column's identity IS the label value, so renaming it means bulk-
+    // updating that label's value on every card currently in it - mirroring
+    // Trilium's own rename-column behavior (packages/trilium-core/.../board.ts) -
+    // not just relabeling the column in board.json.
+    const column = state.columns.find((c) => c.name === oldValue);
+    if (column) {
+      await Promise.all(column.cards.map(async (card) => {
+        const attr = state.attributeByNoteId.get(card.noteId);
+        if (attr) {
+          await client.patchAttribute(attr.attributeId, { value: newValue });
+        }
+      }));
+    }
+
+    await withFreshBoardColumns((columns) => {
+      const renamed = columns.map((c) => (c.value === oldValue ? { ...c, value: newValue } : c));
+      if (!renamed.some((c) => c.value === newValue)) {
+        renamed.push({ value: newValue });
+      }
+      // If newValue collides with an already-tracked column, merge into it (keep
+      // the first entry's metadata) rather than persisting two rows for one value.
+      const seen = new Set<string>();
+      const deduped = renamed.filter((c) => {
+        if (seen.has(c.value)) {
+          return false;
+        }
+        seen.add(c.value);
+        return true;
+      });
+      columns.length = 0;
+      columns.push(...deduped);
+    });
+  }
+
   const messageDisposable = panel.webview.onDidReceiveMessage(async (msg: KanbanMessage) => {
     try {
       if (msg.type === 'move') {
@@ -760,6 +862,8 @@ export async function openKanbanViewPanel(client: EtapiClient, boardNote: Note):
         await persistDeleteColumn(msg);
       } else if (msg.type === 'setColumnColor') {
         await persistSetColumnColor(msg);
+      } else if (msg.type === 'renameColumn') {
+        await persistRenameColumn(msg);
       } else {
         return;
       }
