@@ -20,12 +20,12 @@ export interface LinkEmbedRenderMetadata {
 export function renderLinkEmbed(container: HTMLElement, metadata: LinkEmbedRenderMetadata, editable?: boolean): void {
   container.innerHTML = '';
 
-  // Only show the YouTube iframe embed when embedType isn't explicitly "opengraph" (Card mode
-  // forces opengraph even for a YouTube URL) — lets the user choose player vs. static card.
+  // Only show the YouTube facade when embedType isn't explicitly "opengraph" (Card mode forces
+  // opengraph even for a YouTube URL) — lets the user choose player vs. static card.
   const videoId = metadata.embedType !== 'opengraph' ? extractYouTubeVideoId(metadata.url) : null;
 
   if (videoId) {
-    container.append(buildVideoEmbed(videoId));
+    container.append(buildVideoEmbed(metadata, editable));
     return;
   }
 
@@ -41,24 +41,42 @@ export function renderLinkMention(
   container.append(buildMention(metadata, editable));
 }
 
-function buildVideoEmbed(videoId: string): HTMLElement {
+/**
+ * A YouTube thumbnail with a play button that opens the video in the user's default browser,
+ * rather than a live `<iframe>` player — VS Code's own webview sandbox has no working path to one
+ * (see the CSS comment above `.link-embed-video-facade`). The note's stored HTML only ever holds
+ * `data-url`/`data-embed-type="youtube"`, so this is purely how *this extension* displays it; the
+ * same note opened in actual Trilium still gets Trilium's own live player, unaffected.
+ */
+function buildVideoEmbed(metadata: LinkEmbedRenderMetadata, editable?: boolean): HTMLElement {
   const wrapper = document.createElement('div');
   wrapper.className = 'link-embed-video';
 
-  const iframe = document.createElement('iframe');
-  // No `origin` param: it's only needed for the postMessage-based IFrame Player API
-  // (enablejsapi=1), which this plain unscripted embed doesn't use. Including it anyway
-  // breaks playback with "Error configuring video player" (YouTube error 153) inside a VS
-  // Code webview, whose origin YouTube doesn't recognize/whitelist the same way a normal
-  // https:// site's origin would.
-  iframe.src = `https://www.youtube-nocookie.com/embed/${videoId}?rel=0`;
-  iframe.frameBorder = '0';
-  iframe.allowFullscreen = true;
-  iframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share';
-  iframe.referrerPolicy = 'strict-origin-when-cross-origin';
-  iframe.loading = 'lazy';
+  const facade = document.createElement('a');
+  facade.className = 'link-embed-video-facade';
+  facade.href = metadata.url;
+  // Same convention as the card link: in editing mode, omit target so this extension's own
+  // link-click handling (double-click/Ctrl+click inside the editable) still applies.
+  if (!editable) {
+    facade.target = '_blank';
+  }
+  facade.rel = 'noopener noreferrer';
+  facade.title = 'Watch on YouTube';
 
-  wrapper.append(iframe);
+  if (metadata.image) {
+    const thumbnail = document.createElement('img');
+    thumbnail.className = 'link-embed-video-thumbnail';
+    thumbnail.src = metadata.image;
+    thumbnail.alt = '';
+    thumbnail.loading = 'lazy';
+    facade.append(thumbnail);
+  }
+
+  const playButton = document.createElement('span');
+  playButton.className = 'link-embed-video-play';
+  facade.append(playButton);
+
+  wrapper.append(facade);
   return wrapper;
 }
 
