@@ -439,3 +439,80 @@
   white-space: nowrap;
   margin-top: auto;
 }
+
+/* ----------------------------------------------------------------------------
+ * IncludeNote widget (includenote.ts). Trilium's own styling for this box lives
+ * in its app-level stylesheet, not in the vendored CKEditor plugin package, so
+ * this is original styling (same bordered-box language and --vscode-* theme
+ * tokens as the rest of this file) rather than a port of specific upstream
+ * values. box-size-* controls the preview's max height; "full" and
+ * "expandable" both render unconstrained for v1 - there's no expand/collapse
+ * interaction wired up yet, just the four sizes the toolbar dropdown offers.
+ * ---------------------------------------------------------------------------- */
+
+.ck-content section.include-note {
+  display: block;
+  margin: 0.5em 0;
+  border: 1px solid var(--vscode-editorWidget-border, #c8c8c8);
+  border-radius: 4px;
+  background: var(--vscode-editorWidget-background, #f3f3f3);
+}
+
+.ck-content .include-note-wrapper {
+  display: block;
+}
+
+.ck-content .include-note-loading::before {
+  content: '';
+  display: block;
+  padding: 0.75em 1em;
+}
+
+.ck-content .include-note-header {
+  display: flex;
+  align-items: center;
+  padding: 0.4em 0.75em;
+  border-bottom: 1px solid var(--vscode-editorWidget-border, #c8c8c8);
+  font-size: 0.9em;
+  font-weight: 600;
+}
+
+.ck-content .include-note-title {
+  cursor: pointer;
+}
+
+.ck-content .include-note-title:hover {
+  text-decoration: underline;
+}
+
+.ck-content .include-note-content {
+  padding: 0.75em 1em;
+  overflow: auto;
+}
+
+.ck-content section.include-note.box-size-small .include-note-content {
+  max-height: 150px;
+}
+
+.ck-content section.include-note.box-size-medium .include-note-content {
+  max-height: 350px;
+}
+
+.ck-content .include-note-content-image img {
+  max-width: 100%;
+  height: auto;
+}
+
+.ck-content .include-note-content-code pre {
+  margin: 0;
+  overflow: auto;
+}
+
+.ck-content .include-note-content-mermaid svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.ck-content .include-note-fallback-link {
+  display: inline-block;
+}
