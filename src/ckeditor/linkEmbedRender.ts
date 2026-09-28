@@ -46,7 +46,12 @@ function buildVideoEmbed(videoId: string): HTMLElement {
   wrapper.className = 'link-embed-video';
 
   const iframe = document.createElement('iframe');
-  iframe.src = `https://www.youtube-nocookie.com/embed/${videoId}?origin=${encodeURIComponent(location.origin)}&rel=0`;
+  // No `origin` param: it's only needed for the postMessage-based IFrame Player API
+  // (enablejsapi=1), which this plain unscripted embed doesn't use. Including it anyway
+  // breaks playback with "Error configuring video player" (YouTube error 153) inside a VS
+  // Code webview, whose origin YouTube doesn't recognize/whitelist the same way a normal
+  // https:// site's origin would.
+  iframe.src = `https://www.youtube-nocookie.com/embed/${videoId}?rel=0`;
   iframe.frameBorder = '0';
   iframe.allowFullscreen = true;
   iframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share';
