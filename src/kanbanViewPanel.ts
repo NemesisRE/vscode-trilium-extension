@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { Attribute, EtapiClient, Note } from './etapiClient';
+import { getIconSvg, showIconPickerPanel } from './iconPickerPanel';
 
 interface KanbanMoveMessage {
   type: 'move';
@@ -30,13 +31,30 @@ interface KanbanRenameColumnMessage {
   columnName: string;
   newTitle: string;
 }
+interface KanbanSetColumnIconMessage {
+  type: 'setColumnIcon';
+  columnName: string;
+  icon: string | undefined;
+}
+interface KanbanAddColumnMessage {
+  type: 'addColumn';
+  name: string;
+  icon: string | undefined;
+}
+interface KanbanShowIconPickerMessage {
+  type: 'showIconPicker';
+  id: string;
+}
 type KanbanMessage =
   | KanbanMoveMessage
   | KanbanReorderColumnsMessage
   | KanbanArchiveColumnMessage
   | KanbanDeleteColumnMessage
   | KanbanSetColumnColorMessage
-  | KanbanRenameColumnMessage;
+  | KanbanRenameColumnMessage
+  | KanbanSetColumnIconMessage
+  | KanbanAddColumnMessage
+  | KanbanShowIconPickerMessage;
 
 interface CardEntry {
   noteId: string;
@@ -49,6 +67,9 @@ interface ColumnState {
   archived: boolean;
   displayName?: string;
   color?: string;
+  icon?: string;
+  /** Inline SVG for `icon`, resolved host-side so the CSP-restrictive webview never needs the icon font. */
+  iconSvg?: string;
 }
 
 /**
@@ -223,7 +244,7 @@ function computeDisplayColumnOrder(storageOrder: string[]): string[] {
   return storageOrder.includes(NO_VALUE_COLUMN) ? storageOrder : [NO_VALUE_COLUMN, ...storageOrder];
 }
 
-async function loadBoardState(client: EtapiClient, boardNote: Note): Promise<BoardState> {
+async function loadBoardState(client: EtapiClient, boardNote: Note, context: vscode.ExtensionContext): Promise<BoardState> {
   const parent = await client.getNote(boardNote.noteId);
   const children = await Promise.all(parent.childNoteIds.map((id) => client.getNote(id)));
   const groupByLabel = getBoardGroupByLabel(parent);
@@ -276,18 +297,23 @@ async function loadBoardState(client: EtapiClient, boardNote: Note): Promise<Boa
     (c.attributes ?? []).find((a) => a.type === 'label' && a.name === groupByLabel),
   ]));
 
+  const columns = await Promise.all(displayOrder.map(async (name) => {
+    const entry = columnEntryByValue.get(name);
+    const icon = entry?.icon;
+    return {
+      name,
+      cards: cardsByColumn.get(name) ?? [],
+      archived: entry?.archived === true,
+      displayName: entry?.displayName,
+      color: entry?.color,
+      icon,
+      iconSvg: icon ? await getIconSvg(context, icon) : undefined,
+    };
+  }));
+
   return {
     groupByLabel,
-    columns: displayOrder.map((name) => {
-      const entry = columnEntryByValue.get(name);
-      return {
-        name,
-        cards: cardsByColumn.get(name) ?? [],
-        archived: entry?.archived === true,
-        displayName: entry?.displayName,
-        color: entry?.color,
-      };
-    }),
+    columns,
     attributeByNoteId,
     branchByNoteId: branchByNoteId as Map<string, string>,
   };
@@ -349,6 +375,9 @@ function buildHtml(webview: vscode.Webview, boardTitle: string, initialState: Bo
       gap: 6px;
       cursor: grab;
     }
+    .columnIcon { flex: 0 0 auto; display: inline-flex; align-items: center; width: 16px; height: 16px; }
+    .columnIcon svg { width: 16px; height: 16px; }
+    .columnIcon svg *:not([fill="none"]) { fill: currentColor; }
     .columnTitle { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .columnCount {
       flex: 0 0 auto;
@@ -401,14 +430,37 @@ function buildHtml(webview: vscode.Webview, boardTitle: string, initialState: Bo
     .board.dragover { outline: 1px dashed var(--vscode-focusBorder); }
     .toolbar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
     .toolbar label { font-size: 12px; color: var(--vscode-descriptionForeground); display: flex; align-items: center; gap: 4px; }
-    .addColumn { display: flex; gap: 6px; }
-    .addColumn input {
+    .newColumnCell {
+      min-width: 160px;
+      max-width: 200px;
+      flex: 0 0 auto;
+      border: 1px dashed var(--vscode-editorWidget-border);
+      border-radius: 6px;
+      background: transparent;
+      padding: 8px;
+    }
+    .newColumnTrigger {
+      width: 100%;
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--vscode-descriptionForeground);
+      text-align: left;
+      padding: 6px 4px;
+    }
+    .newColumnTrigger:hover { color: var(--vscode-foreground); background: var(--vscode-list-hoverBackground); }
+    .newColumnForm { display: flex; flex-direction: column; gap: 6px; }
+    .newColumnForm input {
       background: var(--vscode-input-background);
       color: var(--vscode-input-foreground);
       border: 1px solid var(--vscode-input-border, transparent);
       border-radius: 4px;
       padding: 4px 8px;
+      font: inherit;
     }
+    .newColumnIconBtn { align-self: flex-start; display: flex; align-items: center; gap: 6px; }
+    .newColumnIconBtn .columnIcon { width: 14px; height: 14px; }
+    .newColumnIconBtn .columnIcon svg { width: 14px; height: 14px; }
+    .newColumnFormActions { display: flex; gap: 6px; }
     button {
       border: 1px solid var(--vscode-button-border, transparent);
       background: var(--vscode-button-secondaryBackground);
@@ -430,10 +482,6 @@ function buildHtml(webview: vscode.Webview, boardTitle: string, initialState: Bo
     </div>
     <div class="board" id="board"></div>
     <div class="toolbar">
-      <div class="addColumn">
-        <input id="newColumnName" type="text" placeholder="New column value" />
-        <button id="addColumnBtn">Add Column</button>
-      </div>
       <label><input type="checkbox" id="showArchived" /> Show archived columns</label>
     </div>
   </div>
@@ -469,6 +517,21 @@ function buildHtml(webview: vscode.Webview, boardTitle: string, initialState: Bo
       const maxTop = Math.max(0, window.innerHeight - contextMenu.offsetHeight - 4);
       contextMenu.style.left = Math.min(x, maxLeft) + 'px';
       contextMenu.style.top = Math.min(y, maxTop) + 'px';
+    }
+
+    function requestIconPicker() {
+      return new Promise((resolve) => {
+        const id = 'icon-' + Math.random().toString(36).slice(2);
+        const handler = (event) => {
+          const msg = event.data;
+          if (msg.type === 'iconPickerResult' && msg.id === id) {
+            window.removeEventListener('message', handler);
+            resolve(msg.iconClass);
+          }
+        };
+        window.addEventListener('message', handler);
+        vscode.postMessage({ type: 'showIconPicker', id });
+      });
     }
 
     document.addEventListener('click', hideContextMenu);
@@ -557,7 +620,12 @@ function buildHtml(webview: vscode.Webview, boardTitle: string, initialState: Bo
           const rect = sib.getBoundingClientRect();
           if (event.clientX < rect.left + rect.width / 2) { next = sib; break; }
         }
-        if (next) { container.insertBefore(draggedColumn, next); } else { container.appendChild(draggedColumn); }
+        if (next) {
+          container.insertBefore(draggedColumn, next);
+        } else {
+          const trailing = container.querySelector('.newColumnCell');
+          if (trailing) { container.insertBefore(draggedColumn, trailing); } else { container.appendChild(draggedColumn); }
+        }
       });
       container.addEventListener('dragleave', () => container.classList.remove('dragover'));
       container.addEventListener('drop', (event) => {
@@ -583,6 +651,12 @@ function buildHtml(webview: vscode.Webview, boardTitle: string, initialState: Bo
       div.style.borderTopColor = col.color || '';
       const header = document.createElement('div');
       header.className = 'columnHeader';
+      if (col.iconSvg) {
+        const icon = document.createElement('span');
+        icon.className = 'columnIcon';
+        icon.innerHTML = col.iconSvg;
+        header.appendChild(icon);
+      }
       const title = document.createElement('span');
       title.className = 'columnTitle';
       title.textContent = columnTitle(col, groupByLabel);
@@ -643,6 +717,22 @@ function buildHtml(webview: vscode.Webview, boardTitle: string, initialState: Bo
           });
         }
         items.push({
+          label: 'Set Icon…', onClick: async () => {
+            const iconClass = await requestIconPicker();
+            if (iconClass === undefined) { return; }
+            syncStateEl.textContent = 'saving…';
+            vscode.postMessage({ type: 'setColumnIcon', columnName: col.name, icon: iconClass });
+          },
+        });
+        if (col.icon) {
+          items.push({
+            label: 'Clear Icon', onClick: () => {
+              syncStateEl.textContent = 'saving…';
+              vscode.postMessage({ type: 'setColumnIcon', columnName: col.name, icon: undefined });
+            },
+          });
+        }
+        items.push({
           label: col.archived ? 'Unarchive' : 'Archive', onClick: () => {
             syncStateEl.textContent = 'saving…';
             vscode.postMessage({ type: 'archiveColumn', columnName: col.name, archived: !col.archived });
@@ -669,6 +759,81 @@ function buildHtml(webview: vscode.Webview, boardTitle: string, initialState: Bo
       return div;
     }
 
+    function newColumnCellEl() {
+      const div = document.createElement('div');
+      div.className = 'newColumnCell';
+
+      function renderIdle() {
+        div.innerHTML = '';
+        const trigger = document.createElement('button');
+        trigger.type = 'button';
+        trigger.className = 'newColumnTrigger';
+        trigger.textContent = '+ New Column';
+        trigger.addEventListener('click', renderForm);
+        div.appendChild(trigger);
+      }
+
+      function renderForm() {
+        div.innerHTML = '';
+        let chosenIcon;
+
+        const form = document.createElement('div');
+        form.className = 'newColumnForm';
+
+        const iconBtn = document.createElement('button');
+        iconBtn.type = 'button';
+        iconBtn.className = 'newColumnIconBtn';
+        iconBtn.textContent = 'Icon…';
+        iconBtn.addEventListener('click', async () => {
+          const iconClass = await requestIconPicker();
+          if (iconClass === undefined) { return; }
+          chosenIcon = iconClass;
+          iconBtn.textContent = iconClass;
+        });
+
+        const nameInput = document.createElement('input');
+        nameInput.type = 'text';
+        nameInput.placeholder = 'Column name';
+        nameInput.addEventListener('click', (event) => event.stopPropagation());
+
+        function submit() {
+          const name = nameInput.value.trim();
+          if (!name) { return; }
+          if (lastState && lastState.columns.some((c) => c.name === name)) { return; }
+          syncStateEl.textContent = 'saving…';
+          vscode.postMessage({ type: 'addColumn', name, icon: chosenIcon });
+          renderIdle();
+        }
+
+        nameInput.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter') { submit(); }
+          if (event.key === 'Escape') { renderIdle(); }
+        });
+
+        const actions = document.createElement('div');
+        actions.className = 'newColumnFormActions';
+        const addBtn = document.createElement('button');
+        addBtn.type = 'button';
+        addBtn.textContent = 'Add';
+        addBtn.addEventListener('click', submit);
+        const cancelBtn = document.createElement('button');
+        cancelBtn.type = 'button';
+        cancelBtn.textContent = 'Cancel';
+        cancelBtn.addEventListener('click', renderIdle);
+        actions.appendChild(addBtn);
+        actions.appendChild(cancelBtn);
+
+        form.appendChild(iconBtn);
+        form.appendChild(nameInput);
+        form.appendChild(actions);
+        div.appendChild(form);
+        nameInput.focus();
+      }
+
+      renderIdle();
+      return div;
+    }
+
     attachBoard(board);
     let lastState = null;
     const showArchivedEl = document.getElementById('showArchived');
@@ -681,23 +846,11 @@ function buildHtml(webview: vscode.Webview, boardTitle: string, initialState: Bo
       state.columns
         .filter((col) => showArchived || !col.archived)
         .forEach((col) => board.appendChild(columnEl(col, state.groupByLabel)));
+      board.appendChild(newColumnCellEl());
     }
 
     showArchivedEl.addEventListener('change', () => {
       if (lastState) { render(lastState); }
-    });
-
-    document.getElementById('addColumnBtn').addEventListener('click', () => {
-      const input = document.getElementById('newColumnName');
-      const name = input.value.trim();
-      if (!name) { return; }
-      if (board.querySelector('.column[data-column="' + CSS.escape(name) + '"]')) { return; }
-      const col = columnEl({ name, cards: [] }, groupByLabelEl.textContent);
-      board.appendChild(col);
-      input.value = '';
-      const columnNames = Array.from(board.querySelectorAll('.column')).map((c) => c.dataset.column);
-      syncStateEl.textContent = 'saving…';
-      vscode.postMessage({ type: 'reorderColumns', columnNames });
     });
 
     window.addEventListener('message', (event) => {
@@ -723,8 +876,8 @@ function buildHtml(webview: vscode.Webview, boardTitle: string, initialState: Bo
 </html>`;
 }
 
-export async function openKanbanViewPanel(client: EtapiClient, boardNote: Note): Promise<void> {
-  let state = await loadBoardState(client, boardNote);
+export async function openKanbanViewPanel(client: EtapiClient, boardNote: Note, context: vscode.ExtensionContext): Promise<void> {
+  let state = await loadBoardState(client, boardNote, context);
 
   const panel = vscode.window.createWebviewPanel(
     'triliumKanbanView',
@@ -896,7 +1049,40 @@ export async function openKanbanViewPanel(client: EtapiClient, boardNote: Note):
     });
   }
 
+  async function persistSetColumnIcon(msg: KanbanSetColumnIconMessage): Promise<void> {
+    await withFreshBoardColumns((columns) => {
+      const existing = columns.find((c) => c.value === msg.columnName);
+      if (existing) {
+        if (msg.icon) {
+          existing.icon = msg.icon;
+        } else {
+          delete existing.icon;
+        }
+      } else if (msg.icon) {
+        columns.push({ value: msg.columnName, icon: msg.icon });
+      }
+    });
+  }
+
+  async function persistAddColumn(msg: KanbanAddColumnMessage): Promise<void> {
+    await withFreshBoardColumns((columns) => {
+      if (columns.some((c) => c.value === msg.name)) {
+        return;
+      }
+      const entry: BoardColumnData = { value: msg.name };
+      if (msg.icon) {
+        entry.icon = msg.icon;
+      }
+      columns.push(entry);
+    });
+  }
+
   const messageDisposable = panel.webview.onDidReceiveMessage(async (msg: KanbanMessage) => {
+    if (msg.type === 'showIconPicker') {
+      const iconClass = await showIconPickerPanel(context);
+      void panel.webview.postMessage({ type: 'iconPickerResult', id: msg.id, iconClass });
+      return;
+    }
     try {
       if (msg.type === 'move') {
         await persistMove(msg);
@@ -910,12 +1096,16 @@ export async function openKanbanViewPanel(client: EtapiClient, boardNote: Note):
         await persistSetColumnColor(msg);
       } else if (msg.type === 'renameColumn') {
         await persistRenameColumn(msg);
+      } else if (msg.type === 'setColumnIcon') {
+        await persistSetColumnIcon(msg);
+      } else if (msg.type === 'addColumn') {
+        await persistAddColumn(msg);
       } else {
         return;
       }
       // Re-fetch so our local attribute/branch maps (used by the next move and by
       // the refresh poll's diff) reflect what was just written.
-      state = await loadBoardState(client, boardNote);
+      state = await loadBoardState(client, boardNote, context);
       lastSignature = JSON.stringify(state.columns);
       void panel.webview.postMessage({ type: 'refresh', groupByLabel: state.groupByLabel, columns: state.columns });
     } catch (err) {
@@ -930,7 +1120,7 @@ export async function openKanbanViewPanel(client: EtapiClient, boardNote: Note):
       return;
     }
     try {
-      const fresh = await loadBoardState(client, boardNote);
+      const fresh = await loadBoardState(client, boardNote, context);
       const signature = JSON.stringify(fresh.columns);
       if (signature !== lastSignature) {
         state = fresh;
