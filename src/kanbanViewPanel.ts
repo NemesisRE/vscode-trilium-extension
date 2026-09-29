@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { Attribute, EtapiClient, Note } from './etapiClient';
 import { getIconSvg, showIconPickerPanel } from './iconPickerPanel';
+import { effectiveIconClassForNote } from './noteTreeProvider';
 
 interface KanbanMoveMessage {
   type: 'move';
@@ -54,6 +55,24 @@ interface KanbanCreateCardMessage {
   columnName: string;
   title: string;
 }
+interface KanbanOpenCardMessage {
+  type: 'openCard';
+  noteId: string;
+}
+interface KanbanRenameCardMessage {
+  type: 'renameCard';
+  noteId: string;
+  newTitle: string;
+}
+interface KanbanSetCardIconMessage {
+  type: 'setCardIcon';
+  noteId: string;
+  icon: string | undefined;
+}
+interface KanbanDeleteCardMessage {
+  type: 'deleteCard';
+  noteId: string;
+}
 type KanbanMessage =
   | KanbanMoveMessage
   | KanbanReorderColumnsMessage
@@ -65,11 +84,18 @@ type KanbanMessage =
   | KanbanAddColumnMessage
   | KanbanShowIconPickerMessage
   | KanbanSetGroupByLabelMessage
-  | KanbanCreateCardMessage;
+  | KanbanCreateCardMessage
+  | KanbanOpenCardMessage
+  | KanbanRenameCardMessage
+  | KanbanSetCardIconMessage
+  | KanbanDeleteCardMessage;
 
 interface CardEntry {
   noteId: string;
   title: string;
+  icon?: string;
+  iconSvg?: string;
+  hasCustomIcon: boolean;
 }
 
 interface ColumnState {
@@ -274,8 +300,21 @@ async function loadBoardState(client: EtapiClient, boardNote: Note, context: vsc
       discoveredOrder.push(value);
       cardsByColumn.set(value, []);
     }
-    cardsByColumn.get(value)!.push({ noteId: child.noteId, title: child.title });
+    const hasCustomIcon = (child.attributes ?? []).some((a) => a.type === 'label' && a.name === 'iconClass');
+    cardsByColumn.get(value)!.push({
+      noteId: child.noteId,
+      title: child.title,
+      icon: effectiveIconClassForNote(child),
+      hasCustomIcon,
+    });
   }
+  // Resolve each card's icon to inline SVG in a separate pass (after cards are placed
+  // in their columns in stable order) so concurrent resolution can't reorder cards.
+  await Promise.all(
+    Array.from(cardsByColumn.values()).flat().map(async (card) => {
+      card.iconSvg = card.icon ? await getIconSvg(context, card.icon) : undefined;
+    }),
+  );
   // Keep an explicit "no value" column visible even when every card already has
   // the label, so there's somewhere to drag a card back to remove it.
   if (!cardsByColumn.has(NO_VALUE_COLUMN)) {
@@ -401,6 +440,9 @@ function buildHtml(webview: vscode.Webview, boardTitle: string, initialState: Bo
     }
     .cardList { list-style: none; margin: 0; padding: 8px; display: grid; gap: 6px; min-height: 40px; }
     .card {
+      display: flex;
+      align-items: center;
+      gap: 6px;
       border: 1px solid var(--vscode-editorWidget-border);
       border-radius: 4px;
       padding: 6px 8px;
@@ -409,6 +451,20 @@ function buildHtml(webview: vscode.Webview, boardTitle: string, initialState: Bo
       font-size: 13px;
     }
     .card.dragging { opacity: 0.5; }
+    .cardIcon { flex: 0 0 auto; display: inline-flex; align-items: center; width: 14px; height: 14px; color: var(--vscode-descriptionForeground); }
+    .cardIcon svg { width: 14px; height: 14px; }
+    .cardIcon svg *:not([fill="none"]) { fill: currentColor; }
+    .cardTitle { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .cardTitleInput {
+      flex: 1 1 auto;
+      min-width: 0;
+      font: inherit;
+      background: var(--vscode-input-background);
+      color: var(--vscode-input-foreground);
+      border: 1px solid var(--vscode-focusBorder);
+      border-radius: 3px;
+      padding: 1px 4px;
+    }
     .cardList.dragover { outline: 1px dashed var(--vscode-focusBorder); }
     .columnHeader {
       display: flex;
@@ -616,12 +672,89 @@ function buildHtml(webview: vscode.Webview, boardTitle: string, initialState: Bo
       if (event.key === 'Escape') { hideContextMenu(); }
     });
 
-    function cardEl(card) {
+    function cardEl(card, columnName) {
       const li = document.createElement('li');
       li.className = 'card';
       li.draggable = true;
       li.dataset.noteId = card.noteId;
-      li.textContent = card.title;
+
+      if (card.iconSvg) {
+        const icon = document.createElement('span');
+        icon.className = 'cardIcon';
+        icon.innerHTML = card.iconSvg;
+        li.appendChild(icon);
+      }
+
+      const title = document.createElement('span');
+      title.className = 'cardTitle';
+      title.textContent = card.title;
+      li.appendChild(title);
+
+      function startCardRename() {
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'cardTitleInput';
+        input.value = card.title;
+        li.replaceChild(input, title);
+        input.focus();
+        input.select();
+        input.addEventListener('click', (event) => event.stopPropagation());
+        input.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter') { input.blur(); }
+          if (event.key === 'Escape') { input.value = card.title; input.blur(); }
+        });
+        input.addEventListener('blur', () => {
+          li.replaceChild(title, input);
+          const newTitle = input.value.trim();
+          if (!newTitle || newTitle === card.title) { return; }
+          syncStateEl.textContent = 'saving…';
+          vscode.postMessage({ type: 'renameCard', noteId: card.noteId, newTitle });
+        });
+      }
+
+      li.addEventListener('contextmenu', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const items = [
+          { label: 'Open Note', onClick: () => vscode.postMessage({ type: 'openCard', noteId: card.noteId }) },
+          { label: 'Rename', onClick: startCardRename },
+          {
+            label: 'Set Icon…', onClick: async () => {
+              const iconClass = await requestIconPicker();
+              if (iconClass === undefined) { return; }
+              syncStateEl.textContent = 'saving…';
+              vscode.postMessage({ type: 'setCardIcon', noteId: card.noteId, icon: iconClass });
+            },
+          },
+        ];
+        if (card.hasCustomIcon) {
+          items.push({
+            label: 'Clear Icon', onClick: () => {
+              syncStateEl.textContent = 'saving…';
+              vscode.postMessage({ type: 'setCardIcon', noteId: card.noteId, icon: undefined });
+            },
+          });
+        }
+        const otherColumns = (lastState ? lastState.columns : []).filter((c) => c.name !== columnName && !c.archived);
+        otherColumns.forEach((c) => {
+          items.push({
+            label: 'Move to ' + columnTitle(c, lastState.groupByLabel),
+            onClick: () => {
+              const columnNoteIds = c.cards.map((existing) => existing.noteId).concat(card.noteId);
+              syncStateEl.textContent = 'saving…';
+              vscode.postMessage({ type: 'move', noteId: card.noteId, toColumn: c.name, columnNoteIds });
+            },
+          });
+        });
+        items.push({
+          label: 'Delete Note…', onClick: () => {
+            syncStateEl.textContent = 'saving…';
+            vscode.postMessage({ type: 'deleteCard', noteId: card.noteId });
+          },
+        });
+        openContextMenu(items, event.clientX, event.clientY);
+      });
+
       attachCard(li);
       return li;
     }
@@ -828,7 +961,7 @@ function buildHtml(webview: vscode.Webview, boardTitle: string, initialState: Bo
 
       const list = document.createElement('ul');
       list.className = 'cardList';
-      col.cards.forEach((card) => list.appendChild(cardEl(card)));
+      col.cards.forEach((card) => list.appendChild(cardEl(card, col.name)));
       attachList(list);
       attachColumn(div);
 
@@ -1247,10 +1380,49 @@ export async function openKanbanViewPanel(client: EtapiClient, boardNote: Note, 
     await client.refreshNoteOrdering(boardNote.noteId);
   }
 
+  async function persistRenameCard(msg: KanbanRenameCardMessage): Promise<void> {
+    await client.patchNote(msg.noteId, { title: msg.newTitle });
+  }
+
+  // A card's own icon is Trilium's real `#iconClass` label on the note itself - the
+  // same attribute Trilium's own note-icon feature reads/writes.
+  async function persistSetCardIcon(msg: KanbanSetCardIconMessage): Promise<void> {
+    const note = await client.getNote(msg.noteId);
+    const existing = (note.attributes ?? []).find((a) => a.type === 'label' && a.name === 'iconClass');
+    if (msg.icon) {
+      if (existing) {
+        if (existing.value !== msg.icon) {
+          await client.patchAttribute(existing.attributeId, { value: msg.icon });
+        }
+      } else {
+        await client.createAttribute(msg.noteId, 'label', 'iconClass', msg.icon);
+      }
+    } else if (existing) {
+      await client.deleteAttribute(existing.attributeId);
+    }
+  }
+
+  async function persistDeleteCard(msg: KanbanDeleteCardMessage): Promise<void> {
+    const cardTitle = state.columns.flatMap((c) => c.cards).find((c) => c.noteId === msg.noteId)?.title;
+    const confirm = await vscode.window.showWarningMessage(
+      `Delete note "${cardTitle ?? msg.noteId}"? This cannot be undone.`,
+      { modal: true },
+      'Delete',
+    );
+    if (confirm !== 'Delete') {
+      return;
+    }
+    await client.deleteNote(msg.noteId);
+  }
+
   const messageDisposable = panel.webview.onDidReceiveMessage(async (msg: KanbanMessage) => {
     if (msg.type === 'showIconPicker') {
       const iconClass = await showIconPickerPanel(context);
       void panel.webview.postMessage({ type: 'iconPickerResult', id: msg.id, iconClass });
+      return;
+    }
+    if (msg.type === 'openCard') {
+      await vscode.commands.executeCommand('trilium.openNoteById', msg.noteId);
       return;
     }
     try {
@@ -1274,6 +1446,12 @@ export async function openKanbanViewPanel(client: EtapiClient, boardNote: Note, 
         await persistSetGroupByLabel(msg);
       } else if (msg.type === 'createCard') {
         await persistCreateCard(msg);
+      } else if (msg.type === 'renameCard') {
+        await persistRenameCard(msg);
+      } else if (msg.type === 'setCardIcon') {
+        await persistSetCardIcon(msg);
+      } else if (msg.type === 'deleteCard') {
+        await persistDeleteCard(msg);
       } else {
         return;
       }
