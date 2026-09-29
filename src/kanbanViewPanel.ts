@@ -45,6 +45,10 @@ interface KanbanShowIconPickerMessage {
   type: 'showIconPicker';
   id: string;
 }
+interface KanbanSetGroupByLabelMessage {
+  type: 'setGroupByLabel';
+  label: string;
+}
 type KanbanMessage =
   | KanbanMoveMessage
   | KanbanReorderColumnsMessage
@@ -54,7 +58,8 @@ type KanbanMessage =
   | KanbanRenameColumnMessage
   | KanbanSetColumnIconMessage
   | KanbanAddColumnMessage
-  | KanbanShowIconPickerMessage;
+  | KanbanShowIconPickerMessage
+  | KanbanSetGroupByLabelMessage;
 
 interface CardEntry {
   noteId: string;
@@ -96,6 +101,8 @@ interface BoardColumnData {
 interface BoardState {
   groupByLabel: string;
   columns: ColumnState[];
+  /** Distinct label names found on the board's cards, for the "Status" grouping dropdown. */
+  availableGroupByLabels: string[];
   attributeByNoteId: Map<string, Attribute | undefined>;
   branchByNoteId: Map<string, string>;
 }
@@ -297,6 +304,16 @@ async function loadBoardState(client: EtapiClient, boardNote: Note, context: vsc
     (c.attributes ?? []).find((a) => a.type === 'label' && a.name === groupByLabel),
   ]));
 
+  const labelNames = new Set<string>(['status', groupByLabel]);
+  for (const child of children) {
+    for (const attr of child.attributes ?? []) {
+      if (attr.type === 'label') {
+        labelNames.add(attr.name);
+      }
+    }
+  }
+  const availableGroupByLabels = Array.from(labelNames).sort();
+
   const columns = await Promise.all(displayOrder.map(async (name) => {
     const entry = columnEntryByValue.get(name);
     const icon = entry?.icon;
@@ -314,6 +331,7 @@ async function loadBoardState(client: EtapiClient, boardNote: Note, context: vsc
   return {
     groupByLabel,
     columns,
+    availableGroupByLabels,
     attributeByNoteId,
     branchByNoteId: branchByNoteId as Map<string, string>,
   };
@@ -324,6 +342,7 @@ function buildHtml(webview: vscode.Webview, boardTitle: string, initialState: Bo
   const initialPayload = {
     groupByLabel: initialState.groupByLabel,
     columns: initialState.columns,
+    availableGroupByLabels: initialState.availableGroupByLabels,
   };
 
   return `<!DOCTYPE html>
@@ -336,7 +355,25 @@ function buildHtml(webview: vscode.Webview, boardTitle: string, initialState: Bo
   <style>
     body { font-family: var(--vscode-font-family); color: var(--vscode-foreground); background: var(--vscode-editor-background); margin: 0; }
     .wrap { padding: 14px; display: grid; gap: 10px; }
-    .header { font-size: 13px; color: var(--vscode-descriptionForeground); display: flex; justify-content: space-between; gap: 8px; }
+    .header { font-size: 13px; color: var(--vscode-descriptionForeground); display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .headerRight { display: flex; align-items: center; gap: 8px; }
+    .statusSelect {
+      background: var(--vscode-dropdown-background, var(--vscode-input-background));
+      color: var(--vscode-dropdown-foreground, var(--vscode-input-foreground));
+      border: 1px solid var(--vscode-dropdown-border, var(--vscode-input-border, transparent));
+      border-radius: 4px;
+      padding: 3px 6px;
+      font: inherit;
+    }
+    .filterInput {
+      background: var(--vscode-input-background);
+      color: var(--vscode-input-foreground);
+      border: 1px solid var(--vscode-input-border, transparent);
+      border-radius: 4px;
+      padding: 3px 8px;
+      font: inherit;
+      min-width: 160px;
+    }
     .syncState { font-size: 11px; color: var(--vscode-descriptionForeground); }
     .parent { font-weight: 600; margin-top: 4px; }
     .board { display: flex; gap: 10px; align-items: flex-start; overflow-x: auto; padding-bottom: 4px; }
@@ -350,7 +387,6 @@ function buildHtml(webview: vscode.Webview, boardTitle: string, initialState: Bo
       display: flex;
       flex-direction: column;
     }
-    .column { border-top: 3px solid var(--vscode-editorWidget-border); }
     .columnHeader {
       padding: 8px 10px;
       font-weight: 600;
@@ -475,8 +511,12 @@ function buildHtml(webview: vscode.Webview, boardTitle: string, initialState: Bo
   <div class="wrap">
     <div>
       <div class="header">
-        <span>Board &middot; grouped by #<span id="groupByLabel"></span></span>
-        <span class="syncState" id="syncState">synced</span>
+        <span>Board</span>
+        <div class="headerRight">
+          <select id="groupBySelect" class="statusSelect" title="Grouped by"></select>
+          <input id="boardFilter" class="filterInput" type="text" placeholder="Filter board..." />
+          <span class="syncState" id="syncState">synced</span>
+        </div>
       </div>
       <div class="parent">${escapeHtml(boardTitle)}</div>
     </div>
@@ -489,7 +529,8 @@ function buildHtml(webview: vscode.Webview, boardTitle: string, initialState: Bo
   <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
     const board = document.getElementById('board');
-    const groupByLabelEl = document.getElementById('groupByLabel');
+    const groupBySelect = document.getElementById('groupBySelect');
+    const filterInput = document.getElementById('boardFilter');
     const syncStateEl = document.getElementById('syncState');
     const contextMenu = document.getElementById('columnContextMenu');
     let dragged = null;
@@ -648,13 +689,16 @@ function buildHtml(webview: vscode.Webview, boardTitle: string, initialState: Bo
       div.className = 'column' + (col.archived ? ' archived' : '');
       div.dataset.column = col.name;
       div.dataset.archived = col.archived ? 'true' : 'false';
-      div.style.borderTopColor = col.color || '';
+      div.style.background = col.color
+        ? 'color-mix(in srgb, ' + col.color + ' 18%, var(--vscode-sideBar-background))'
+        : '';
       const header = document.createElement('div');
       header.className = 'columnHeader';
       if (col.iconSvg) {
         const icon = document.createElement('span');
         icon.className = 'columnIcon';
         icon.innerHTML = col.iconSvg;
+        if (col.color) { icon.style.color = col.color; }
         header.appendChild(icon);
       }
       const title = document.createElement('span');
@@ -836,21 +880,54 @@ function buildHtml(webview: vscode.Webview, boardTitle: string, initialState: Bo
 
     attachBoard(board);
     let lastState = null;
+    let filterTerm = '';
     const showArchivedEl = document.getElementById('showArchived');
+
+    function applyFilter() {
+      board.querySelectorAll('.card').forEach((card) => {
+        const match = !filterTerm || card.textContent.toLowerCase().includes(filterTerm);
+        card.style.display = match ? '' : 'none';
+      });
+    }
+
+    function renderGroupBySelect(state) {
+      const labels = state.availableGroupByLabels && state.availableGroupByLabels.length
+        ? state.availableGroupByLabels
+        : [state.groupByLabel];
+      groupBySelect.innerHTML = '';
+      labels.forEach((label) => {
+        const opt = document.createElement('option');
+        opt.value = label;
+        opt.textContent = label;
+        groupBySelect.appendChild(opt);
+      });
+      groupBySelect.value = state.groupByLabel;
+    }
 
     function render(state) {
       lastState = state;
-      groupByLabelEl.textContent = state.groupByLabel;
+      renderGroupBySelect(state);
       board.innerHTML = '';
       const showArchived = showArchivedEl.checked;
       state.columns
         .filter((col) => showArchived || !col.archived)
         .forEach((col) => board.appendChild(columnEl(col, state.groupByLabel)));
       board.appendChild(newColumnCellEl());
+      applyFilter();
     }
 
     showArchivedEl.addEventListener('change', () => {
       if (lastState) { render(lastState); }
+    });
+
+    groupBySelect.addEventListener('change', () => {
+      syncStateEl.textContent = 'saving…';
+      vscode.postMessage({ type: 'setGroupByLabel', label: groupBySelect.value });
+    });
+
+    filterInput.addEventListener('input', () => {
+      filterTerm = filterInput.value.trim().toLowerCase();
+      applyFilter();
     });
 
     window.addEventListener('message', (event) => {
@@ -865,7 +942,7 @@ function buildHtml(webview: vscode.Webview, boardTitle: string, initialState: Bo
       }
       if (msg.type === 'refresh') {
         if (dragging) { return; } // don't yank a card out from under an in-progress drag
-        render({ groupByLabel: msg.groupByLabel, columns: msg.columns });
+        render({ groupByLabel: msg.groupByLabel, columns: msg.columns, availableGroupByLabels: msg.availableGroupByLabels });
         syncStateEl.textContent = 'synced';
       }
     });
@@ -1077,6 +1154,20 @@ export async function openKanbanViewPanel(client: EtapiClient, boardNote: Note, 
     });
   }
 
+  // The active grouping label lives directly on the board note itself (`#board:groupBy`),
+  // not in board.json - matches Trilium's own storage for it.
+  async function persistSetGroupByLabel(msg: KanbanSetGroupByLabelMessage): Promise<void> {
+    const parent = await client.getNote(boardNote.noteId);
+    const existing = (parent.attributes ?? []).find((a) => a.type === 'label' && a.name === 'board:groupBy');
+    if (existing) {
+      if (existing.value !== msg.label) {
+        await client.patchAttribute(existing.attributeId, { value: msg.label });
+      }
+    } else {
+      await client.createAttribute(boardNote.noteId, 'label', 'board:groupBy', msg.label);
+    }
+  }
+
   const messageDisposable = panel.webview.onDidReceiveMessage(async (msg: KanbanMessage) => {
     if (msg.type === 'showIconPicker') {
       const iconClass = await showIconPickerPanel(context);
@@ -1100,6 +1191,8 @@ export async function openKanbanViewPanel(client: EtapiClient, boardNote: Note, 
         await persistSetColumnIcon(msg);
       } else if (msg.type === 'addColumn') {
         await persistAddColumn(msg);
+      } else if (msg.type === 'setGroupByLabel') {
+        await persistSetGroupByLabel(msg);
       } else {
         return;
       }
@@ -1107,7 +1200,12 @@ export async function openKanbanViewPanel(client: EtapiClient, boardNote: Note, 
       // the refresh poll's diff) reflect what was just written.
       state = await loadBoardState(client, boardNote, context);
       lastSignature = JSON.stringify(state.columns);
-      void panel.webview.postMessage({ type: 'refresh', groupByLabel: state.groupByLabel, columns: state.columns });
+      void panel.webview.postMessage({
+        type: 'refresh',
+        groupByLabel: state.groupByLabel,
+        columns: state.columns,
+        availableGroupByLabels: state.availableGroupByLabels,
+      });
     } catch (err) {
       void panel.webview.postMessage({ type: 'saveFailed' });
       void vscode.window.showErrorMessage(`Trilium: Failed to save board change: ${err}`);
@@ -1129,6 +1227,7 @@ export async function openKanbanViewPanel(client: EtapiClient, boardNote: Note, 
           type: 'refresh',
           groupByLabel: fresh.groupByLabel,
           columns: fresh.columns,
+          availableGroupByLabels: fresh.availableGroupByLabels,
         });
       }
     } catch {
