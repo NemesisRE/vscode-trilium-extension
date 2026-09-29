@@ -49,6 +49,11 @@ interface KanbanSetGroupByLabelMessage {
   type: 'setGroupByLabel';
   label: string;
 }
+interface KanbanCreateCardMessage {
+  type: 'createCard';
+  columnName: string;
+  title: string;
+}
 type KanbanMessage =
   | KanbanMoveMessage
   | KanbanReorderColumnsMessage
@@ -59,7 +64,8 @@ type KanbanMessage =
   | KanbanSetColumnIconMessage
   | KanbanAddColumnMessage
   | KanbanShowIconPickerMessage
-  | KanbanSetGroupByLabelMessage;
+  | KanbanSetGroupByLabelMessage
+  | KanbanCreateCardMessage;
 
 interface CardEntry {
   noteId: string;
@@ -464,8 +470,28 @@ function buildHtml(webview: vscode.Webview, boardTitle: string, initialState: Bo
     .column.draggingColumn { opacity: 0.5; }
     .column.archived { opacity: 0.5; }
     .board.dragover { outline: 1px dashed var(--vscode-focusBorder); }
-    .toolbar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-    .toolbar label { font-size: 12px; color: var(--vscode-descriptionForeground); display: flex; align-items: center; gap: 4px; }
+    .addCardRow { padding: 4px 8px 8px; }
+    .addCardTrigger {
+      width: 100%;
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--vscode-descriptionForeground);
+      text-align: left;
+      padding: 4px 6px;
+      font-size: 12px;
+    }
+    .addCardTrigger:hover { color: var(--vscode-foreground); background: var(--vscode-list-hoverBackground); border-radius: 4px; }
+    .addCardInput {
+      width: 100%;
+      box-sizing: border-box;
+      background: var(--vscode-input-background);
+      color: var(--vscode-input-foreground);
+      border: 1px solid var(--vscode-focusBorder);
+      border-radius: 4px;
+      padding: 4px 6px;
+      font: inherit;
+      font-size: 13px;
+    }
     .newColumnCell {
       min-width: 160px;
       max-width: 200px;
@@ -521,9 +547,6 @@ function buildHtml(webview: vscode.Webview, boardTitle: string, initialState: Bo
       <div class="parent">${escapeHtml(boardTitle)}</div>
     </div>
     <div class="board" id="board"></div>
-    <div class="toolbar">
-      <label><input type="checkbox" id="showArchived" /> Show archived columns</label>
-    </div>
   </div>
   <div class="contextMenu" id="columnContextMenu"></div>
   <script nonce="${nonce}">
@@ -577,7 +600,17 @@ function buildHtml(webview: vscode.Webview, boardTitle: string, initialState: Bo
 
     document.addEventListener('click', hideContextMenu);
     document.addEventListener('contextmenu', (event) => {
-      if (!event.target.closest('.columnHeader')) { hideContextMenu(); }
+      if (event.target.closest('.columnHeader')) { return; } // handled by the column's own menu
+      if (event.target.closest('input, select')) { hideContextMenu(); return; } // keep the native menu in form controls
+      event.preventDefault();
+      const items = [{
+        label: showArchived ? 'Hide archived columns' : 'Show archived columns',
+        onClick: () => {
+          showArchived = !showArchived;
+          if (lastState) { render(lastState); }
+        },
+      }];
+      openContextMenu(items, event.clientX, event.clientY);
     });
     document.addEventListener('keydown', (event) => {
       if (event.key === 'Escape') { hideContextMenu(); }
@@ -798,8 +831,51 @@ function buildHtml(webview: vscode.Webview, boardTitle: string, initialState: Bo
       col.cards.forEach((card) => list.appendChild(cardEl(card)));
       attachList(list);
       attachColumn(div);
+
+      const addCardRow = document.createElement('div');
+      addCardRow.className = 'addCardRow';
+
+      function renderAddCardIdle() {
+        addCardRow.innerHTML = '';
+        const trigger = document.createElement('button');
+        trigger.type = 'button';
+        trigger.className = 'addCardTrigger';
+        trigger.textContent = '+ New Element';
+        trigger.addEventListener('click', (event) => { event.stopPropagation(); renderAddCardForm(); });
+        addCardRow.appendChild(trigger);
+      }
+
+      function renderAddCardForm() {
+        addCardRow.innerHTML = '';
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'addCardInput';
+        input.placeholder = 'Title';
+        input.addEventListener('click', (event) => event.stopPropagation());
+        function submit() {
+          const cardTitle = input.value.trim();
+          if (!cardTitle) {
+            renderAddCardIdle();
+            return;
+          }
+          syncStateEl.textContent = 'saving…';
+          vscode.postMessage({ type: 'createCard', columnName: col.name, title: cardTitle });
+          renderAddCardIdle();
+        }
+        input.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter') { submit(); }
+          if (event.key === 'Escape') { renderAddCardIdle(); }
+        });
+        input.addEventListener('blur', renderAddCardIdle);
+        addCardRow.appendChild(input);
+        input.focus();
+      }
+
+      renderAddCardIdle();
+
       div.appendChild(header);
       div.appendChild(list);
+      div.appendChild(addCardRow);
       return div;
     }
 
@@ -881,7 +957,7 @@ function buildHtml(webview: vscode.Webview, boardTitle: string, initialState: Bo
     attachBoard(board);
     let lastState = null;
     let filterTerm = '';
-    const showArchivedEl = document.getElementById('showArchived');
+    let showArchived = false;
 
     function applyFilter() {
       board.querySelectorAll('.card').forEach((card) => {
@@ -908,17 +984,12 @@ function buildHtml(webview: vscode.Webview, boardTitle: string, initialState: Bo
       lastState = state;
       renderGroupBySelect(state);
       board.innerHTML = '';
-      const showArchived = showArchivedEl.checked;
       state.columns
         .filter((col) => showArchived || !col.archived)
         .forEach((col) => board.appendChild(columnEl(col, state.groupByLabel)));
       board.appendChild(newColumnCellEl());
       applyFilter();
     }
-
-    showArchivedEl.addEventListener('change', () => {
-      if (lastState) { render(lastState); }
-    });
 
     groupBySelect.addEventListener('change', () => {
       syncStateEl.textContent = 'saving…';
@@ -1168,6 +1239,14 @@ export async function openKanbanViewPanel(client: EtapiClient, boardNote: Note, 
     }
   }
 
+  async function persistCreateCard(msg: KanbanCreateCardMessage): Promise<void> {
+    const { note } = await client.createNote(boardNote.noteId, msg.title);
+    if (msg.columnName !== NO_VALUE_COLUMN) {
+      await client.createAttribute(note.noteId, 'label', state.groupByLabel, msg.columnName);
+    }
+    await client.refreshNoteOrdering(boardNote.noteId);
+  }
+
   const messageDisposable = panel.webview.onDidReceiveMessage(async (msg: KanbanMessage) => {
     if (msg.type === 'showIconPicker') {
       const iconClass = await showIconPickerPanel(context);
@@ -1193,6 +1272,8 @@ export async function openKanbanViewPanel(client: EtapiClient, boardNote: Note, 
         await persistAddColumn(msg);
       } else if (msg.type === 'setGroupByLabel') {
         await persistSetGroupByLabel(msg);
+      } else if (msg.type === 'createCard') {
+        await persistCreateCard(msg);
       } else {
         return;
       }
