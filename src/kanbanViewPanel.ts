@@ -672,11 +672,15 @@ function buildHtml(webview: vscode.Webview, boardTitle: string, initialState: Bo
       if (event.key === 'Escape') { hideContextMenu(); }
     });
 
-    function cardEl(card, columnName) {
+    function cardEl(card, columnName, columnColor) {
       const li = document.createElement('li');
       li.className = 'card';
       li.draggable = true;
       li.dataset.noteId = card.noteId;
+      if (columnColor) {
+        li.style.borderColor = columnColor;
+        li.style.background = 'color-mix(in srgb, ' + columnColor + ' 10%, var(--vscode-editor-background))';
+      }
 
       if (card.iconSvg) {
         const icon = document.createElement('span');
@@ -961,7 +965,7 @@ function buildHtml(webview: vscode.Webview, boardTitle: string, initialState: Bo
 
       const list = document.createElement('ul');
       list.className = 'cardList';
-      col.cards.forEach((card) => list.appendChild(cardEl(card, col.name)));
+      col.cards.forEach((card) => list.appendChild(cardEl(card, col.name, col.color)));
       attachList(list);
       attachColumn(div);
 
