@@ -349,7 +349,20 @@ function buildHtml(webview: vscode.Webview, boardTitle: string, initialState: Bo
       gap: 6px;
       cursor: grab;
     }
-    .columnTitle { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .columnTitle { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .columnCount {
+      flex: 0 0 auto;
+      background: var(--vscode-badge-background);
+      color: var(--vscode-badge-foreground);
+      border-radius: 10px;
+      min-width: 18px;
+      height: 18px;
+      padding: 0 5px;
+      font-size: 11px;
+      font-weight: 600;
+      line-height: 18px;
+      text-align: center;
+    }
     .columnTitleInput {
       flex: 1 1 auto;
       min-width: 0;
@@ -574,6 +587,11 @@ function buildHtml(webview: vscode.Webview, boardTitle: string, initialState: Bo
       title.className = 'columnTitle';
       title.textContent = columnTitle(col, groupByLabel);
       header.appendChild(title);
+
+      const count = document.createElement('span');
+      count.className = 'columnCount';
+      count.textContent = String(col.cards.length);
+      header.appendChild(count);
 
       function startRename() {
         const input = document.createElement('input');
