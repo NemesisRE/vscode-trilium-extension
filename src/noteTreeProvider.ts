@@ -385,10 +385,14 @@ function defaultBoxiconClassForNote(note: Note): string {
   return TRILIUM_TYPE_ICON_CLASS[note.type] ?? 'bx bx-file';
 }
 
-export function preferredCodiconForNote(note: Note): string {
+/** Explicit `#iconClass` label when set, else Trilium's type-based default. */
+export function effectiveIconClassForNote(note: Note): string {
   const iconAttr = (note.attributes ?? []).find(a => a.type === 'label' && a.name === 'iconClass');
-  const effectiveIconClass = iconAttr?.value ?? defaultBoxiconClassForNote(note);
-  const codiconId = boxiconToCodeicon(effectiveIconClass);
+  return iconAttr?.value ?? defaultBoxiconClassForNote(note);
+}
+
+export function preferredCodiconForNote(note: Note): string {
+  const codiconId = boxiconToCodeicon(effectiveIconClassForNote(note));
   return codiconId ?? TYPE_ICON[note.type] ?? 'file';
 }
 
