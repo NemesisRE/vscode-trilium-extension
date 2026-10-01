@@ -17,6 +17,8 @@ import { AttributesViewProvider } from './attributesViewProvider';
 import { TriliumTextEditorProvider } from './triliumTextEditorProvider';
 import { VirtualDocumentProvider, createVirtualDocumentUri } from './virtualDocumentProvider';
 import { openReorderChildrenPanel } from './reorderChildrenPanel';
+import { showIconPickerPanel } from './iconPickerPanel';
+import { showColorPickerPanel } from './colorPickerPanel';
 import { openKanbanViewPanel } from './kanbanViewPanel';
 import { openCalendarViewPanel, getBookViewTypeLabel } from './calendarViewPanel';
 import { RecentNotesProvider } from './recentNotesProvider';
@@ -892,7 +894,9 @@ function mimeToExt(mime: string): string | undefined {
 
 function findWebViewUrl(note: Note): string | undefined {
   const attrs = note.attributes ?? [];
-  const preferredKeys = new Set(['url', 'src', 'href', 'link']);
+  // 'webViewSrc' is Trilium's own label for this (see the Web View note type docs);
+  // the others are kept for notes that already use one of them.
+  const preferredKeys = new Set(['webviewsrc', 'url', 'src', 'href', 'link']);
   for (const attr of attrs) {
     if (attr.type !== 'label') {
       continue;
@@ -964,6 +968,33 @@ async function showProtectedNoteRecoveryActions(
 
   if (action === 'Reconnect') {
     await vscode.commands.executeCommand('trilium.reconnect');
+  }
+}
+
+// Curated preset palette matching Trilium's own quick note-color picker (apps/client/src/widgets/react/ColorPicker.tsx).
+const NOTE_COLOR_PRESETS = [
+  '#e64d4d', '#e6994d', '#e5e64d', '#99e64d', '#4de64d', '#4de699',
+  '#4de5e6', '#4d99e6', '#4d4de6', '#994de6', '#e64db3',
+];
+
+function colorSwatchIconUri(hex: string): vscode.Uri {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16">`
+    + `<circle cx="8" cy="8" r="7" fill="${hex}" stroke="rgba(0,0,0,.25)"/></svg>`;
+  return vscode.Uri.parse(`data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`);
+}
+
+/** Set a note's label to `value`, patching the existing attribute if present or creating it otherwise. */
+async function upsertLabel(
+  client: EtapiClient,
+  note: Note,
+  name: string,
+  value: string,
+): Promise<void> {
+  const existing = (note.attributes ?? []).find((a) => a.type === 'label' && a.name === name);
+  if (existing) {
+    await client.patchAttribute(existing.attributeId, { value });
+  } else {
+    await client.createAttribute(note.noteId, 'label', name, value);
   }
 }
 
@@ -1660,7 +1691,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     vscode.commands.registerCommand('trilium.createNote', async (item?: NoteItem) => {
       interface NoteTypeOption extends vscode.QuickPickItem {
-        type: 'text' | 'code' | 'mermaid' | 'canvas' | 'mindMap';
+        type: 'text' | 'code' | 'mermaid' | 'canvas' | 'mindMap' | 'book' | 'webView';
       }
       const NOTE_TYPE_OPTIONS: NoteTypeOption[] = [
         { label: '$(edit) Text Note', type: 'text' },
@@ -1668,6 +1699,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         { label: '$(type-hierarchy) Mermaid Diagram', type: 'mermaid' },
         { label: '$(symbol-misc) Canvas (Excalidraw)', type: 'canvas' },
         { label: '$(type-hierarchy-sub) Mind Map', type: 'mindMap' },
+        { label: '$(book) Book', type: 'book' },
+        { label: '$(globe) Web View', type: 'webView' },
       ];
       const typePick = await vscode.window.showQuickPick(NOTE_TYPE_OPTIONS, {
         title: 'New Note — select type',
@@ -1686,6 +1719,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return;
       }
 
+      if (typePick.type === 'webView') {
+        await createWebViewNote(item, treeProvider, treeView, tempFileManager, virtualDocProvider, context);
+        return;
+      }
+
       const defaults: Partial<Record<NoteTypeOption['type'], string>> = {
         mermaid: 'graph TD\n    A[Start] --> B[End]',
         canvas: JSON.stringify({ type: 'excalidraw', version: 2, elements: [], appState: {} }),
@@ -1694,7 +1732,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         ),
       };
       await createNoteOfType(typePick.type, undefined, item, treeProvider, treeView, tempFileManager,
-        defaults[typePick.type] ?? '');
+        defaults[typePick.type] ?? '', { virtualDocProvider, extensionContext: context });
     }),
 
     vscode.commands.registerCommand('trilium.createNoteText', async (item?: NoteItem) => {
@@ -1726,6 +1764,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         formatMindMapJsonForEditor(
           JSON.stringify({ nodeData: { id: 'root', topic: 'Mind Map', children: [] } }),
         ));
+    }),
+
+    vscode.commands.registerCommand('trilium.createNoteBook', async (item?: NoteItem) => {
+      await createNoteOfType('book', undefined, item, treeProvider, treeView, tempFileManager, '',
+        { virtualDocProvider, extensionContext: context });
+    }),
+
+    vscode.commands.registerCommand('trilium.createNoteWebView', async (item?: NoteItem) => {
+      await createWebViewNote(item, treeProvider, treeView, tempFileManager, virtualDocProvider, context);
     }),
 
     vscode.commands.registerCommand('trilium.openMindMap', async (item?: NoteItem) => {
@@ -2116,6 +2163,87 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         await treeProvider.refreshNoteById(target.note.noteId);
       } catch (err) {
         void vscode.window.showErrorMessage(`Trilium: Failed to rename note: ${err}`);
+      }
+    }),
+
+    vscode.commands.registerCommand('trilium.changeIcon', async (item?: NoteItem) => {
+      const target = item ?? treeView.selection[0];
+      if (!target) {
+        return;
+      }
+
+      const client = treeProvider.getClient();
+      if (!client) {
+        void vscode.window.showErrorMessage(
+          'Trilium: Not connected. Use "Trilium: Connect to Trilium Server" first.',
+        );
+        return;
+      }
+
+      const iconClass = await showIconPickerPanel(context);
+      if (!iconClass) {
+        return;
+      }
+
+      try {
+        await upsertLabel(client, target.note, 'iconClass', iconClass);
+        await treeProvider.refreshNoteById(target.note.noteId);
+      } catch (err) {
+        void vscode.window.showErrorMessage(`Trilium: Failed to change icon: ${err}`);
+      }
+    }),
+
+    vscode.commands.registerCommand('trilium.changeColor', async (item?: NoteItem) => {
+      const target = item ?? treeView.selection[0];
+      if (!target) {
+        return;
+      }
+
+      const client = treeProvider.getClient();
+      if (!client) {
+        void vscode.window.showErrorMessage(
+          'Trilium: Not connected. Use "Trilium: Connect to Trilium Server" first.',
+        );
+        return;
+      }
+
+      const existingColor = (target.note.attributes ?? [])
+        .find((a) => a.type === 'label' && a.name === 'color')?.value;
+
+      interface ColorOption extends vscode.QuickPickItem { color: string | undefined; }
+      const presetOptions: ColorOption[] = NOTE_COLOR_PRESETS.map((hex) => ({
+        label: hex,
+        iconPath: colorSwatchIconUri(hex),
+        color: hex,
+      }));
+      const customOption: ColorOption = {
+        label: 'Custom Color...',
+        description: 'Open the color picker',
+        iconPath: new vscode.ThemeIcon('symbol-color'),
+        color: undefined,
+      };
+
+      const pick = await vscode.window.showQuickPick<ColorOption>(
+        [...presetOptions, customOption],
+        { title: 'Change Note Color', placeHolder: 'Pick a color, or open the color picker' },
+      );
+      if (!pick) {
+        return;
+      }
+
+      let color = pick.color;
+      if (!color) {
+        color = await showColorPickerPanel(existingColor);
+        if (!color) {
+          return;
+        }
+      }
+
+      try {
+        await upsertLabel(client, target.note, 'color', color);
+        await treeProvider.refreshNoteById(target.note.noteId);
+      } catch (err) {
+        void vscode.window.showErrorMessage(`Trilium: Failed to change color: ${err}`);
       }
     }),
 
@@ -3559,13 +3687,18 @@ const CODE_LANGUAGE_OPTIONS: CodeLanguageOption[] = [
 ];
 
 async function createNoteOfType(
-  type: 'text' | 'code' | 'mermaid' | 'canvas' | 'mindMap',
+  type: 'text' | 'code' | 'mermaid' | 'canvas' | 'mindMap' | 'book' | 'webView',
   mime: string | undefined,
   item: NoteItem | undefined,
   treeProvider: NoteTreeProvider,
   treeView: vscode.TreeView<NoteItem>,
   tempFileManager: TempFileManager,
   defaultContent = '',
+  openContext?: {
+    virtualDocProvider: VirtualDocumentProvider;
+    extensionContext: vscode.ExtensionContext;
+    initialLabels?: Array<{ name: string; value: string }>;
+  },
 ): Promise<void> {
   const client = treeProvider.getClient();
   if (!client) {
@@ -3589,7 +3722,34 @@ async function createNoteOfType(
     const result = await client.createNote(parentId, title, type, defaultContent, mime);
     await treeProvider.refreshNoteById(parentId);
 
-    const newNote = result.note;
+    let newNote = result.note;
+
+    for (const label of openContext?.initialLabels ?? []) {
+      await client.createAttribute(newNote.noteId, 'label', label.name, label.value);
+    }
+    if (openContext?.initialLabels?.length) {
+      // Re-fetch so the note object carries the labels just created - the opener
+      // below reads attributes (e.g. #webViewSrc) straight off this object.
+      newNote = await client.getNote(newNote.noteId);
+    }
+
+    // book / webView notes have no textual content to edit - dispatch through the
+    // same per-type opener that an existing note of that type goes through (native
+    // calendar/Kanban views, or the browser fallback for anything else).
+    if (newNote.type === 'book' || newNote.type === 'webView') {
+      if (openContext) {
+        await openNoteInEditor(
+          newNote,
+          client,
+          tempFileManager,
+          openContext.virtualDocProvider,
+          treeProvider,
+          treeView,
+          openContext.extensionContext,
+        );
+      }
+      return;
+    }
 
     // Text notes: open with CKEditor (same path as openNote / openTodayNote).
     if (newNote.type === 'text') {
@@ -3626,6 +3786,40 @@ async function createNoteOfType(
   } catch (err) {
     void vscode.window.showErrorMessage(`Trilium: Failed to create note: ${err}`);
   }
+}
+
+/** A Web View note is useless without a target URL, so ask for one before creating it. */
+async function createWebViewNote(
+  item: NoteItem | undefined,
+  treeProvider: NoteTreeProvider,
+  treeView: vscode.TreeView<NoteItem>,
+  tempFileManager: TempFileManager,
+  virtualDocProvider: VirtualDocumentProvider,
+  extensionContext: vscode.ExtensionContext,
+): Promise<void> {
+  const url = await vscode.window.showInputBox({
+    prompt: 'URL to embed (the note\'s #webViewSrc label)',
+    placeHolder: 'https://example.com',
+    ignoreFocusOut: true,
+    validateInput: (value) => {
+      try {
+        const parsed = new URL(value.trim());
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+          return 'URL must start with http:// or https://';
+        }
+        return undefined;
+      } catch {
+        return 'Enter a valid URL, including http:// or https://';
+      }
+    },
+  });
+  if (!url) { return; }
+
+  await createNoteOfType('webView', undefined, item, treeProvider, treeView, tempFileManager, '', {
+    virtualDocProvider,
+    extensionContext,
+    initialLabels: [{ name: 'webViewSrc', value: url.trim() }],
+  });
 }
 
 // ---------------------------------------------------------------------------

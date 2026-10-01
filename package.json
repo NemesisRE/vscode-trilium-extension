@@ -173,6 +173,18 @@
         "category": "Trilium"
       },
       {
+        "command": "trilium.changeIcon",
+        "title": "Change Icon...",
+        "icon": "$(symbol-color)",
+        "category": "Trilium"
+      },
+      {
+        "command": "trilium.changeColor",
+        "title": "Change Color...",
+        "icon": "$(paintcan)",
+        "category": "Trilium"
+      },
+      {
         "command": "trilium.createNoteText",
         "title": "New Text Note",
         "icon": "$(edit)",
@@ -200,6 +212,18 @@
         "command": "trilium.createNoteMindMap",
         "title": "New Mind Map Note",
         "icon": "$(type-hierarchy-sub)",
+        "category": "Trilium"
+      },
+      {
+        "command": "trilium.createNoteBook",
+        "title": "New Book",
+        "icon": "$(book)",
+        "category": "Trilium"
+      },
+      {
+        "command": "trilium.createNoteWebView",
+        "title": "New Web View",
+        "icon": "$(globe)",
         "category": "Trilium"
       },
       {
@@ -457,6 +481,14 @@
         {
           "command": "trilium.createNoteMindMap",
           "group": "types@5"
+        },
+        {
+          "command": "trilium.createNoteBook",
+          "group": "types@6"
+        },
+        {
+          "command": "trilium.createNoteWebView",
+          "group": "types@7"
         }
       ],
       "trilium.openAsSubmenu": [
@@ -669,6 +701,16 @@
           "command": "trilium.renameNote",
           "when": "viewItem == noteMindMap",
           "group": "1_modification@2"
+        },
+        {
+          "command": "trilium.changeIcon",
+          "when": "viewItem =~ /^note(Text|Code|Mermaid|Canvas|MindMap|File|External)$/",
+          "group": "1_modification@3"
+        },
+        {
+          "command": "trilium.changeColor",
+          "when": "viewItem =~ /^note(Text|Code|Mermaid|Canvas|MindMap|File|External)$/",
+          "group": "1_modification@4"
         },
         {
           "command": "trilium.deleteNote",
