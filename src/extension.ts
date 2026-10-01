@@ -2176,6 +2176,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
       const { note } = item;
 
+      // Web view notes embed an external URL by design; open it directly
+      // instead of warning that the note "cannot be rendered natively".
+      if (note.type === 'webView') {
+        await openNoteInBrowser(note, item.path, false);
+        return;
+      }
+
       // book notes with #viewType=board get a native Kanban board instead of
       // the browser fallback below.
       if (note.type === 'book' && getBookViewTypeLabel(note) === 'board') {
@@ -3298,6 +3305,13 @@ async function openNoteInEditor(
   context: vscode.ExtensionContext,
   notePathOrId?: string,
 ): Promise<void> {
+  // Web view notes embed an external URL by design; open it directly
+  // instead of warning that the note "cannot be rendered natively".
+  if (note.type === 'webView') {
+    await openNoteInBrowser(note, notePathOrId, false);
+    return;
+  }
+
   // book notes with #viewType=board get a native Kanban board instead of
   // the browser fallback below.
   if (note.type === 'book' && getBookViewTypeLabel(note) === 'board') {
