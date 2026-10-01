@@ -139,6 +139,12 @@ describe('NoteItem', () => {
     assert.strictEqual((item.command as { command: string }).command, 'trilium.openNote');
   });
 
+  it('attaches openNote command to book notes (they decide grid/list/calendar/... vs. browser fallback themselves)', () => {
+    const item = new NoteItem(makeNote({ type: 'book', childNoteIds: [] }));
+    assert.ok(item.command, 'book note should have a command');
+    assert.strictEqual((item.command as { command: string }).command, 'trilium.openNote');
+  });
+
   it('attaches openFile command to file notes', () => {
     const item = new NoteItem(makeNote({ type: 'file', childNoteIds: [] }));
     assert.ok(item.command, 'file note should have a command');

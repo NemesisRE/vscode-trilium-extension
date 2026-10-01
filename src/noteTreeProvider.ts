@@ -385,10 +385,14 @@ function defaultBoxiconClassForNote(note: Note): string {
   return TRILIUM_TYPE_ICON_CLASS[note.type] ?? 'bx bx-file';
 }
 
-export function preferredCodiconForNote(note: Note): string {
+/** Explicit `#iconClass` label when set, else Trilium's type-based default. */
+export function effectiveIconClassForNote(note: Note): string {
   const iconAttr = (note.attributes ?? []).find(a => a.type === 'label' && a.name === 'iconClass');
-  const effectiveIconClass = iconAttr?.value ?? defaultBoxiconClassForNote(note);
-  const codiconId = boxiconToCodeicon(effectiveIconClass);
+  return iconAttr?.value ?? defaultBoxiconClassForNote(note);
+}
+
+export function preferredCodiconForNote(note: Note): string {
+  const codiconId = boxiconToCodeicon(effectiveIconClassForNote(note));
   return codiconId ?? TYPE_ICON[note.type] ?? 'file';
 }
 
@@ -518,9 +522,18 @@ export class NoteItem extends vscode.TreeItem {
     // Open all notes on click, including section notes with children.
     // Collapsing/expanding remains available via the disclosure arrow.
     let commandId: string;
-    if (type === 'text' || type === 'code' || type === 'mermaid' || type === 'canvas' || type === 'webView') {
-      // webView notes resolve and open their target URL inside trilium.openNote
-      // itself - they must go through that command, not straight to the browser.
+    if (
+      type === 'text' ||
+      type === 'code' ||
+      type === 'mermaid' ||
+      type === 'canvas' ||
+      type === 'webView' ||
+      type === 'book'
+    ) {
+      // webView notes resolve and open their target URL, and book notes decide for
+      // themselves whether their #viewType has a native view (grid/list/calendar/...)
+      // or falls back to the browser - both must go through trilium.openNote itself,
+      // not straight to the browser.
       commandId = 'trilium.openNote';
     } else if (type === 'mindMap') {
       commandId = 'trilium.openMindMap';
