@@ -37,6 +37,9 @@ interface SetDayNoteColorMessage {
   color?: string;
 }
 
+// Matches the kanban board's own poll interval.
+const REFRESH_INTERVAL_MS = 6000;
+
 interface DayNoteEntry {
   date: string; // YYYY-MM-DD
   noteId: string;
@@ -1002,12 +1005,13 @@ export async function openCalendarViewPanel(
   panel.webview.html = buildHtml(panel.webview, note.title);
 
   let lastRange: { start: string; end: string } | undefined;
+  let lastEntriesSignature = '';
 
-  const refreshLastRange = async () => {
+  const pushEntries = (entries: DayNoteEntry[]) => {
     if (!lastRange) {
       return;
     }
-    const entries = await searchDayNotesInRange(client, lastRange.start, lastRange.end, context);
+    lastEntriesSignature = JSON.stringify(entries);
     void panel.webview.postMessage({
       type: 'rangeLoaded',
       start: lastRange.start,
@@ -1016,11 +1020,20 @@ export async function openCalendarViewPanel(
     });
   };
 
+  const refreshLastRange = async () => {
+    if (!lastRange) {
+      return;
+    }
+    const entries = await searchDayNotesInRange(client, lastRange.start, lastRange.end, context);
+    pushEntries(entries);
+  };
+
   const disposable = panel.webview.onDidReceiveMessage(async (msg: CalendarMessage) => {
     if (msg.type === 'loadRange') {
       lastRange = { start: msg.start, end: msg.end };
       try {
-        await refreshLastRange();
+        const entries = await searchDayNotesInRange(client, msg.start, msg.end, context);
+        pushEntries(entries);
       } catch (err) {
         void vscode.window.showErrorMessage(`Trilium: Failed to load calendar notes: ${err}`);
       }
@@ -1096,5 +1109,25 @@ export async function openCalendarViewPanel(
     }
   });
 
-  panel.onDidDispose(() => disposable.dispose());
+  // Polls for changes made elsewhere (Trilium's own UI, another device) while the panel
+  // is open, same as the kanban board. Only runs while visible, and only pushes an
+  // update when the entries actually changed, so an idle tab doesn't keep re-rendering.
+  const refreshTimer = setInterval(async () => {
+    if (!panel.visible || !lastRange) {
+      return;
+    }
+    try {
+      const entries = await searchDayNotesInRange(client, lastRange.start, lastRange.end, context);
+      if (JSON.stringify(entries) !== lastEntriesSignature) {
+        pushEntries(entries);
+      }
+    } catch {
+      // Transient fetch failures (e.g. momentarily disconnected) just skip this tick.
+    }
+  }, REFRESH_INTERVAL_MS);
+
+  panel.onDidDispose(() => {
+    clearInterval(refreshTimer);
+    disposable.dispose();
+  });
 }
