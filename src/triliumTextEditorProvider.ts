@@ -5,6 +5,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { EtapiClient, Note } from './etapiClient';
 import { showIconPickerPanel } from './iconPickerPanel';
+import { fetchLinkMetadata } from './linkMetadataFetch';
 import { getBundledBoxiconsSvgRoot } from './noteTreeProvider';
 import { getEditorFontSize, getEditorHighlightTheme, getEditorSpellcheck } from './settings';
 import { boxiconSvgRelativePath, mergeTaskStates, svgToCssUrl, taskStateCssIdentifier } from './taskStateIcons';
@@ -385,6 +386,13 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
           });
           break;
         }
+        case 'fetchLinkMetadata': {
+          const { id: linkMetadataId, url: linkUrl } = message as { type: string; id: string; url: string };
+          void fetchLinkMetadata(linkUrl).then(metadata => {
+            void webviewPanel.webview.postMessage({ type: 'linkMetadataResult', id: linkMetadataId, metadata });
+          });
+          break;
+        }
         case 'showIconPicker': {
           const { id: pickId } = message as { type: string; id: string };
           void showIconPickerPanel(this.context).then(iconClass => {
@@ -437,6 +445,13 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
           const { noteId: targetNoteId } = message as { type: string; noteId?: string };
           if (targetNoteId) {
             void vscode.commands.executeCommand(TriliumTextEditorProvider.openBreadcrumbCommand, targetNoteId);
+          }
+          break;
+        }
+        case 'openExternalLink': {
+          const { url: externalUrl } = message as { type: string; url?: string };
+          if (externalUrl && /^https?:\/\//i.test(externalUrl)) {
+            void vscode.env.openExternal(vscode.Uri.parse(externalUrl));
           }
           break;
         }
@@ -1110,7 +1125,11 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
          definitions from a URL, so ckeditor-build.ts hands it a blob: URL wrapping the
          already-vendored definitions file instead of CKEditor's own CDN - without blob:
          here that fetch is CSP-blocked, the repository never finishes loading, and the
-         toolbar button stays permanently disabled. -->
+         toolbar button stays permanently disabled.
+         frame-src needs both YouTube hosts: our own LinkEmbed video widget (linkEmbedRender.ts)
+         always embeds via youtube-nocookie.com, but CKEditor core's built-in MediaEmbed feature
+         (the pre-existing "mediaEmbed" toolbar button) hardcodes youtube.com/embed/... for its
+         own YouTube provider and isn't ours to redirect. -->
     <meta http-equiv="Content-Security-Policy" content="
       default-src 'none';
       style-src ${webview.cspSource} 'unsafe-inline' https://cdn.jsdelivr.net;
@@ -1118,6 +1137,7 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
       font-src ${webview.cspSource} https://cdn.jsdelivr.net data:;
       img-src ${webview.cspSource} https: data: blob:;
       connect-src ${webview.cspSource} https://cdn.jsdelivr.net blob:;
+      frame-src https://www.youtube-nocookie.com https://www.youtube.com;
     ">
     <title>Trilium Text Editor</title>
     <!-- Load CKEditor CSS (bundled by esbuild) -->
@@ -1667,6 +1687,7 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
         const pendingMentionCreates = new Map();
         const pendingCutToNoteRequests = new Map();
         const pendingMarkdownImportRequests = new Map();
+        const pendingLinkMetadataRequests = new Map();
         const pendingIncludeNoteRenders = new Map();
 
         const triliumToLocalLanguageMap = {
@@ -1990,7 +2011,7 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
                   label: 'Insert',
                   icon: 'plus',
                   items: [
-                    'link', 'internalLink', 'includeNote', 'bookmark', '|',
+                    'link', 'internalLink', 'includeNote', 'bookmark', 'linkEmbed', '|',
                     'collapsible', 'math', 'mermaid', 'horizontalLine', 'pageBreak', '|',
                     'dateTime', 'specialCharacters', 'emoji', 'insertIcon', 'insertTemplate',
                   ],
@@ -2052,7 +2073,10 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
             },
             link: {
               defaultProtocol: 'https://',
-              toolbar: ['linkPreview', 'copyLinkUrl', '|', 'editLink', 'linkProperties', 'unlink']
+              // linkEmbedDisplayDropdown also hosts here (see link_embed_toolbar.ts): a native
+              // link's balloon offers converting it into a mention/card/embed preview, the same
+              // dropdown the widget toolbar's Display option uses on an existing preview.
+              toolbar: ['linkPreview', 'copyLinkUrl', 'linkEmbedDisplayDropdown', '|', 'editLink', 'linkProperties', 'unlink']
             },
             bookmark: {
               toolbar: ['bookmarkPreview', 'copyAnchorLink', '|', 'editBookmark', 'removeBookmark']
@@ -2184,12 +2208,35 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
                 vscode.postMessage({ type: 'importMarkdown', id });
               }),
             },
+            // LinkEmbed plugin: the metadata fetch (URL → title/description/favicon/image) runs
+            // on the extension host, outside the webview's CSP - it needs an unrestricted outbound
+            // HTTP request the webview itself could never make (see linkMetadataFetch.ts's SSRF
+            // guard). Rendering the resulting card/mention/video preview stays local (see
+            // link_embed_editing.ts's vendor patch) - no host round-trip there.
+            linkEmbed: {
+              fetchMetadata: (url) => new Promise((resolve) => {
+                const id = Math.random().toString(36).slice(2);
+                pendingLinkMetadataRequests.set(id, resolve);
+                vscode.postMessage({ type: 'fetchLinkMetadata', id, url });
+              }),
+            },
             referenceLink: {
               openNote: (href) => {
                 const noteId = href.replace(/^#/, '').split('/').pop();
                 if (noteId) {
                   vscode.postMessage({ type: 'openBreadcrumbNote', noteId });
                 }
+              },
+            },
+            // MediaEmbed facade (see mediaEmbedFacadeClick.ts): a plain <a> click's default
+            // navigation, with no target, tries to navigate this webview's own nested iframe to the
+            // external URL in place - VS Code's outer webview host blocks that itself, as a "framing"
+            // attempt against its own frame-src CSP, before its usual link-opening behavior ever gets
+            // a chance to run. Going through the host instead - the same way openBreadcrumbNote and
+            // openAttachment already do - is unaffected by that, since it's not a navigation at all.
+            mediaEmbedFacade: {
+              openExternal: (url) => {
+                vscode.postMessage({ type: 'openExternalLink', url });
               },
             },
             // IncludeNote plugin: the note picker reuses the same QuickPick as internalLink
@@ -2499,6 +2546,12 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
               const resolve = pendingMarkdownImportRequests.get(message.id);
               pendingMarkdownImportRequests.delete(message.id);
               resolve?.(message.html);
+              break;
+            }
+            case 'linkMetadataResult': {
+              const resolve = pendingLinkMetadataRequests.get(message.id);
+              pendingLinkMetadataRequests.delete(message.id);
+              resolve?.(message.metadata);
               break;
             }
             case 'renderIncludedNoteResult': {
