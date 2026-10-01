@@ -79,12 +79,12 @@ export class BacklinksProvider implements vscode.TreeDataProvider<BacklinkItem> 
           ) as BacklinkItem;
           item.noteId = n.noteId;
           item.command = {
-            title: 'Open Note',
+            title: vscode.l10n.t('Open Note'),
             command: 'trilium.openNoteById',
             arguments: [n.noteId],
           };
           item.iconPath = new vscode.ThemeIcon('link');
-          item.tooltip = `Links to this note via relation`;
+          item.tooltip = vscode.l10n.t('Links to this note via relation');
           return item;
         });
 

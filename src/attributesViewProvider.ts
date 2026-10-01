@@ -118,12 +118,12 @@ export class AttributesViewProvider implements vscode.WebviewViewProvider {
             const defaultName = msg.title || `attachment-${msg.attachmentId}`;
             const saveUri = await vscode.window.showSaveDialog({
               defaultUri: vscode.Uri.file(defaultName),
-              saveLabel: 'Download',
+              saveLabel: vscode.l10n.t('Download'),
             });
             if (saveUri) {
               await vscode.workspace.fs.writeFile(saveUri, new Uint8Array(buf));
               void vscode.window.showInformationMessage(
-                `Trilium: Downloaded "${msg.title}" to ${saveUri.fsPath}`,
+                vscode.l10n.t('Trilium: Downloaded "{0}" to {1}', String(msg.title), String(saveUri.fsPath)),
               );
             }
             break;
@@ -148,8 +148,8 @@ export class AttributesViewProvider implements vscode.WebviewViewProvider {
           case 'uploadAttachment': {
             const uris = await vscode.window.showOpenDialog({
               canSelectMany: false,
-              openLabel: 'Upload',
-              title: 'Upload Attachment to Trilium',
+              openLabel: vscode.l10n.t('Upload'),
+              title: vscode.l10n.t('Upload Attachment to Trilium'),
             });
             if (!uris || uris.length === 0) { break; }
             const fileUri = uris[0];
@@ -170,20 +170,20 @@ export class AttributesViewProvider implements vscode.WebviewViewProvider {
         const detail = err instanceof Error ? err.message : String(err);
         if (msg.type === 'openAttachment') {
           void vscode.window.showErrorMessage(
-            `Trilium: Failed to open attachment "${msg.title}" (${msg.mime}, id ${msg.attachmentId}): ${detail}`,
+            vscode.l10n.t('Trilium: Failed to open attachment "{0}" ({1}, id {2}): {3}', String(msg.title), String(msg.mime), String(msg.attachmentId), String(detail)),
           );
         } else if (msg.type === 'downloadAttachment') {
           void vscode.window.showErrorMessage(
-            `Trilium: Failed to download attachment "${msg.title}" (${msg.mime}, id ${msg.attachmentId}): ${detail}`,
+            vscode.l10n.t('Trilium: Failed to download attachment "{0}" ({1}, id {2}): {3}', String(msg.title), String(msg.mime), String(msg.attachmentId), String(detail)),
           );
         } else if (msg.type === 'uploadAttachment') {
-          void vscode.window.showErrorMessage(`Trilium: Failed to upload attachment: ${detail}`);
+          void vscode.window.showErrorMessage(vscode.l10n.t('Trilium: Failed to upload attachment: {0}', String(detail)));
         } else if (msg.type === 'deleteAttachment') {
           void vscode.window.showErrorMessage(
-            `Trilium: Failed to delete attachment ${msg.attachmentId}: ${detail}`,
+            vscode.l10n.t('Trilium: Failed to delete attachment {0}: {1}', String(msg.attachmentId), String(detail)),
           );
         } else {
-          void vscode.window.showErrorMessage(`Trilium: Operation failed: ${detail}`);
+          void vscode.window.showErrorMessage(vscode.l10n.t('Trilium: Operation failed: {0}', String(detail)));
         }
       }
     });
