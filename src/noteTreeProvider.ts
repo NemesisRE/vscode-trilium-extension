@@ -385,7 +385,7 @@ function defaultBoxiconClassForNote(note: Note): string {
   return TRILIUM_TYPE_ICON_CLASS[note.type] ?? 'bx bx-file';
 }
 
-/** The boxicon class actually shown for a note: its own `#iconClass` label, or Trilium's type-based default. */
+/** Explicit `#iconClass` label when set, else Trilium's type-based default. */
 export function effectiveIconClassForNote(note: Note): string {
   const iconAttr = (note.attributes ?? []).find(a => a.type === 'label' && a.name === 'iconClass');
   return iconAttr?.value ?? defaultBoxiconClassForNote(note);

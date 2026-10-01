@@ -47,12 +47,16 @@ function getNonce(): string {
 }
 
 /**
- * Resolves a bundled boxicon class (e.g. "bx bx-circle") to its inline SVG markup,
- * so a CSP-restrictive webview (no external font/css allowed) can render a chosen
- * icon without loading the boxicons font. Reuses the same on-demand, module-cached
- * icon list the picker itself loads.
+ * Resolves a boxicon class to its inline SVG markup, for webviews (like the calendar
+ * view) whose CSP blocks the icon font and so can't render it via a `<i class="bx …">`.
  */
-export async function getIconSvg(context: vscode.ExtensionContext, iconClass: string): Promise<string | undefined> {
+export async function getIconSvg(
+  context: vscode.ExtensionContext,
+  iconClass: string | undefined,
+): Promise<string | undefined> {
+  if (!iconClass) {
+    return undefined;
+  }
   const icons = await loadIcons(context.extensionPath);
   return icons.find((icon) => icon.iconClass === iconClass)?.svg;
 }
