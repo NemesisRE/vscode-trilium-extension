@@ -47,6 +47,21 @@ function getNonce(): string {
 }
 
 /**
+ * Resolves a boxicon class to its inline SVG markup, for webviews (like the calendar
+ * view) whose CSP blocks the icon font and so can't render it via a `<i class="bx …">`.
+ */
+export async function getIconSvg(
+  context: vscode.ExtensionContext,
+  iconClass: string | undefined,
+): Promise<string | undefined> {
+  if (!iconClass) {
+    return undefined;
+  }
+  const icons = await loadIcons(context.extensionPath);
+  return icons.find((icon) => icon.iconClass === iconClass)?.svg;
+}
+
+/**
  * Trilium's own icon picker is a searchable grid of real icon glyphs. A VS Code QuickPick
  * can't render arbitrary SVGs (only ~50 of the ~1600 bundled boxicons have a close-enough
  * built-in codicon equivalent), so this opens a small webview instead: every bundled icon
