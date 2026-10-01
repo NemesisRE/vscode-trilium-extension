@@ -17,6 +17,8 @@ import { AttributesViewProvider } from './attributesViewProvider';
 import { TriliumTextEditorProvider } from './triliumTextEditorProvider';
 import { VirtualDocumentProvider, createVirtualDocumentUri } from './virtualDocumentProvider';
 import { openReorderChildrenPanel } from './reorderChildrenPanel';
+import { showIconPickerPanel } from './iconPickerPanel';
+import { showColorPickerPanel } from './colorPickerPanel';
 import { RecentNotesProvider } from './recentNotesProvider';
 import { BacklinksProvider } from './backlinksProvider';
 import { protectedNoteWarningMessage } from './protectedNoteUtils';
@@ -962,6 +964,33 @@ async function showProtectedNoteRecoveryActions(
 
   if (action === 'Reconnect') {
     await vscode.commands.executeCommand('trilium.reconnect');
+  }
+}
+
+// Curated preset palette matching Trilium's own quick note-color picker (apps/client/src/widgets/react/ColorPicker.tsx).
+const NOTE_COLOR_PRESETS = [
+  '#e64d4d', '#e6994d', '#e5e64d', '#99e64d', '#4de64d', '#4de699',
+  '#4de5e6', '#4d99e6', '#4d4de6', '#994de6', '#e64db3',
+];
+
+function colorSwatchIconUri(hex: string): vscode.Uri {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16">`
+    + `<circle cx="8" cy="8" r="7" fill="${hex}" stroke="rgba(0,0,0,.25)"/></svg>`;
+  return vscode.Uri.parse(`data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`);
+}
+
+/** Set a note's label to `value`, patching the existing attribute if present or creating it otherwise. */
+async function upsertLabel(
+  client: EtapiClient,
+  note: Note,
+  name: string,
+  value: string,
+): Promise<void> {
+  const existing = (note.attributes ?? []).find((a) => a.type === 'label' && a.name === name);
+  if (existing) {
+    await client.patchAttribute(existing.attributeId, { value });
+  } else {
+    await client.createAttribute(note.noteId, 'label', name, value);
   }
 }
 
@@ -2111,6 +2140,87 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         await treeProvider.refreshNoteById(target.note.noteId);
       } catch (err) {
         void vscode.window.showErrorMessage(`Trilium: Failed to rename note: ${err}`);
+      }
+    }),
+
+    vscode.commands.registerCommand('trilium.changeIcon', async (item?: NoteItem) => {
+      const target = item ?? treeView.selection[0];
+      if (!target) {
+        return;
+      }
+
+      const client = treeProvider.getClient();
+      if (!client) {
+        void vscode.window.showErrorMessage(
+          'Trilium: Not connected. Use "Trilium: Connect to Trilium Server" first.',
+        );
+        return;
+      }
+
+      const iconClass = await showIconPickerPanel(context);
+      if (!iconClass) {
+        return;
+      }
+
+      try {
+        await upsertLabel(client, target.note, 'iconClass', iconClass);
+        await treeProvider.refreshNoteById(target.note.noteId);
+      } catch (err) {
+        void vscode.window.showErrorMessage(`Trilium: Failed to change icon: ${err}`);
+      }
+    }),
+
+    vscode.commands.registerCommand('trilium.changeColor', async (item?: NoteItem) => {
+      const target = item ?? treeView.selection[0];
+      if (!target) {
+        return;
+      }
+
+      const client = treeProvider.getClient();
+      if (!client) {
+        void vscode.window.showErrorMessage(
+          'Trilium: Not connected. Use "Trilium: Connect to Trilium Server" first.',
+        );
+        return;
+      }
+
+      const existingColor = (target.note.attributes ?? [])
+        .find((a) => a.type === 'label' && a.name === 'color')?.value;
+
+      interface ColorOption extends vscode.QuickPickItem { color: string | undefined; }
+      const presetOptions: ColorOption[] = NOTE_COLOR_PRESETS.map((hex) => ({
+        label: hex,
+        iconPath: colorSwatchIconUri(hex),
+        color: hex,
+      }));
+      const customOption: ColorOption = {
+        label: 'Custom Color...',
+        description: 'Open the color picker',
+        iconPath: new vscode.ThemeIcon('symbol-color'),
+        color: undefined,
+      };
+
+      const pick = await vscode.window.showQuickPick<ColorOption>(
+        [...presetOptions, customOption],
+        { title: 'Change Note Color', placeHolder: 'Pick a color, or open the color picker' },
+      );
+      if (!pick) {
+        return;
+      }
+
+      let color = pick.color;
+      if (!color) {
+        color = await showColorPickerPanel(existingColor);
+        if (!color) {
+          return;
+        }
+      }
+
+      try {
+        await upsertLabel(client, target.note, 'color', color);
+        await treeProvider.refreshNoteById(target.note.noteId);
+      } catch (err) {
+        void vscode.window.showErrorMessage(`Trilium: Failed to change color: ${err}`);
       }
     }),
 
