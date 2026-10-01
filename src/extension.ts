@@ -17,6 +17,7 @@ import { AttributesViewProvider } from './attributesViewProvider';
 import { TriliumTextEditorProvider } from './triliumTextEditorProvider';
 import { VirtualDocumentProvider, createVirtualDocumentUri } from './virtualDocumentProvider';
 import { openReorderChildrenPanel } from './reorderChildrenPanel';
+import { openCalendarViewPanel, getBookViewTypeLabel } from './calendarViewPanel';
 import { RecentNotesProvider } from './recentNotesProvider';
 import { BacklinksProvider } from './backlinksProvider';
 import { protectedNoteWarningMessage } from './protectedNoteUtils';
@@ -1516,6 +1517,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           virtualDocProvider,
           treeProvider,
           treeView,
+          context,
         );
       } catch (err) {
         void vscode.window.showErrorMessage(`Trilium: Failed to open breadcrumb note: ${err}`);
@@ -1537,6 +1539,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             virtualDocProvider,
             treeProvider,
             treeView,
+            context,
           );
           if (backlinksProvider) {
             backlinksProvider.updateBacklinks(noteId);
@@ -1598,6 +1601,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           virtualDocProvider,
           treeProvider,
           treeView,
+          context,
         );
       } catch (err) {
         void vscode.window.showErrorMessage(`Trilium: Failed to open parent note: ${err}`);
@@ -2170,6 +2174,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
 
       const { note } = item;
+
+      // book notes with #viewType=calendar get a native month-grid view instead
+      // of the browser fallback below.
+      if (note.type === 'book' && getBookViewTypeLabel(note) === 'calendar') {
+        await openCalendarViewPanel(client, note, context);
+        await maybeAutoRevealOpenedNote(note.noteId, treeProvider, treeView);
+        return;
+      }
+
       const editableTypes: Note['type'][] = ['text', 'code', 'mermaid', 'canvas', 'mindMap'];
       if (!(editableTypes as string[]).includes(note.type)) {
         const action = await vscode.window.showWarningMessage(
@@ -2518,6 +2531,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             virtualDocProvider,
             treeProvider,
             treeView,
+            context,
           );
         } catch (err) {
           void vscode.window.showErrorMessage(`Trilium: Failed to open note: ${err}`);
@@ -2624,6 +2638,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           virtualDocProvider,
           treeProvider,
           treeView,
+          context,
         );
       } catch (err) {
         void vscode.window.showErrorMessage(`Trilium: Failed to open calendar note: ${err}`);
@@ -2647,6 +2662,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           virtualDocProvider,
           treeProvider,
           treeView,
+          context,
         );
       } catch (err) {
         void vscode.window.showErrorMessage(`Trilium: Failed to open inbox note: ${err}`);
@@ -2672,6 +2688,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           virtualDocProvider,
           treeProvider,
           treeView,
+          context,
         );
       } catch (err) {
         void vscode.window.showErrorMessage(`Trilium: Failed to open week note: ${err}`);
@@ -2692,6 +2709,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           virtualDocProvider,
           treeProvider,
           treeView,
+          context,
         );
       } catch (err) {
         void vscode.window.showErrorMessage(`Trilium: Failed to open month note: ${err}`);
@@ -2710,6 +2728,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           virtualDocProvider,
           treeProvider,
           treeView,
+          context,
         );
       } catch (err) {
         void vscode.window.showErrorMessage(`Trilium: Failed to open year note: ${err}`);
@@ -3267,8 +3286,17 @@ async function openNoteInEditor(
   virtualDocProvider: VirtualDocumentProvider,
   treeProvider: NoteTreeProvider,
   treeView: vscode.TreeView<NoteItem>,
+  context: vscode.ExtensionContext,
   notePathOrId?: string,
 ): Promise<void> {
+  // book notes with #viewType=calendar get a native calendar view instead
+  // of the browser fallback below.
+  if (note.type === 'book' && getBookViewTypeLabel(note) === 'calendar') {
+    await openCalendarViewPanel(client, note, context);
+    await maybeAutoRevealOpenedNote(note.noteId, treeProvider, treeView);
+    return;
+  }
+
   const editableTypes: Note['type'][] = ['text', 'code', 'mermaid', 'canvas', 'mindMap'];
   if (!(editableTypes as string[]).includes(note.type)) {
     const action = await vscode.window.showWarningMessage(
