@@ -133,6 +133,12 @@ describe('NoteItem', () => {
     assert.strictEqual((item.command as { command: string }).command, 'trilium.openInBrowser');
   });
 
+  it('attaches openNote command to doc notes (they render their HTML content inside that command)', () => {
+    const item = new NoteItem(makeNote({ type: 'doc', childNoteIds: [] }));
+    assert.ok(item.command, 'doc note should have a command');
+    assert.strictEqual((item.command as { command: string }).command, 'trilium.openNote');
+  });
+
   it('attaches openNote command to book notes (they decide grid/list/calendar/... vs. browser fallback themselves)', () => {
     const item = new NoteItem(makeNote({ type: 'book', childNoteIds: [] }));
     assert.ok(item.command, 'book note should have a command');
