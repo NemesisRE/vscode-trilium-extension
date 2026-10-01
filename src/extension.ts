@@ -17,6 +17,7 @@ import { AttributesViewProvider } from './attributesViewProvider';
 import { TriliumTextEditorProvider } from './triliumTextEditorProvider';
 import { VirtualDocumentProvider, createVirtualDocumentUri } from './virtualDocumentProvider';
 import { openReorderChildrenPanel } from './reorderChildrenPanel';
+import { openKanbanViewPanel } from './kanbanViewPanel';
 import { openCalendarViewPanel, getBookViewTypeLabel } from './calendarViewPanel';
 import { RecentNotesProvider } from './recentNotesProvider';
 import { BacklinksProvider } from './backlinksProvider';
@@ -2175,6 +2176,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
       const { note } = item;
 
+      // book notes with #viewType=board get a native Kanban board instead of
+      // the browser fallback below.
+      if (note.type === 'book' && getBookViewTypeLabel(note) === 'board') {
+        await openKanbanViewPanel(client, note, context);
+        await maybeAutoRevealOpenedNote(note.noteId, treeProvider, treeView);
+        return;
+      }
+
       // book notes with #viewType=calendar get a native month-grid view instead
       // of the browser fallback below.
       if (note.type === 'book' && getBookViewTypeLabel(note) === 'calendar') {
@@ -3289,6 +3298,14 @@ async function openNoteInEditor(
   context: vscode.ExtensionContext,
   notePathOrId?: string,
 ): Promise<void> {
+  // book notes with #viewType=board get a native Kanban board instead of
+  // the browser fallback below.
+  if (note.type === 'book' && getBookViewTypeLabel(note) === 'board') {
+    await openKanbanViewPanel(client, note, context);
+    await maybeAutoRevealOpenedNote(note.noteId, treeProvider, treeView);
+    return;
+  }
+
   // book notes with #viewType=calendar get a native calendar view instead
   // of the browser fallback below.
   if (note.type === 'book' && getBookViewTypeLabel(note) === 'calendar') {
