@@ -894,7 +894,9 @@ function mimeToExt(mime: string): string | undefined {
 
 function findWebViewUrl(note: Note): string | undefined {
   const attrs = note.attributes ?? [];
-  const preferredKeys = new Set(['url', 'src', 'href', 'link']);
+  // 'webViewSrc' is Trilium's own label for this (see the Web View note type docs);
+  // the others are kept for notes that already use one of them.
+  const preferredKeys = new Set(['webviewsrc', 'url', 'src', 'href', 'link']);
   for (const attr of attrs) {
     if (attr.type !== 'label') {
       continue;
@@ -1689,7 +1691,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     vscode.commands.registerCommand('trilium.createNote', async (item?: NoteItem) => {
       interface NoteTypeOption extends vscode.QuickPickItem {
-        type: 'text' | 'code' | 'mermaid' | 'canvas' | 'mindMap';
+        type: 'text' | 'code' | 'mermaid' | 'canvas' | 'mindMap' | 'book' | 'webView';
       }
       const NOTE_TYPE_OPTIONS: NoteTypeOption[] = [
         { label: '$(edit) Text Note', type: 'text' },
@@ -1697,6 +1699,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         { label: '$(type-hierarchy) Mermaid Diagram', type: 'mermaid' },
         { label: '$(symbol-misc) Canvas (Excalidraw)', type: 'canvas' },
         { label: '$(type-hierarchy-sub) Mind Map', type: 'mindMap' },
+        { label: '$(book) Book', type: 'book' },
+        { label: '$(globe) Web View', type: 'webView' },
       ];
       const typePick = await vscode.window.showQuickPick(NOTE_TYPE_OPTIONS, {
         title: 'New Note — select type',
@@ -1715,6 +1719,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return;
       }
 
+      if (typePick.type === 'webView') {
+        await createWebViewNote(item, treeProvider, treeView, tempFileManager, virtualDocProvider, context);
+        return;
+      }
+
       const defaults: Partial<Record<NoteTypeOption['type'], string>> = {
         mermaid: 'graph TD\n    A[Start] --> B[End]',
         canvas: JSON.stringify({ type: 'excalidraw', version: 2, elements: [], appState: {} }),
@@ -1723,7 +1732,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         ),
       };
       await createNoteOfType(typePick.type, undefined, item, treeProvider, treeView, tempFileManager,
-        defaults[typePick.type] ?? '');
+        defaults[typePick.type] ?? '', { virtualDocProvider, extensionContext: context });
     }),
 
     vscode.commands.registerCommand('trilium.createNoteText', async (item?: NoteItem) => {
@@ -1755,6 +1764,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         formatMindMapJsonForEditor(
           JSON.stringify({ nodeData: { id: 'root', topic: 'Mind Map', children: [] } }),
         ));
+    }),
+
+    vscode.commands.registerCommand('trilium.createNoteBook', async (item?: NoteItem) => {
+      await createNoteOfType('book', undefined, item, treeProvider, treeView, tempFileManager, '',
+        { virtualDocProvider, extensionContext: context });
+    }),
+
+    vscode.commands.registerCommand('trilium.createNoteWebView', async (item?: NoteItem) => {
+      await createWebViewNote(item, treeProvider, treeView, tempFileManager, virtualDocProvider, context);
     }),
 
     vscode.commands.registerCommand('trilium.openMindMap', async (item?: NoteItem) => {
@@ -3669,13 +3687,18 @@ const CODE_LANGUAGE_OPTIONS: CodeLanguageOption[] = [
 ];
 
 async function createNoteOfType(
-  type: 'text' | 'code' | 'mermaid' | 'canvas' | 'mindMap',
+  type: 'text' | 'code' | 'mermaid' | 'canvas' | 'mindMap' | 'book' | 'webView',
   mime: string | undefined,
   item: NoteItem | undefined,
   treeProvider: NoteTreeProvider,
   treeView: vscode.TreeView<NoteItem>,
   tempFileManager: TempFileManager,
   defaultContent = '',
+  openContext?: {
+    virtualDocProvider: VirtualDocumentProvider;
+    extensionContext: vscode.ExtensionContext;
+    initialLabels?: Array<{ name: string; value: string }>;
+  },
 ): Promise<void> {
   const client = treeProvider.getClient();
   if (!client) {
@@ -3699,7 +3722,34 @@ async function createNoteOfType(
     const result = await client.createNote(parentId, title, type, defaultContent, mime);
     await treeProvider.refreshNoteById(parentId);
 
-    const newNote = result.note;
+    let newNote = result.note;
+
+    for (const label of openContext?.initialLabels ?? []) {
+      await client.createAttribute(newNote.noteId, 'label', label.name, label.value);
+    }
+    if (openContext?.initialLabels?.length) {
+      // Re-fetch so the note object carries the labels just created - the opener
+      // below reads attributes (e.g. #webViewSrc) straight off this object.
+      newNote = await client.getNote(newNote.noteId);
+    }
+
+    // book / webView notes have no textual content to edit - dispatch through the
+    // same per-type opener that an existing note of that type goes through (native
+    // calendar/Kanban views, or the browser fallback for anything else).
+    if (newNote.type === 'book' || newNote.type === 'webView') {
+      if (openContext) {
+        await openNoteInEditor(
+          newNote,
+          client,
+          tempFileManager,
+          openContext.virtualDocProvider,
+          treeProvider,
+          treeView,
+          openContext.extensionContext,
+        );
+      }
+      return;
+    }
 
     // Text notes: open with CKEditor (same path as openNote / openTodayNote).
     if (newNote.type === 'text') {
@@ -3736,6 +3786,40 @@ async function createNoteOfType(
   } catch (err) {
     void vscode.window.showErrorMessage(`Trilium: Failed to create note: ${err}`);
   }
+}
+
+/** A Web View note is useless without a target URL, so ask for one before creating it. */
+async function createWebViewNote(
+  item: NoteItem | undefined,
+  treeProvider: NoteTreeProvider,
+  treeView: vscode.TreeView<NoteItem>,
+  tempFileManager: TempFileManager,
+  virtualDocProvider: VirtualDocumentProvider,
+  extensionContext: vscode.ExtensionContext,
+): Promise<void> {
+  const url = await vscode.window.showInputBox({
+    prompt: 'URL to embed (the note\'s #webViewSrc label)',
+    placeHolder: 'https://example.com',
+    ignoreFocusOut: true,
+    validateInput: (value) => {
+      try {
+        const parsed = new URL(value.trim());
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+          return 'URL must start with http:// or https://';
+        }
+        return undefined;
+      } catch {
+        return 'Enter a valid URL, including http:// or https://';
+      }
+    },
+  });
+  if (!url) { return; }
+
+  await createNoteOfType('webView', undefined, item, treeProvider, treeView, tempFileManager, '', {
+    virtualDocProvider,
+    extensionContext,
+    initialLabels: [{ name: 'webViewSrc', value: url.trim() }],
+  });
 }
 
 // ---------------------------------------------------------------------------

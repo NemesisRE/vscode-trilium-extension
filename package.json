@@ -215,6 +215,18 @@
         "category": "Trilium"
       },
       {
+        "command": "trilium.createNoteBook",
+        "title": "New Book",
+        "icon": "$(book)",
+        "category": "Trilium"
+      },
+      {
+        "command": "trilium.createNoteWebView",
+        "title": "New Web View",
+        "icon": "$(globe)",
+        "category": "Trilium"
+      },
+      {
         "command": "trilium.createNoteWithContent",
         "title": "Create Note With Content (programmatic)",
         "category": "Trilium"
@@ -469,6 +481,14 @@
         {
           "command": "trilium.createNoteMindMap",
           "group": "types@5"
+        },
+        {
+          "command": "trilium.createNoteBook",
+          "group": "types@6"
+        },
+        {
+          "command": "trilium.createNoteWebView",
+          "group": "types@7"
         }
       ],
       "trilium.openAsSubmenu": [
