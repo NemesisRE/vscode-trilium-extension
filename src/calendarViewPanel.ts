@@ -222,6 +222,8 @@ function buildHtml(webview: vscode.Webview, title: string): string {
     .timelineHeaderRow { border-bottom: 1px solid var(--vscode-editorWidget-border); }
     .timelineAllDayRow { border-bottom: 1px solid var(--vscode-editorWidget-border); min-height: 34px; }
     .timelineGutter { padding: 4px 6px; font-size: 10px; color: var(--vscode-descriptionForeground); text-align: right; }
+    .timelineWeekNum { display: flex; align-items: center; justify-content: center; font-weight: 600; }
+    .timelineScrollbarSpacer { }
     .timelineDayHeaderCell {
       padding: 6px 4px; display: flex; align-items: center; gap: 6px; justify-content: center;
       border-left: 1px solid var(--vscode-editorWidget-border);
@@ -644,6 +646,21 @@ function buildHtml(webview: vscode.Webview, title: string): string {
 
     // --- Day & Week timeline ---
     const HOURS = Array.from({ length: 24 }, (_, i) => i);
+    // The header and all-day rows sit outside .timelineBody's scroll container, so
+    // without this they stay full-width while the hour grid below loses the
+    // scrollbar's width - columns drift out of alignment towards the right edge.
+    function measureScrollbarWidth() {
+      const outer = document.createElement('div');
+      outer.style.cssText = 'position:absolute; top:-9999px; width:100px; height:100px; overflow:scroll;';
+      const inner = document.createElement('div');
+      inner.style.cssText = 'width:100%; height:100%;';
+      outer.appendChild(inner);
+      document.body.appendChild(outer);
+      const width = outer.offsetWidth - inner.offsetWidth;
+      outer.remove();
+      return width;
+    }
+    const SCROLLBAR_WIDTH = measureScrollbarWidth();
     function dayRange(date) {
       const s = formatDate(date);
       return { start: s, end: s };
@@ -657,13 +674,20 @@ function buildHtml(webview: vscode.Webview, title: string): string {
       const wrap = document.createElement('div');
       wrap.className = 'timelineWrap';
       const cols = 'minmax(50px, auto) repeat(' + dates.length + ', 1fr)';
+      // Header/all-day rows aren't inside the scrolling body, so they get an extra
+      // trailing column the width of the scrollbar to keep their cells aligned with
+      // the hour grid's columns below (see measureScrollbarWidth above).
+      const colsWithScrollbarSpacer = cols + ' ' + SCROLLBAR_WIDTH + 'px';
       const entriesMap = new Map(currentEntries.map((e) => [e.date, e]));
       const today = getTodayStr();
 
       const headerRow = document.createElement('div');
       headerRow.className = 'timelineHeaderRow';
-      headerRow.style.gridTemplateColumns = cols;
-      headerRow.appendChild(document.createElement('div')).className = 'timelineGutter';
+      headerRow.style.gridTemplateColumns = colsWithScrollbarSpacer;
+      const headerGutter = document.createElement('div');
+      headerGutter.className = 'timelineGutter timelineWeekNum';
+      headerGutter.textContent = 'W' + isoWeekNumber(dates[0]);
+      headerRow.appendChild(headerGutter);
       for (const d of dates) {
         const cell = document.createElement('div');
         cell.className = 'timelineDayHeaderCell';
@@ -677,11 +701,12 @@ function buildHtml(webview: vscode.Webview, title: string): string {
         cell.appendChild(name);
         headerRow.appendChild(cell);
       }
+      headerRow.appendChild(document.createElement('div')).className = 'timelineScrollbarSpacer';
       wrap.appendChild(headerRow);
 
       const allDayRow = document.createElement('div');
       allDayRow.className = 'timelineAllDayRow';
-      allDayRow.style.gridTemplateColumns = cols;
+      allDayRow.style.gridTemplateColumns = colsWithScrollbarSpacer;
       const gutterLabel = document.createElement('div');
       gutterLabel.className = 'timelineGutter';
       gutterLabel.textContent = 'All day';
@@ -702,6 +727,7 @@ function buildHtml(webview: vscode.Webview, title: string): string {
         });
         allDayRow.appendChild(cell);
       }
+      allDayRow.appendChild(document.createElement('div')).className = 'timelineScrollbarSpacer';
       wrap.appendChild(allDayRow);
 
       const body = document.createElement('div');
@@ -809,7 +835,7 @@ function buildHtml(webview: vscode.Webview, title: string): string {
       const y = date.getUTCFullYear(), m = date.getUTCMonth();
       return {
         start: formatDate(new Date(Date.UTC(y, m, 1))),
-        end: formatDate(new Date(Date.UTC(y, m + 3, 0))),
+        end: formatDate(new Date(Date.UTC(y, m + 1, 0))),
       };
     }
     function renderListView(container) {
@@ -897,8 +923,8 @@ function buildHtml(webview: vscode.Webview, title: string): string {
       list: {
         range: listRange,
         render: renderListView,
-        label: (d) => monthNames[d.getUTCMonth()] + ' ' + d.getUTCFullYear() + ' +2',
-        step: (d, dir) => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + dir * 3, 1)),
+        label: (d) => monthNames[d.getUTCMonth()] + ' ' + d.getUTCFullYear(),
+        step: (d, dir) => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + dir, 1)),
       },
     };
 
