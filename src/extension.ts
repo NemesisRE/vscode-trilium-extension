@@ -2188,6 +2188,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       try {
         await upsertLabel(client, target.note, 'iconClass', iconClass);
         await treeProvider.refreshNoteById(target.note.noteId);
+        await attributesProvider.refreshIfShowing(target.note.noteId);
       } catch (err) {
         void vscode.window.showErrorMessage(`Trilium: Failed to change icon: ${err}`);
       }
@@ -2242,6 +2243,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       try {
         await upsertLabel(client, target.note, 'color', color);
         await treeProvider.refreshNoteById(target.note.noteId);
+        await attributesProvider.refreshIfShowing(target.note.noteId);
       } catch (err) {
         void vscode.window.showErrorMessage(`Trilium: Failed to change color: ${err}`);
       }
