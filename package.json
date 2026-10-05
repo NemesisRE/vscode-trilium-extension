@@ -881,7 +881,7 @@
     "bootstrap": "^5.3.8",
     "boxicons": "^2.1.4",
     "highlight.js": "^11.12.0",
-    "katex": "^0.18.5",
+    "katex": "^0.19.0",
     "marked": "^18.0.11",
     "mathlive": "^0.111.0",
     "mermaid": "^12.0.0",
