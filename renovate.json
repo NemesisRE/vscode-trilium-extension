@@ -16,19 +16,18 @@
       "matchDepTypes": ["devDependencies"]
     },
     {
-      "description": "@types/vscode is tracked by the custom manager below instead, to keep it and engines.vscode in the same update.",
-      "matchManagers": ["npm"],
-      "matchPackageNames": ["@types/vscode"],
+      "description": "Prefer release-based updates for GitHub Actions; skip digest-only PRs for actions whose pinned tag commit moved without a new release.",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["digest"],
       "enabled": false
     }
   ],
   "customManagers": [
     {
       "customType": "regex",
-      "description": "Track @types/vscode and engines.vscode as one dependency with two locations, so they always update together in a single PR.",
+      "description": "Track engines.vscode as the @types/vscode dependency (grouped with it via the \"vscode\" packageRule above) so they update in the same PR. @types/vscode itself stays on the native npm manager so Renovate still regenerates package-lock.json.",
       "fileMatch": ["^package\\.json$"],
       "matchStrings": [
-        "\"@types/vscode\"\\s*:\\s*\"\\^(?<currentValue>\\d+\\.\\d+\\.\\d+)\"",
         "\"engines\"\\s*:\\s*\\{[^}]*\"vscode\"\\s*:\\s*\"\\^(?<currentValue>\\d+\\.\\d+\\.\\d+)\""
       ],
       "depNameTemplate": "@types/vscode",
