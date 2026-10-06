@@ -26,7 +26,9 @@
     {
       "customType": "regex",
       "description": "Track engines.vscode as the @types/vscode dependency (grouped with it via the \"vscode\" packageRule above) so they update in the same PR. @types/vscode itself stays on the native npm manager so Renovate still regenerates package-lock.json.",
-      "fileMatch": ["^package\\.json$"],
+      "managerFilePatterns": [
+        "/^package\\.json$/"
+      ],
       "matchStrings": [
         "\"engines\"\\s*:\\s*\\{[^}]*\"vscode\"\\s*:\\s*\"\\^(?<currentValue>\\d+\\.\\d+\\.\\d+)\""
       ],
