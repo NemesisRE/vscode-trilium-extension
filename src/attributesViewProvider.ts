@@ -210,6 +210,15 @@ export class AttributesViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
+  /** Re-fetch and re-render, but only if `noteId` is the note currently shown - a change
+   * made elsewhere (e.g. the tree's Change Icon/Change Color commands) shouldn't yank the
+   * view onto a note the user isn't even looking at. */
+  async refreshIfShowing(noteId: string): Promise<void> {
+    if (!this._client || this._note?.noteId !== noteId) { return; }
+    this._note = await this._client.getNote(noteId);
+    this._render();
+  }
+
   setClient(client: EtapiClient | undefined): void {
     this._client = client;
     this._attachments = [];
