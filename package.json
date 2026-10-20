@@ -1,7 +1,7 @@
 {
   "name": "trilium-notes",
   "displayName": "Trilium Notes",
-  "description": "Browse and edit Trilium Notes directly in VS Code via ETAPI",
+  "description": "%extension.description%",
   "version": "2.0.2",
   "publisher": "NemesisRE",
   "icon": "media/icon.png",
@@ -36,6 +36,7 @@
   "engines": {
     "vscode": "^1.138.0"
   },
+  "l10n": "./l10n",
   "categories": [
     "Other"
   ],
@@ -47,7 +48,7 @@
     "customEditors": [
       {
         "viewType": "trilium.textEditor",
-        "displayName": "Trilium Text Editor",
+        "displayName": "%customEditor.trilium.textEditor.displayName%",
         "selector": [
           {
             "filenamePattern": "*.trilium-text"
@@ -60,7 +61,7 @@
       "activitybar": [
         {
           "id": "trilium",
-          "title": "Trilium Notes",
+          "title": "%viewsContainer.trilium.title%",
           "icon": "media/trilium.svg"
         }
       ]
@@ -69,308 +70,308 @@
       "trilium": [
         {
           "id": "triliumNoteTree",
-          "name": "Notes",
+          "name": "%view.triliumNoteTree.name%",
           "icon": "media/trilium.svg",
-          "contextualTitle": "Trilium Notes"
+          "contextualTitle": "%view.triliumNoteTree.contextualTitle%"
         },
         {
           "id": "triliumNoteAttributes",
-          "name": "Attributes",
+          "name": "%view.triliumNoteAttributes.name%",
           "type": "webview",
           "icon": "media/trilium.svg",
-          "contextualTitle": "Trilium Notes"
+          "contextualTitle": "%view.triliumNoteAttributes.contextualTitle%"
         },
         {
           "id": "triliumRecentNotes",
-          "name": "Recent Notes",
+          "name": "%view.triliumRecentNotes.name%",
           "icon": "media/trilium.svg",
-          "contextualTitle": "Trilium Notes"
+          "contextualTitle": "%view.triliumRecentNotes.contextualTitle%"
         },
         {
           "id": "triliumBacklinks",
-          "name": "Backlinks",
+          "name": "%view.triliumBacklinks.name%",
           "icon": "media/trilium.svg",
-          "contextualTitle": "Trilium Notes"
+          "contextualTitle": "%view.triliumBacklinks.contextualTitle%"
         }
       ]
     },
     "commands": [
       {
         "command": "trilium.refresh",
-        "title": "Refresh",
+        "title": "%command.trilium_refresh.title%",
         "icon": "$(refresh)",
         "category": "Trilium"
       },
       {
         "command": "trilium.connect",
-        "title": "Connect to Trilium Server",
+        "title": "%command.trilium_connect.title%",
         "icon": "$(debug-disconnect)",
         "category": "Trilium"
       },
       {
         "command": "trilium.reconnect",
-        "title": "Reconnect to Trilium Server",
+        "title": "%command.trilium_reconnect.title%",
         "icon": "$(database)",
         "category": "Trilium"
       },
       {
         "command": "trilium.disconnect",
-        "title": "Disconnect from Trilium Server",
+        "title": "%command.trilium_disconnect.title%",
         "icon": "$(debug-disconnect)",
         "category": "Trilium"
       },
       {
         "command": "trilium.openNote",
-        "title": "Open Note",
+        "title": "%command.trilium_openNote.title%",
         "icon": "$(edit)",
         "category": "Trilium"
       },
       {
         "command": "trilium.openNoteAsHtml",
-        "title": "Open as HTML",
+        "title": "%command.trilium_openNoteAsHtml.title%",
         "icon": "$(file-code)",
         "category": "Trilium"
       },
       {
         "command": "trilium.openNoteAsMarkdown",
-        "title": "Open as Markdown",
+        "title": "%command.trilium_openNoteAsMarkdown.title%",
         "icon": "$(markdown)",
         "category": "Trilium"
       },
       {
         "command": "trilium.createNote",
-        "title": "New Note",
+        "title": "%command.trilium_createNote.title%",
         "icon": "$(add)",
         "category": "Trilium"
       },
       {
         "command": "trilium.openInBrowser",
-        "title": "Open in Browser",
+        "title": "%command.trilium_openInBrowser.title%",
         "icon": "$(browser)",
         "category": "Trilium"
       },
       {
         "command": "trilium.openInBrowserExternal",
-        "title": "Open in External Browser",
+        "title": "%command.trilium_openInBrowserExternal.title%",
         "icon": "$(link-external)",
         "category": "Trilium"
       },
       {
         "command": "trilium.openFile",
-        "title": "Open File",
+        "title": "%command.trilium_openFile.title%",
         "icon": "$(go-to-file)",
         "category": "Trilium"
       },
       {
         "command": "trilium.downloadFile",
-        "title": "Download File",
+        "title": "%command.trilium_downloadFile.title%",
         "icon": "$(cloud-download)",
         "category": "Trilium"
       },
       {
         "command": "trilium.renameNote",
-        "title": "Rename Note",
+        "title": "%command.trilium_renameNote.title%",
         "category": "Trilium"
       },
       {
         "command": "trilium.createNoteText",
-        "title": "New Text Note",
+        "title": "%command.trilium_createNoteText.title%",
         "icon": "$(edit)",
         "category": "Trilium"
       },
       {
         "command": "trilium.createNoteCode",
-        "title": "New Code Note",
+        "title": "%command.trilium_createNoteCode.title%",
         "icon": "$(code)",
         "category": "Trilium"
       },
       {
         "command": "trilium.createNoteMermaid",
-        "title": "New Mermaid Diagram",
+        "title": "%command.trilium_createNoteMermaid.title%",
         "icon": "$(type-hierarchy)",
         "category": "Trilium"
       },
       {
         "command": "trilium.createNoteCanvas",
-        "title": "New Canvas (Excalidraw)",
+        "title": "%command.trilium_createNoteCanvas.title%",
         "icon": "$(symbol-misc)",
         "category": "Trilium"
       },
       {
         "command": "trilium.createNoteMindMap",
-        "title": "New Mind Map Note",
+        "title": "%command.trilium_createNoteMindMap.title%",
         "icon": "$(type-hierarchy-sub)",
         "category": "Trilium"
       },
       {
         "command": "trilium.createNoteWithContent",
-        "title": "Create Note With Content (programmatic)",
+        "title": "%command.trilium_createNoteWithContent.title%",
         "category": "Trilium"
       },
       {
         "command": "trilium.importNotes",
-        "title": "Import Notes from JSON",
+        "title": "%command.trilium_importNotes.title%",
         "icon": "$(cloud-upload)",
         "category": "Trilium"
       },
       {
         "command": "trilium.openTodayNote",
-        "title": "Open Today's Journal Note",
+        "title": "%command.trilium_openTodayNote.title%",
         "icon": "$(calendar)",
         "category": "Trilium"
       },
       {
         "command": "trilium.deleteNote",
-        "title": "Delete Note",
+        "title": "%command.trilium_deleteNote.title%",
         "icon": "$(trash)",
         "category": "Trilium"
       },
       {
         "command": "trilium.copyNoteId",
-        "title": "Copy Note ID",
+        "title": "%command.trilium_copyNoteId.title%",
         "category": "Trilium"
       },
       {
         "command": "trilium.copyNoteUrl",
-        "title": "Copy Trilium URL",
+        "title": "%command.trilium_copyNoteUrl.title%",
         "category": "Trilium"
       },
       {
         "command": "trilium.openCalendarNote",
-        "title": "Open Calendar Note...",
+        "title": "%command.trilium_openCalendarNote.title%",
         "icon": "$(calendar-clock)",
         "category": "Trilium"
       },
       {
         "command": "trilium.openInboxNote",
-        "title": "Open Inbox Note",
+        "title": "%command.trilium_openInboxNote.title%",
         "category": "Trilium"
       },
       {
         "command": "trilium.openWeekNote",
-        "title": "Open This Week's Note",
+        "title": "%command.trilium_openWeekNote.title%",
         "category": "Trilium"
       },
       {
         "command": "trilium.openMonthNote",
-        "title": "Open This Month's Note",
+        "title": "%command.trilium_openMonthNote.title%",
         "category": "Trilium"
       },
       {
         "command": "trilium.openYearNote",
-        "title": "Open This Year's Note",
+        "title": "%command.trilium_openYearNote.title%",
         "category": "Trilium"
       },
       {
         "command": "trilium.searchNotes",
-        "title": "Search Notes...",
+        "title": "%command.trilium_searchNotes.title%",
         "icon": "$(search)",
         "category": "Trilium"
       },
       {
         "command": "trilium.filterTree",
-        "title": "Filter Tree...",
+        "title": "%command.trilium_filterTree.title%",
         "icon": "$(filter)",
         "category": "Trilium"
       },
       {
         "command": "trilium.clearTreeFilter",
-        "title": "Clear Tree Filter",
+        "title": "%command.trilium_clearTreeFilter.title%",
         "icon": "$(filter-filled)",
         "category": "Trilium"
       },
       {
         "command": "trilium.showRevisions",
-        "title": "Show Note Revisions...",
+        "title": "%command.trilium_showRevisions.title%",
         "icon": "$(history)",
         "category": "Trilium"
       },
       {
         "command": "trilium.cloneNote",
-        "title": "Clone Note...",
+        "title": "%command.trilium_cloneNote.title%",
         "icon": "$(copy)",
         "category": "Trilium"
       },
       {
         "command": "trilium.moveNote",
-        "title": "Move Note...",
+        "title": "%command.trilium_moveNote.title%",
         "icon": "$(arrow-right)",
         "category": "Trilium"
       },
       {
         "command": "trilium.reorderChildren",
-        "title": "Reorder Child Notes...",
+        "title": "%command.trilium_reorderChildren.title%",
         "icon": "$(list-ordered)",
         "category": "Trilium"
       },
       {
         "command": "trilium.exportSubtree",
-        "title": "Export Subtree...",
+        "title": "%command.trilium_exportSubtree.title%",
         "icon": "$(package)",
         "category": "Trilium"
       },
       {
         "command": "trilium.viewAttributes",
-        "title": "View Attributes",
+        "title": "%command.trilium_viewAttributes.title%",
         "icon": "$(symbol-property)",
         "category": "Trilium"
       },
       {
         "command": "trilium.clearRecentNotes",
-        "title": "Clear Recent Notes",
+        "title": "%command.trilium_clearRecentNotes.title%",
         "icon": "$(clear-all)",
         "category": "Trilium"
       },
       {
         "command": "trilium.openNoteById",
-        "title": "Open Note by ID (internal)",
+        "title": "%command.trilium_openNoteById.title%",
         "category": "Trilium"
       },
       {
         "command": "trilium.revealInTree",
-        "title": "Reveal Note in Tree",
+        "title": "%command.trilium_revealInTree.title%",
         "icon": "$(list-tree)",
         "category": "Trilium"
       },
       {
         "command": "trilium.openParent",
-        "title": "Open Parent Note",
+        "title": "%command.trilium_openParent.title%",
         "icon": "$(arrow-up)",
         "category": "Trilium"
       },
       {
         "command": "trilium.openMindMap",
-        "title": "Open Mind Map",
+        "title": "%command.trilium_openMindMap.title%",
         "icon": "$(open-preview)",
         "category": "Trilium"
       },
       {
         "command": "trilium.openMindMapJson",
-        "title": "Open Mind Map JSON",
+        "title": "%command.trilium_openMindMapJson.title%",
         "icon": "$(json)",
         "category": "Trilium"
       },
       {
         "command": "trilium.openMermaid",
-        "title": "Open Mermaid Diagram",
+        "title": "%command.trilium_openMermaid.title%",
         "icon": "$(open-preview)",
         "category": "Trilium"
       },
       {
         "command": "trilium.openMermaidSource",
-        "title": "Open Mermaid Source (.mmd)",
+        "title": "%command.trilium_openMermaidSource.title%",
         "icon": "$(code)",
         "category": "Trilium"
       },
       {
         "command": "trilium.openCanvas",
-        "title": "Open Canvas",
+        "title": "%command.trilium_openCanvas.title%",
         "icon": "$(open-preview)",
         "category": "Trilium"
       },
       {
         "command": "trilium.openCanvasJson",
-        "title": "Open Canvas JSON (.excalidraw)",
+        "title": "%command.trilium_openCanvasJson.title%",
         "icon": "$(json)",
         "category": "Trilium"
       }
@@ -378,12 +379,12 @@
     "submenus": [
       {
         "id": "trilium.newNoteSubmenu",
-        "label": "New Note...",
+        "label": "%submenu.trilium.newNoteSubmenu.label%",
         "icon": "$(add)"
       },
       {
         "id": "trilium.openAsSubmenu",
-        "label": "Open as...",
+        "label": "%submenu.trilium.openAsSubmenu.label%",
         "icon": "$(file-code)"
       }
     ],
@@ -774,24 +775,24 @@
         "trilium.serverUrl": {
           "type": "string",
           "default": "http://localhost:8080",
-          "description": "URL of the Trilium Notes server (e.g. http://localhost:8080)"
+          "description": "%config.trilium_serverUrl.description%"
         },
         "trilium.rootNoteId": {
           "type": "string",
           "default": "root",
-          "description": "Note ID to use as the root of the Trilium tree view. Defaults to 'root'. Change this to scope the tree to a specific subtree (workspace / hoisting equivalent)."
+          "description": "%config.trilium_rootNoteId.description%"
         },
         "trilium.editor.fontSize": {
           "type": "number",
           "default": 14,
           "minimum": 8,
           "maximum": 32,
-          "description": "Font size in pixels for the CKEditor content area."
+          "description": "%config.trilium_editor_fontSize.description%"
         },
         "trilium.editor.spellcheck": {
           "type": "boolean",
           "default": false,
-          "description": "Enable the browser's built-in spellcheck in the CKEditor content area."
+          "description": "%config.trilium_editor_spellcheck.description%"
         },
         "trilium.editor.highlightTheme": {
           "type": "string",
@@ -802,40 +803,40 @@
             "atom-one-dark",
             "solarized-light"
           ],
-          "description": "Theme for code block syntax highlighting in the editor."
+          "description": "%config.trilium_editor_highlightTheme.description%"
         },
         "trilium.recentNotesMaxCount": {
           "type": "number",
           "default": 10,
           "minimum": 1,
           "maximum": 50,
-          "description": "Maximum number of recently opened notes to show in the Recent Notes view."
+          "description": "%config.trilium_recentNotesMaxCount.description%"
         },
         "trilium.autoRevealInTreeOnOpen": {
           "type": "boolean",
           "default": false,
-          "description": "Automatically reveal and focus a note in the tree after opening it in an editor."
+          "description": "%config.trilium_autoRevealInTreeOnOpen.description%"
         },
         "trilium.autoRefreshIntervalSeconds": {
           "type": "number",
           "default": 30,
           "minimum": 0,
           "maximum": 600,
-          "description": "How often (in seconds) to check for external changes to open notes and refresh them. Set to 0 to disable."
+          "description": "%config.trilium_autoRefreshIntervalSeconds.description%"
         },
         "trilium.autoRefreshMaxConsecutiveFailures": {
           "type": "number",
           "default": 8,
           "minimum": 1,
           "maximum": 100,
-          "description": "Maximum consecutive auto-refresh failures before an open note is untracked from refresh polling."
+          "description": "%config.trilium_autoRefreshMaxConsecutiveFailures.description%"
         },
         "trilium.autoRefreshWarnAfterFailures": {
           "type": "number",
           "default": 3,
           "minimum": 1,
           "maximum": 50,
-          "description": "Show a retry/reconnect warning after this many consecutive auto-refresh failures (and every N failures after)."
+          "description": "%config.trilium_autoRefreshWarnAfterFailures.description%"
         }
       }
     }

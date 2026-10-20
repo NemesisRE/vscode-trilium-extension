@@ -35,11 +35,11 @@ type IncludedNotePreview =
 // but they still need menu entries, so they carry checkbox icons of their own.
 const ANCHOR_TASK_STATES: EditorTaskStateDef[] = [
   {
-    name: 'none', title: 'Empty', markdownSymbol: ' ', isCompleted: false,
+    name: 'none', title: vscode.l10n.t('Empty'), markdownSymbol: ' ', isCompleted: false,
     isHidden: false, icon: 'bx bx-checkbox', iconSvg: '', color: '',
   },
   {
-    name: 'done', title: 'Done', markdownSymbol: 'x', isCompleted: true,
+    name: 'done', title: vscode.l10n.t('Done'), markdownSymbol: 'x', isCompleted: true,
     isHidden: false, icon: 'bx bx-checkbox-checked', iconSvg: '', color: '',
   },
 ];
@@ -48,7 +48,7 @@ const FALLBACK_TASK_STATES: EditorTaskStateDef[] = [
   ...ANCHOR_TASK_STATES,
   {
     name: 'doing',
-    title: 'Doing',
+    title: vscode.l10n.t('Doing'),
     markdownSymbol: '/',
     isCompleted: false,
     isHidden: false,
@@ -58,7 +58,7 @@ const FALLBACK_TASK_STATES: EditorTaskStateDef[] = [
   },
   {
     name: 'maybe',
-    title: 'Maybe',
+    title: vscode.l10n.t('Maybe'),
     markdownSymbol: '?',
     isCompleted: false,
     isHidden: false,
@@ -71,7 +71,7 @@ const FALLBACK_TASK_STATES: EditorTaskStateDef[] = [
   },
   {
     name: 'cancelled',
-    title: 'Cancelled',
+    title: vscode.l10n.t('Cancelled'),
     markdownSymbol: '-',
     isCompleted: true,
     isHidden: false,
@@ -437,7 +437,7 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
         case 'openAttachment': {
           const { attachmentId, filename: openFilename } = message as { type: string; attachmentId: string; filename: string };
           void this.openAttachmentExternally(attachmentId, openFilename).catch((err: unknown) => {
-            void vscode.window.showErrorMessage(`Trilium Editor: failed to open attachment: ${String(err)}`);
+            void vscode.window.showErrorMessage(vscode.l10n.t('Trilium Editor: failed to open attachment: {0}', String(String(err))));
           });
           break;
         }
@@ -482,7 +482,7 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
           void this.createNoteFromMention(document.noteId, mentionNoteTitle).then(notePath => {
             void webviewPanel.webview.postMessage({ type: 'createNoteFromMentionResult', id: mentionCreateId, notePath });
           }).catch((err: unknown) => {
-            void vscode.window.showErrorMessage(`Trilium Editor: failed to create note from mention: ${String(err)}`);
+            void vscode.window.showErrorMessage(vscode.l10n.t('Trilium Editor: failed to create note from mention: {0}', String(String(err))));
             void webviewPanel.webview.postMessage({ type: 'createNoteFromMentionResult', id: mentionCreateId, notePath: undefined });
           });
           break;
@@ -498,7 +498,7 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
           void this.cutSelectionIntoSubNote(document.noteId, cutHtml, textPreview).then(created => {
             void webviewPanel.webview.postMessage({ type: 'cutToNoteResult', id: cutId, created });
           }).catch((err: unknown) => {
-            void vscode.window.showErrorMessage(`Trilium Editor: failed to cut selection into a sub-note: ${String(err)}`);
+            void vscode.window.showErrorMessage(vscode.l10n.t('Trilium Editor: failed to cut selection into a sub-note: {0}', String(String(err))));
             void webviewPanel.webview.postMessage({ type: 'cutToNoteResult', id: cutId, created: false });
           });
           break;
@@ -508,13 +508,13 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
           void this.importMarkdownFromClipboard().then(html => {
             void webviewPanel.webview.postMessage({ type: 'importMarkdownResult', id: importId, html });
           }).catch((err: unknown) => {
-            void vscode.window.showErrorMessage(`Trilium Editor: failed to import Markdown from clipboard: ${String(err)}`);
+            void vscode.window.showErrorMessage(vscode.l10n.t('Trilium Editor: failed to import Markdown from clipboard: {0}', String(String(err))));
             void webviewPanel.webview.postMessage({ type: 'importMarkdownResult', id: importId, html: undefined });
           });
           break;
         }
         case 'error':
-          void vscode.window.showErrorMessage(`Trilium Editor: ${message.message}`);
+          void vscode.window.showErrorMessage(vscode.l10n.t('Trilium Editor: {0}', String(message.message)));
           break;
       }
     });
@@ -530,7 +530,7 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
   private async pushToTrilium(document: TriliumCustomDocument): Promise<void> {
     const client = this.getClient();
     if (!client) {
-      void vscode.window.showErrorMessage('Trilium: Not connected.');
+      void vscode.window.showErrorMessage(vscode.l10n.t('Trilium: Not connected.'));
       throw new Error('Not connected');
     }
 
@@ -549,30 +549,33 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
 
       // Upstream changed since we opened/synced this note.
       if (hasServerDrift && normalizedServer !== this.formatHtmlForDiff(localContent)) {
+        const compareLabel = vscode.l10n.t('Compare');
+        const keepOursLabel = vscode.l10n.t('Keep Ours');
+        const useTheirsLabel = vscode.l10n.t('Use Theirs');
         const choice = await vscode.window.showWarningMessage(
-          `Trilium: "${document.title}" changed on the server.`,
+          vscode.l10n.t('Trilium: "{0}" changed on the server.', document.title),
           { modal: true },
-          'Compare',
-          'Keep Ours',
-          'Use Theirs',
+          compareLabel,
+          keepOursLabel,
+          useTheirsLabel,
         );
 
-        if (choice === 'Compare') {
+        if (choice === compareLabel) {
           await this.openConflictDiff(document, serverContent);
           throw new Error('Conflict: awaiting resolution');
         }
 
-        if (choice === 'Use Theirs') {
+        if (choice === useTheirsLabel) {
           document.content = serverContent;
           document.syncedContent = serverContent;
           for (const panel of document.panels) {
             void panel.webview.postMessage({ type: 'update', content: serverContent });
           }
-          vscode.window.setStatusBarMessage('Trilium: Replaced local changes with server version', 4000);
+          vscode.window.setStatusBarMessage(vscode.l10n.t('Trilium: Replaced local changes with server version'), 4000);
           return;
         }
 
-        if (choice !== 'Keep Ours') {
+        if (choice !== keepOursLabel) {
           throw new Error('Conflict: cancelled');
         }
       }
@@ -580,12 +583,12 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
       await client.putNoteContent(document.noteId, localContent);
       document.syncedContent = localContent;
       await this.refreshTreeForNote(document.noteId);
-      vscode.window.setStatusBarMessage('$(check) Trilium: Note saved', 3000);
+      vscode.window.setStatusBarMessage(vscode.l10n.t('$(check) Trilium: Note saved'), 3000);
     } catch (err) {
       if (err instanceof Error && err.message.startsWith('Conflict:')) {
         throw err;
       }
-      void vscode.window.showErrorMessage(`Trilium: Failed to save note: ${err}`);
+      void vscode.window.showErrorMessage(vscode.l10n.t('Trilium: Failed to save note: {0}', String(err)));
       throw err;
     }
   }
@@ -878,8 +881,8 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
     if (!client) { return false; }
 
     const title = await vscode.window.showInputBox({
-      title: 'Cut Selection into Sub-note',
-      prompt: 'Title for the new sub-note',
+      title: vscode.l10n.t('Cut Selection into Sub-note'),
+      prompt: vscode.l10n.t('Title for the new sub-note'),
       value: textPreview.slice(0, 50),
     });
     if (!title) {
