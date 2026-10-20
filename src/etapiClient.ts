@@ -208,7 +208,7 @@ export class EtapiClient {
   async createNote(
     parentNoteId: string,
     title: string,
-    type: 'text' | 'code' | 'mermaid' | 'canvas' | 'mindMap' = 'text',
+    type: 'text' | 'code' | 'mermaid' | 'canvas' | 'mindMap' | 'book' | 'webView' = 'text',
     content = '',
     mime?: string,
   ): Promise<CreateNoteResponse> {
