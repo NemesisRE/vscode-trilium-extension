@@ -34,7 +34,7 @@
     "etapi"
   ],
   "engines": {
-    "vscode": "^1.138.0"
+    "vscode": "^1.144.0"
   },
   "categories": [
     "Other"
