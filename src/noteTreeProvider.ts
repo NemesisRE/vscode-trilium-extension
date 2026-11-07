@@ -341,7 +341,7 @@ export function boxiconToCodeicon(iconClass: string): string | undefined {
 export function noteTypeToLabel(type: Note['type']): string {
   const explicit = TYPE_LABEL[type];
   if (explicit) {
-    return explicit;
+    return vscode.l10n.t(explicit);
   }
   return type.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase();
 }
@@ -534,7 +534,7 @@ export class NoteItem extends vscode.TreeItem {
     } else {
       commandId = 'trilium.openInBrowser';
     }
-    this.command = { command: commandId, title: 'Open', arguments: [this] };
+    this.command = { command: commandId, title: vscode.l10n.t('Open'), arguments: [this] };
 
     const colorAttr = (note.attributes ?? []).find(a => a.type === 'label' && a.name === 'color');
     const colorId = colorAttr?.value ? cssColorToThemeColorId(colorAttr.value) : undefined;
@@ -944,7 +944,7 @@ export class NoteTreeProvider implements vscode.TreeDataProvider<NoteItem>, vsco
 
     if (movedCount === 0) {
       if (skippedCount > 0) {
-        void vscode.window.showInformationMessage('Trilium: Nothing to move for this drop target.');
+        void vscode.window.showInformationMessage(vscode.l10n.t('Trilium: Nothing to move for this drop target.'));
       }
       return;
     }
@@ -1061,7 +1061,7 @@ export class NoteTreeProvider implements vscode.TreeDataProvider<NoteItem>, vsco
           return item;
         });
       } catch (err) {
-        vscode.window.showErrorMessage(`Trilium: Tree filter search failed: ${err}`);
+        vscode.window.showErrorMessage(vscode.l10n.t('Trilium: Tree filter search failed: {0}', String(err)));
         return [];
       }
     }
@@ -1076,7 +1076,7 @@ export class NoteTreeProvider implements vscode.TreeDataProvider<NoteItem>, vsco
         }
         return [rootItem];
       } catch (err) {
-        vscode.window.showErrorMessage(`Trilium: Failed to load root note "${rootNoteId}": ${err}`);
+        vscode.window.showErrorMessage(vscode.l10n.t('Trilium: Failed to load root note "{0}": {1}', String(rootNoteId), String(err)));
         return [];
       }
     }
@@ -1126,7 +1126,7 @@ export class NoteTreeProvider implements vscode.TreeDataProvider<NoteItem>, vsco
       );
       return items;
     } catch (err) {
-      vscode.window.showErrorMessage(`Trilium: Failed to load children of "${noteId}": ${err}`);
+      vscode.window.showErrorMessage(vscode.l10n.t('Trilium: Failed to load children of "{0}": {1}', String(noteId), String(err)));
       return [];
     }
   }

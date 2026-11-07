@@ -83,7 +83,7 @@ export async function showIconPickerPanel(context: vscode.ExtensionContext): Pro
 
     const panel = vscode.window.createWebviewPanel(
       'triliumIconPicker',
-      'Insert Icon',
+      vscode.l10n.t('Insert Icon'),
       { viewColumn: vscode.ViewColumn.Beside, preserveFocus: false },
       { enableScripts: true, retainContextWhenHidden: false },
     );
