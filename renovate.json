@@ -4,16 +4,16 @@
   "minimumReleaseAge": "1 day",
   "packageRules": [
     {
+      "groupName": "devDependencies",
+      "matchDepTypes": ["devDependencies"]
+    },
+    {
       "groupName": "react-stack",
       "matchPackageNames": ["react", "react-dom", "@types/react", "@types/react-dom"]
     },
     {
       "groupName": "vscode",
       "matchPackageNames": ["@types/vscode", "@vscode/**"]
-    },
-    {
-      "groupName": "devDependencies",
-      "matchDepTypes": ["devDependencies"]
     },
     {
       "description": "Prefer release-based updates for GitHub Actions; skip digest-only PRs for actions whose pinned tag commit moved without a new release.",
