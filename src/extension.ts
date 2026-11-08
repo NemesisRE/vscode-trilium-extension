@@ -1560,7 +1560,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
 
       try {
-        const revealed = await revealNoteInTree(noteId, treeProvider, treeView);
+        const revealed = await revealNoteInTree(noteId, treeProvider, treeView, item);
         if (!revealed) {
           void vscode.window.showWarningMessage(
             'Trilium: Could not reveal note in tree (note may be outside current root/filter).',
@@ -2180,7 +2180,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       // the browser fallback below.
       if (note.type === 'book' && getBookViewTypeLabel(note) === 'board') {
         await openKanbanViewPanel(client, note, context);
-        await maybeAutoRevealOpenedNote(note.noteId, treeProvider, treeView);
+        await maybeAutoRevealOpenedNote(note.noteId, treeProvider, treeView, item);
         return;
       }
 
@@ -2188,7 +2188,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       // of the browser fallback below.
       if (note.type === 'book' && getBookViewTypeLabel(note) === 'calendar') {
         await openCalendarViewPanel(client, note, context);
-        await maybeAutoRevealOpenedNote(note.noteId, treeProvider, treeView);
+        await maybeAutoRevealOpenedNote(note.noteId, treeProvider, treeView, item);
         return;
       }
 
@@ -2228,7 +2228,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             uri,
             TriliumTextEditorProvider.viewType,
           );
-          await maybeAutoRevealOpenedNote(note.noteId, treeProvider, treeView);
+          await maybeAutoRevealOpenedNote(note.noteId, treeProvider, treeView, item);
           recentNotesProvider.trackNote(note);
             if (backlinksProvider) {
               backlinksProvider.updateBacklinks(note.noteId);
@@ -2263,7 +2263,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           tempFileManager.getLanguageId(note),
         );
         await vscode.window.showTextDocument(doc, { preview: false });
-        await maybeAutoRevealOpenedNote(note.noteId, treeProvider, treeView);
+        await maybeAutoRevealOpenedNote(note.noteId, treeProvider, treeView, item);
         recentNotesProvider.trackNote(note);
           if (backlinksProvider) {
             backlinksProvider.updateBacklinks(note.noteId);
@@ -3497,8 +3497,16 @@ async function revealNoteInTree(
   noteId: string,
   treeProvider: NoteTreeProvider,
   treeView: vscode.TreeView<NoteItem>,
+  knownItem?: NoteItem,
 ): Promise<boolean> {
-  const item = await treeProvider.findItemByNoteId(noteId);
+  // A note opened from a specific tree entry already carries the exact
+  // clone instance the user clicked (its path/branchId). Reveal that
+  // instance directly - re-resolving by noteId alone would pick an
+  // arbitrary parent chain when the note has clones, jumping the tree to
+  // a different clone than the one the user actually opened.
+  const item = knownItem?.note.noteId === noteId
+    ? knownItem
+    : await treeProvider.findItemByNoteId(noteId);
   if (!item) {
     return false;
   }
@@ -3516,13 +3524,14 @@ async function maybeAutoRevealOpenedNote(
   noteId: string,
   treeProvider: NoteTreeProvider,
   treeView: vscode.TreeView<NoteItem>,
+  knownItem?: NoteItem,
 ): Promise<void> {
   if (!getAutoRevealInTreeOnOpen()) {
     return;
   }
 
   try {
-    await revealNoteInTree(noteId, treeProvider, treeView);
+    await revealNoteInTree(noteId, treeProvider, treeView, knownItem);
   } catch {
     // Best-effort only. Opening the note should not fail if the tree cannot reveal it.
   }
