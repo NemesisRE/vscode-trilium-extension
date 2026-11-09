@@ -1,7 +1,7 @@
 {
   "repo": "TriliumNext/Trilium",
-  "ref": "2be0c6ed7867fca60c3ed315b449952b536efe75",
-  "sha256": "1629e9bd6d0ef5ce0a5214e766f196a24ab877c760aafaeb852692d96429f8b0",
+  "ref": "d83d7151f1c6d4292be88d8d34008f409b252f7f",
+  "sha256": "5d590004096dfe77030e8fb00e55303584c1ac156ee1c564b7601831339365c1",
   "plugins": [
     "ckeditor5-admonition",
     "ckeditor5-collapsible",
