@@ -2189,24 +2189,48 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
               },
             },
             // CutToNote plugin: creates a sub-note from the selection via the extension host's
-            // ETAPI client, then reports back whether it was actually created so the toolbar
-            // button only removes the selection on success (see cuttonote.ts's vendor patch).
+            // ETAPI client, then reports back whether it was actually created so cut() only
+            // removes the selection on success. cuttonote.ts now pulls the selection itself
+            // (editor.getSelectedHtml()) and just calls cut()/saveNow() - this extension host's
+            // message shape (id/html/textPreview -> created) is unchanged from before.
             cutToNote: {
-              execute: (html, textPreview) => new Promise((resolve) => {
+              cut: () => {
+                const html = editor.getSelectedHtml();
+                if (!html) {
+                  return;
+                }
+                const textPreview = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
                 const id = Math.random().toString(36).slice(2);
-                pendingCutToNoteRequests.set(id, resolve);
+                pendingCutToNoteRequests.set(id, (created) => {
+                  if (created) {
+                    void editor.removeSelection();
+                  }
+                });
                 vscode.postMessage({ type: 'cutToNote', id, html, textPreview });
-              }),
+              },
+              // This extension already persists on every 'change:data' event (see below), not on
+              // a debounce Trilium's own saveNow() would need to flush - so this just forces VS
+              // Code's own save command, the same thing Ctrl+S triggers.
+              saveNow: () => {
+                vscode.postMessage({ type: 'save' });
+                return Promise.resolve();
+              },
             },
             // Markdown import plugin: reads the system clipboard and converts Markdown to HTML
             // on the extension host (vscode.env.clipboard + TempFileManager.markdownToHtml() -
             // see the 'importMarkdown' message handler below), same rationale as clipboard above.
+            // markdownimport.ts's command now just calls open() and expects the host to insert
+            // the result itself, through the same pasteContent() cuttonote.ts exposes.
             markdownImport: {
-              execute: () => new Promise((resolve) => {
+              open: () => {
                 const id = Math.random().toString(36).slice(2);
-                pendingMarkdownImportRequests.set(id, resolve);
+                pendingMarkdownImportRequests.set(id, (html) => {
+                  if (html) {
+                    editor.pasteContent(html, '');
+                  }
+                });
                 vscode.postMessage({ type: 'importMarkdown', id });
-              }),
+              },
             },
             // LinkEmbed plugin: the metadata fetch (URL → title/description/favicon/image) runs
             // on the extension host, outside the webview's CSP - it needs an unrestricted outbound

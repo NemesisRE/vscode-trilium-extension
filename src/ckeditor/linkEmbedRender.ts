@@ -1,4 +1,4 @@
-import { extractYouTubeVideoId, safeHostname } from './linkEmbedShared.js';
+import { extractYouTubeVideoId, safeHostname } from '@triliumnext/commons';
 
 /** Every piece of fetched metadata a linkEmbed/linkMention element stores as a model attribute. */
 export interface LinkEmbedRenderMetadata {
@@ -9,6 +9,9 @@ export interface LinkEmbedRenderMetadata {
   favicon?: string;
   siteName?: string;
   image?: string;
+  /** The video's width/height ratio (e.g. "16/9"). Not used by this extension's facade, which
+   * sizes itself with CSS, but accepted since link_embed_editing.ts always passes it through. */
+  aspectRatio?: string;
 }
 
 /**

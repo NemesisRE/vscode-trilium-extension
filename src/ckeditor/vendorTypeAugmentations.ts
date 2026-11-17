@@ -15,6 +15,8 @@ declare global {
     favicon?: string;
     siteName?: string;
     image?: string;
+    /** The video's width/height ratio (e.g. "16/9"), for the embeddable providers that have one. */
+    aspectRatio?: string;
     /** True when the host could not read the page at all (network error, timeout, non-HTML
      * response, blocked by the SSRF guard) - the URL is then left as a plain link rather than
      * becoming a preview that shows less than the URL itself did. */
@@ -26,6 +28,24 @@ declare module 'ckeditor5' {
   interface Editor {
     /** Set by cuttonote.ts's CutToNotePlugin. Serializes the current selection to HTML. */
     getSelectedHtml(): string;
+    /** Set by cuttonote.ts's CutToNotePlugin. Serializes the current selection to indented
+     * plain text, the same way the native copy's `text/plain` clipboard flavor does. */
+    getSelectedPlainText(): string;
+    /** Set by cuttonote.ts's CutToNotePlugin. Pastes `html` (or `text` as a fallback) at the
+     * current selection, through the normal clipboard-paste pipeline. */
+    pasteContent(html: string, text: string): void;
+    /** Set by cuttonote.ts's CutToNotePlugin. Pins the current selection as live ranges for a
+     * paste whose content arrives asynchronously (e.g. from `navigator.clipboard.read()`). */
+    capturePasteTarget(): {
+      /** Pastes at the pinned selection, then releases it. Does nothing when the pinned
+       * content is gone. */
+      paste(html: string, text: string): void;
+      /** Moves the selection back onto the pinned ranges and releases them. Returns `false`
+       * when the pinned content is gone. */
+      restore(): boolean;
+      /** Detaches the pinned ranges without pasting. Safe to call more than once. */
+      release(): void;
+    };
     /** Set by cuttonote.ts's CutToNotePlugin. Deletes the current selection. */
     removeSelection(): Promise<void>;
   }
@@ -40,8 +60,10 @@ declare module 'ckeditor5' {
 
     /** Read by cuttonote.ts's CutToNotePlugin. */
     cutToNote?: {
-      /** Creates a sub-note from the given HTML/text preview; resolves to whether it was created. */
-      execute(html: string, textPreview: string): Promise<boolean>;
+      /** Moves the selection into a new child note of the note the editor holds. */
+      cut(): void;
+      /** Saves the note now, once the selection is removed, rather than after the usual delay. */
+      saveNow(): Promise<void>;
     };
 
     /** Read by copy_anchor_link.ts. The current note's own id/title (a bookmark is always an
@@ -53,16 +75,12 @@ declare module 'ckeditor5' {
 
     /** Read by markdownimport.ts's MarkdownImportPlugin. */
     markdownImport?: {
-      /** Reads the system clipboard and converts Markdown to HTML; resolves to the HTML to insert. */
-      execute(): Promise<string | undefined>;
+      /** Opens the dialog that converts Markdown into the note at the selection. */
+      open(): void;
     };
 
-    /** Read by link_embed_commands.ts and link_embed_autodetect.ts. */
-    linkEmbed?: {
-      /** Fetches a URL's preview metadata through the extension host (outside the webview's
-       * CSP). Never rejects: any failure resolves as `{ unresolved: true }`. */
-      fetchMetadata(url: string): Promise<LinkEmbedMetadata>;
-    };
+    // linkEmbed is declared by link_embed_commands.ts itself now (as `Partial<LinkEmbedHost>`);
+    // this extension only ever sets `fetchMetadata` on it, which that shape still allows.
   }
 }
 
