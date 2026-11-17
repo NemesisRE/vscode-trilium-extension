@@ -435,10 +435,13 @@ export function applyVendorPatches(vendorDir, logPrefix = '[patch-plugins]') {
   if (fs.existsSync(referenceLinkPath)) {
     let src = fs.readFileSync(referenceLinkPath, 'utf8');
     const before = src;
-    src = src.replace(
-      'import type { LinkedBlockChangedEvent } from "./block_reference/block_reference_editing.js";',
-      'import type { LinkedBlockChangedEvent } from "./block_reference/block_reference_editing.js";\nimport BlockReferenceEditing from "./block_reference/block_reference_editing.js";',
-    );
+    // Patches also re-run over an already-patched (cached) vendor tree in CI, so guard the import.
+    if (!src.includes('import BlockReferenceEditing from')) {
+      src = src.replace(
+        'import type { LinkedBlockChangedEvent } from "./block_reference/block_reference_editing.js";',
+        'import type { LinkedBlockChangedEvent } from "./block_reference/block_reference_editing.js";\nimport BlockReferenceEditing from "./block_reference/block_reference_editing.js";',
+      );
+    }
     src = src.replace(
       "if ( plugins.has( 'BlockReferenceEditing' ) ) {\n\t\t\tthis.listenTo<LinkedBlockChangedEvent>(\n\t\t\t\tplugins.get( 'BlockReferenceEditing' ), 'linkedBlockChanged',",
       "if ( plugins.has( BlockReferenceEditing ) ) {\n\t\t\tthis.listenTo<LinkedBlockChangedEvent>(\n\t\t\t\tplugins.get( BlockReferenceEditing ), 'linkedBlockChanged',",
