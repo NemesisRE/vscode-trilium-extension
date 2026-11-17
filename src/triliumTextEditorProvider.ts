@@ -1678,7 +1678,7 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
     <script type="module" nonce="${nonce}">
       import {
         TriliumEditor, loadKatex, loadMermaid, highlightCodeForIncludedNote,
-        insertContentEmbedForNote, setContentEmbedCollapsed, sanitizeEmbedHtml, renderUnknownEmbed, renderMediaEmbed,
+        insertContentEmbedForNote, setContentEmbedCollapsed, sanitizeEmbedHtml, sliceEmbedHtmlToBlock, renderUnknownEmbed, renderMediaEmbed,
       } from '${ckeditorUri}';
 
       (function() {
@@ -1780,15 +1780,15 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
         // triliumTextEditorProvider.ts) and renders the widget's content once it arrives - see the
         // 'renderIncludedNoteResult' case below. The box size decides what is drawn: a Compact
         // embed shows its title row only, an Expandable one starts collapsed to it.
-        function renderIncludedNote(noteId, domElement, boxSize) {
+        function renderIncludedNote(noteId, domElement, boxSize, block) {
           const id = Math.random().toString(36).slice(2);
-          pendingIncludeNoteRenders.set(id, { domElement, noteId, boxSize });
+          pendingIncludeNoteRenders.set(id, { domElement, noteId, boxSize, block });
           domElement.textContent = '';
           domElement.classList.add('include-note-loading');
           vscode.postMessage({ type: 'renderIncludedNote', id, noteId });
         }
 
-        async function applyIncludedNotePreview(domElement, noteId, preview, boxSize) {
+        async function applyIncludedNotePreview(domElement, noteId, preview, boxSize, block) {
           domElement.classList.remove('include-note-loading');
           domElement.textContent = '';
 
@@ -1849,7 +1849,7 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
               body.classList.add('include-note-content-text');
               // Already sanitized on the extension host (sanitizeIncludedNoteHtml) before
               // being sent here.
-              body.innerHTML = preview.html;
+              body.innerHTML = sliceEmbedHtmlToBlock(preview.html, block);
               break;
             }
             case 'code': {
@@ -2330,8 +2330,8 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
                 return null;
               },
               inlineLanguages: [],
-              loadNote: (noteId, wrapper, boxSize) => {
-                renderIncludedNote(noteId, wrapper, boxSize);
+              loadNote: (noteId, wrapper, boxSize, block) => {
+                renderIncludedNote(noteId, wrapper, boxSize, block);
               },
               loadAttachment: (attachmentId, wrapper) => {
                 wrapper.textContent = '';
@@ -2666,7 +2666,7 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
               const pending = pendingIncludeNoteRenders.get(message.id);
               pendingIncludeNoteRenders.delete(message.id);
               if (pending) {
-                void applyIncludedNotePreview(pending.domElement, pending.noteId, message.preview, pending.boxSize);
+                void applyIncludedNotePreview(pending.domElement, pending.noteId, message.preview, pending.boxSize, pending.block);
               }
               break;
             }

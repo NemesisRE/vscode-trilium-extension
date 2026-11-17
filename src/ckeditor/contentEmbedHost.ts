@@ -1,4 +1,4 @@
-import { renderLinkEmbedBoxHtml, type LinkPreviewData } from '@triliumnext/commons';
+import { renderLinkEmbedBoxHtml, sliceToBlockReference, type LinkPreviewData } from '@triliumnext/commons';
 import type { Editor } from 'ckeditor5';
 import ContentEmbed from '../../vendor/ckeditor5/src/plugins/content_embed/content_embed';
 
@@ -78,4 +78,17 @@ export function renderMediaEmbed(
       openExternal(preview.url);
     });
   });
+}
+
+/**
+ * Keeps only the blocks of a text note's `html` that `block` (the embed's `block` parameter,
+ * `id` or `startId:endId`) points at. Returns the whole note when a block is missing, as upstream's
+ * own renderer does for a block that has since been deleted.
+ */
+export function sliceEmbedHtmlToBlock(html: string, block: string | undefined): string {
+  if (!block) {
+    return html;
+  }
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  return sliceToBlockReference(doc.body, block) ? doc.body.innerHTML : html;
 }

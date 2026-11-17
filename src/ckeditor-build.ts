@@ -94,6 +94,7 @@ export {
   insertContentEmbedForNote,
   setContentEmbedCollapsed,
   sanitizeEmbedHtml,
+  sliceEmbedHtmlToBlock,
   renderUnknownEmbed,
   renderMediaEmbed,
 } from './ckeditor/contentEmbedHost';
