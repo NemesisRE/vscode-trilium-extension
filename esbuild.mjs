@@ -72,7 +72,7 @@ const ckeditorBuildOptions = {
   platform: 'browser',
   sourcemap: !production,
   minify: production,
-  target: ['es2020'],
+  target: ['es2023'],
   logLevel: 'info',
   loader: {
     '.svg': 'text',
@@ -81,6 +81,9 @@ const ckeditorBuildOptions = {
     '.woff2': 'dataurl',
     '.ttf': 'dataurl',
     '.eot': 'dataurl',
+  },
+  alias: {
+    '@triliumnext/commons': path.join(workspaceRoot, 'vendor', 'commons', 'src', 'index.ts'),
   },
   plugins: [svgRawPlugin],
   treeShaking: true,
@@ -99,7 +102,7 @@ const webviewBuildOptions = {
   conditions: ['production'],
   sourcemap: false,
   minify: production,
-  target: ['es2020'],
+  target: ['es2023'],
   logLevel: 'info',
   loader: {
     '.css': 'css',

@@ -141,6 +141,29 @@ export function applyVendorPatches(vendorDir, logPrefix = '[patch-plugins]') {
     }
   }
 
+  // ckeditor5-math: a named type-only import of anything from mathlive's export-star barrel
+  // (types/mathlive.d.ts re-exporting types/options.d.ts) fails to resolve under this project's
+  // TypeScript 7 (TS2614, "has no exported member") - tried both `InlineShortcutDefinitions`
+  // directly and, as a workaround, `MathfieldOptions` (itself re-exported the same way), and both
+  // failed the same way once compiled as part of the whole program, even though each resolves fine
+  // in isolation. Rather than chase this compiler version's export-star resolution further, type
+  // this file's own local use (a plain shortcut-name -> replacement map, always built fresh here
+  // and merged into whatever MathLive already set) with a local, unimported shape - this file
+  // never needs MathLive's own fuller definition.
+  const mathInputViewPath = path.join(vendorDir, 'ckeditor5', 'src', 'plugins', 'math', 'math_input_view.ts');
+  if (fs.existsSync(mathInputViewPath)) {
+    let src = fs.readFileSync(mathInputViewPath, 'utf8');
+    const before = src;
+    src = src.replace(
+      "import type { InlineShortcutDefinitions } from 'mathlive';",
+      "type InlineShortcutDefinitions = Record<string, unknown>;",
+    );
+    if (src !== before) {
+      fs.writeFileSync(mathInputViewPath, src, 'utf8');
+      console.log(`${logPrefix} patched ckeditor5/src/plugins/math/math_input_view.ts`);
+    }
+  }
+
   // ckeditor5-mermaid: the debounced textarea input listener leaves its `event` parameter
   // implicitly typed and accesses `event.target.value` without narrowing target's type,
   // so give it an explicit `Event` type and guard the HTMLInputElement cast.
@@ -327,38 +350,6 @@ export function applyVendorPatches(vendorDir, logPrefix = '[patch-plugins]') {
     }
   }
 
-  // includenote.ts has three app-level dependencies with no equivalent here: the insert
-  // command opens Trilium's own note-picker dialog via glob.getComponentByEl(editorEl)
-  // .triggerCommand('addIncludeNoteToText'), and both the initial render and the box-size-
-  // change reload call component.loadIncludedNote(noteId, $(domElement), boxSize) - Trilium's
-  // own recursive note-type renderer. Redirect the insert command to a pickNote() config
-  // callback (same debounced-search QuickPick as internalLink.ts) that inserts the
-  // includeNote widget directly via model.insertObject() (same API inline_icon_editing.ts
-  // already uses for its own object-widget insert), and redirect both render call sites to a
-  // renderNote() config callback (wired in triliumTextEditorProvider.ts to an ETAPI
-  // getNote()/getNoteContent() fetch plus a per-note-type preview renderer).
-  const includeNotePath = path.join(vendorDir, 'ckeditor5', 'src', 'plugins', 'includenote.ts');
-  if (fs.existsSync(includeNotePath)) {
-    let src = fs.readFileSync(includeNotePath, 'utf8');
-    const before = src;
-    src = src.replace(
-      '\toverride execute() {\n\t\tconst editorEl = this.editor.editing.view.getDomRoot();\n\t\tconst component = glob.getComponentByEl(editorEl);\n\n\t\tcomponent.triggerCommand(\'addIncludeNoteToText\');\n\t}',
-      '\toverride execute() {\n\t\tconst editor = this.editor;\n\t\tconst config = editor.config.get( \'includeNote\' ) as { pickNote?: () => Promise<{ noteId: string } | undefined> } | undefined;\n\n\t\tif ( !config?.pickNote ) {\n\t\t\treturn;\n\t\t}\n\n\t\tvoid config.pickNote().then( picked => {\n\t\t\tif ( !picked ) {\n\t\t\t\treturn;\n\t\t\t}\n\n\t\t\teditor.model.change( writer => {\n\t\t\t\tconst includeNoteElement = writer.createElement( \'includeNote\', { noteId: picked.noteId, boxSize: \'medium\' } );\n\t\t\t\teditor.model.insertObject( includeNoteElement, null, null, { setSelection: \'after\' } );\n\t\t\t} );\n\t\t} );\n\t}',
-    );
-    src = src.replace(
-      '\t\t\t\t\tconst editorEl = editor.editing.view.getDomRoot();\n\t\t\t\t\tconst component = glob.getComponentByEl<EditorComponent>( editorEl );\n\n\t\t\t\t\tcomponent.loadIncludedNote( noteId, $( domElement ), boxSize );',
-      '\t\t\t\t\tconst renderNote = ( editor.config.get( \'includeNote\' ) as { renderNote?: ( noteId: string, domElement: HTMLElement, boxSize: string | undefined ) => void } | undefined )?.renderNote;\n\t\t\t\t\trenderNote?.( noteId, domElement, boxSize );',
-    );
-    src = src.replace(
-      '\tif ( wrapperDom && noteId ) {\n\t\tconst component = glob.getComponentByEl<EditorComponent>( editor.editing.view.getDomRoot() );\n\t\tcomponent.loadIncludedNote( noteId, $( wrapperDom ), boxSize );\n\t}',
-      '\tif ( wrapperDom && noteId ) {\n\t\tconst renderNote = ( editor.config.get( \'includeNote\' ) as { renderNote?: ( noteId: string, domElement: HTMLElement, boxSize: string | undefined ) => void } | undefined )?.renderNote;\n\t\trenderNote?.( noteId, wrapperDom, boxSize );\n\t}',
-    );
-    if (src !== before) {
-      fs.writeFileSync(includeNotePath, src, 'utf8');
-      console.log(`${logPrefix} patched ckeditor5/src/plugins/includenote.ts`);
-    }
-  }
-
   // copy_anchor_link.ts's "Copy anchor reference link" button (on the bookmark widget's
   // balloon toolbar) resolves the current note through glob.getActiveContextNote() and the
   // link's display title through glob.getReferenceLinkTitleSync() - both app-level lookups
@@ -431,6 +422,36 @@ export function applyVendorPatches(vendorDir, logPrefix = '[patch-plugins]') {
     }
   }
 
+  // referencelink.ts's afterInit() guards `plugins.get('BlockReferenceEditing')` behind a
+  // `plugins.has(...)` check, but this extension never registers that plugin (block references
+  // are a Trilium feature this extension doesn't support), so the guard is always false at
+  // runtime and the call is dead code here. TypeScript still type-checks it, though: `.get()`
+  // called with a plugin *name string* that isn't in this program's plugin map falls back to the
+  // generic `PluginInterface`, which lacks the `Emitter` mixin members `listenTo()` needs.
+  // Importing the real class and calling `.get()` with it instead (the same pattern already used
+  // for InlineIconUI/BookmarkUI elsewhere in this vendor tree) gives it its real, Emitter-including
+  // type - same runtime lookup either way, since CKEditor's plugin registry keys both ways.
+  const referenceLinkPath = path.join(vendorDir, 'ckeditor5', 'src', 'plugins', 'referencelink.ts');
+  if (fs.existsSync(referenceLinkPath)) {
+    let src = fs.readFileSync(referenceLinkPath, 'utf8');
+    const before = src;
+    // Patches also re-run over an already-patched (cached) vendor tree in CI, so guard the import.
+    if (!src.includes('import BlockReferenceEditing from')) {
+      src = src.replace(
+        'import type { LinkedBlockChangedEvent } from "./block_reference/block_reference_editing.js";',
+        'import type { LinkedBlockChangedEvent } from "./block_reference/block_reference_editing.js";\nimport BlockReferenceEditing from "./block_reference/block_reference_editing.js";',
+      );
+    }
+    src = src.replace(
+      "if ( plugins.has( 'BlockReferenceEditing' ) ) {\n\t\t\tthis.listenTo<LinkedBlockChangedEvent>(\n\t\t\t\tplugins.get( 'BlockReferenceEditing' ), 'linkedBlockChanged',",
+      "if ( plugins.has( BlockReferenceEditing ) ) {\n\t\t\tthis.listenTo<LinkedBlockChangedEvent>(\n\t\t\t\tplugins.get( BlockReferenceEditing ), 'linkedBlockChanged',",
+    );
+    if (src !== before) {
+      fs.writeFileSync(referenceLinkPath, src, 'utf8');
+      console.log(`${logPrefix} patched ckeditor5/src/plugins/referencelink.ts`);
+    }
+  }
+
   // mention_customization.ts's "create new note from this @mention" action calls
   // glob.getComponentByEl(editorEl).createNoteForReferenceLink(title, intoInbox), which has no
   // equivalent here. Redirect to a config callback (wired in triliumTextEditorProvider.ts to an
@@ -453,16 +474,41 @@ export function applyVendorPatches(vendorDir, logPrefix = '[patch-plugins]') {
     }
   }
 
+  // link_embed_toolbar.ts (v0.107.0+) requires upstream's InternalLinkPlugin - which pulls in the
+  // unported internallink.ts/referencelink.ts and registers a second `reference` schema item next
+  // to this extension's own local ReferenceLink, aborting editor startup - and lists the
+  // `editLink`/`linkMenu` items that plugin and link_menu.ts provide (an app-level link dialog and
+  // a host-drawn "More actions" menu, neither of which exists here). Redirect the plugin to this
+  // extension's local InternalLink (same as the slash-commands patch below) and swap those two
+  // items for local Edit title and Unlink buttons (src/ckeditor/linkEmbedEditTitle.ts, linkEmbedUnlink.ts).
+  const linkEmbedToolbarPath = path.join(vendorDir, 'ckeditor5', 'src', 'plugins', 'link_embed', 'link_embed_toolbar.ts');
+  if (fs.existsSync(linkEmbedToolbarPath)) {
+    let src = fs.readFileSync(linkEmbedToolbarPath, 'utf8');
+    const before = src;
+    src = src.replace(
+      'import InternalLinkPlugin from "../internallink.js";',
+      'import InternalLinkPlugin from "../../../../../src/ckeditor/internalLink.js";',
+    );
+    src = src.replace(
+      '"linkEmbedLink", "linkEmbedCopyUrl", "editLink", "|",\n                "linkEmbedDisplayDropdown", "linkMenu"',
+      '"linkEmbedLink", "linkEmbedCopyUrl", "linkEmbedEditTitle", "linkEmbedUnlink", "|",\n                "linkEmbedDisplayDropdown"',
+    );
+    if (src !== before) {
+      fs.writeFileSync(linkEmbedToolbarPath, src, 'utf8');
+      console.log(`${logPrefix} patched ckeditor5/src/plugins/link_embed/link_embed_toolbar.ts`);
+    }
+  }
+
   // slash_commands.ts's catalog pulls in two entries this standalone extension can't build as
   // vendored: the "icon" and "internal-link" entries import their commands from the vendor's
   // own unported inline_icon_ui.ts/internallink.ts (both still full of
   // glob.getComponentByEl()/EditorComponent/jQuery references - this extension never uses
   // those originals, see the inline_icon.ts patch above). Redirect both to this extension's
   // own local reimplementations (src/ckeditor/inlineIconUi.ts, src/ckeditor/internalLink.ts -
-  // same command name, 'insertInternalLink'). The "include-note" entry needs no redirect: it
-  // imports includenote.ts, which is patch-free to import from now that Tier 3c ported it
-  // (see the includenote.ts patch above) - COMMAND_NAME there still resolves to the same
-  // 'insertIncludeNote' string, so the catalog entry works unchanged.
+  // same command name, 'insertInternalLink'). The "content-embed" entry needs no redirect: it
+  // imports content_embed.ts, which is patch-free - Trilium's ContentEmbed plugin takes its
+  // app-level dependencies (note picker, rendering) from the `contentEmbed` editor config, which
+  // the webview script wires up.
   const slashCommandsPath = path.join(vendorDir, 'ckeditor5', 'src', 'plugins', 'mention', 'slash_commands.ts');
   if (fs.existsSync(slashCommandsPath)) {
     let src = fs.readFileSync(slashCommandsPath, 'utf8');
@@ -475,27 +521,30 @@ export function applyVendorPatches(vendorDir, logPrefix = '[patch-plugins]') {
       'import { COMMAND_NAME as INTERNAL_LINK_COMMAND } from "../internallink.js";',
       'import { COMMAND_NAME as INTERNAL_LINK_COMMAND } from "../../../../../src/ckeditor/internalLink.js";',
     );
-    // The "AI assistant" entry and the per-quick-action entries only ever apply to an
-    // "AiAssistantUI" plugin this extension doesn't have and, per the Tier 3 scope doc, isn't
-    // planning to build (VS Code's own AI tooling already covers that ground) - `editor.plugins
-    // .get("AiAssistantUI")` resolves to the untyped `PluginInterface` fallback with no
-    // `quickActions`/`runQuickAction` members, which fails the type-check even though the
-    // `editor.plugins.has()` guard means it never runs here. Drop both along with the icon
-    // import only they used.
+    // buildAiQuickActionSlashCommands() builds its whole entry list from an "AiAssistantUI"
+    // plugin this extension doesn't have and, per the Tier 3 scope doc, isn't planning to build
+    // (VS Code's own AI tooling already covers that ground). Its own `editor.plugins.has(...)`
+    // guard makes it a runtime no-op here regardless, but it still type-checks against
+    // AiAssistantUI's `quickActions`/`runQuickAction` shape, which nothing in this vendor tree
+    // declares - drop the call site, the function, and its now-unused `aiIcon` import rather than
+    // type a plugin interface this extension can't run.
     src = src.replace(
       'import aiIcon from "../ai_assistant/theme/icons/ai.svg?raw";\n',
       '',
     );
     src = src.replace(
-      '        {\n            id: "ai-assistant",\n            title: t("AI assistant"),\n            description: t("Ask AI to rewrite the selection or generate new content."),\n            aliases: [ "ask ai", "assistant" ],\n            icon: aiIcon,\n            commandName: "aiAssistant"\n        },\n',
+      '\n        ...buildAiQuickActionSlashCommands(editor)',
       '',
     );
     src = src.replace(
-      /\n\/\*\*\n \* One entry per AI quick action[\s\S]*?\nfunction buildAiQuickActionSlashCommands\(editor: Editor\): SlashCommandDefinition\[\] \{[\s\S]*?\n\}\n/,
+      /\n\/\*\*\n \* One entry per AI quick action[\s\S]*?\nfunction buildAiQuickActionSlashCommands[\s\S]*?\n\}\n/,
       '\n',
     );
+    // Same reasoning as above, for the static "ai-assistant" catalog entry (a direct "aiAssistant"
+    // command, rather than the per-quick-action list buildAiQuickActionSlashCommands builds): it
+    // too only applies to the AiAssistantUI plugin this extension doesn't have.
     src = src.replace(
-      '        ...buildAiQuickActionSlashCommands(editor)\n',
+      '        {\n            id: "ai-assistant",\n            title: t("AI assistant"),\n            description: t("Ask AI to rewrite the selection or generate new content."),\n            aliases: [ "ask ai", "assistant" ],\n            icon: aiIcon,\n            willInsert: true,\n            willTransform: true,\n            commandName: "aiAssistant"\n        },\n',
       '',
     );
     if (src !== before) {
@@ -525,11 +574,16 @@ export function applyVendorPatches(vendorDir, logPrefix = '[patch-plugins]') {
     }
   }
 
-  // link_embed_editing.ts's editing downcast paints the card/mention preview through Trilium's
-  // own app-level component (glob.getComponentByEl(editorEl).renderLinkEmbed/renderLinkMention),
-  // which has no equivalent here. Both are pure presentation - they only read the metadata
-  // already stored as element attributes - so they're redirected straight to a local
-  // reimplementation (src/ckeditor/linkEmbedRender.ts) with no host round-trip at all.
+  // Trilium now ships a host-agnostic LinkEmbedHost interface (link_embed_commands.ts's
+  // getLinkEmbedHost()), through the same `linkEmbed` editor-config entry this extension already
+  // wired up for fetchMetadata (triliumTextEditorProvider.ts). isHttpUrl/chooseLinkPreviewKind/
+  // isUrlAloneInBlock/BlockChildLike now resolve from the real vendored @triliumnext/commons too,
+  // so link_embed_commands.ts, link_embed_autodetect.ts and (where it still exists) link_embed_ui.ts
+  // need no patching at all any more - only the presentation half (renderEmbed/renderMention) has
+  // no equivalent here, since this extension has no Preact dependency to run Trilium's own
+  // renderers. Redirected straight to a local reimplementation (src/ckeditor/linkEmbedRender.ts),
+  // same as before, just updated for the new getLinkEmbedHost(editor).renderEmbed/renderMention
+  // call sites (aspectRatio is now part of the metadata object too).
   const linkEmbedEditingPath = path.join(vendorDir, 'ckeditor5', 'src', 'plugins', 'link_embed', 'link_embed_editing.ts');
   if (fs.existsSync(linkEmbedEditingPath)) {
     let src = fs.readFileSync(linkEmbedEditingPath, 'utf8');
@@ -541,95 +595,21 @@ export function applyVendorPatches(vendorDir, logPrefix = '[patch-plugins]') {
     // import. Guarded on the new import's own presence instead, same as insert_date_time.ts above.
     if (!src.includes('linkEmbedRender.js')) {
       src = src.replace(
-        "import { preventCKEditorHandling } from '../widget_utils.js';",
-        "import { preventCKEditorHandling } from '../widget_utils.js';\nimport { renderLinkEmbed, renderLinkMention } from '../../../../../src/ckeditor/linkEmbedRender.js';",
+        "import { preventCKEditorHandling, restoreRendererFocusOnInput } from '../widget_utils.js';",
+        "import { preventCKEditorHandling, restoreRendererFocusOnInput } from '../widget_utils.js';\nimport { renderLinkEmbed, renderLinkMention } from '../../../../../src/ckeditor/linkEmbedRender.js';",
       );
     }
     src = src.replace(
-      "                    const editorEl = editor.editing.view.getDomRoot();\n                    const component = glob.getComponentByEl<EditorComponent>(editorEl);\n                    component.renderLinkEmbed(domElement, { url, embedType, title, description, favicon, siteName, image }, true);",
-      '                    renderLinkEmbed(domElement, { url, embedType, title, description, favicon, siteName, image }, true);',
+      '                    getLinkEmbedHost(editor).renderEmbed(domElement, {\n                        url, embedType, title, description, favicon, siteName, image, aspectRatio\n                    }, true);',
+      '                    renderLinkEmbed(domElement, {\n                        url, embedType, title, description, favicon, siteName, image, aspectRatio\n                    }, true);',
     );
     src = src.replace(
-      "                    const editorEl = editor.editing.view.getDomRoot();\n                    const component = glob.getComponentByEl<EditorComponent>(editorEl);\n                    component.renderLinkMention(domElement, { url, title, favicon }, true);",
+      '                    getLinkEmbedHost(editor).renderMention(domElement, { url, title, favicon }, true);',
       '                    renderLinkMention(domElement, { url, title, favicon }, true);',
     );
     if (src !== before) {
       fs.writeFileSync(linkEmbedEditingPath, src, 'utf8');
       console.log(`${logPrefix} patched ckeditor5/src/plugins/link_embed/link_embed_editing.ts`);
-    }
-  }
-
-  // link_embed_ui.ts's URL field asks Trilium's app-level component
-  // (glob.getComponentByEl(editorEl).detectEmbedType(url)) whether a typed URL has a player
-  // behind it. Pure URL-pattern matching (YouTube vs. everything else) - redirected to the same
-  // local detector as link_embed_commands.ts below, no host round-trip.
-  const linkEmbedUiPath = path.join(vendorDir, 'ckeditor5', 'src', 'plugins', 'link_embed', 'link_embed_ui.ts');
-  if (fs.existsSync(linkEmbedUiPath)) {
-    let src = fs.readFileSync(linkEmbedUiPath, 'utf8');
-    const before = src;
-    src = src.replace(
-      "import { isHttpUrl } from '@triliumnext/commons';",
-      "import { isHttpUrl, detectEmbedType } from '../../../../../src/ckeditor/linkEmbedShared.js';",
-    );
-    src = src.replace(
-      '    const editorEl = editor.editing.view.getDomRoot();\n    const component = glob.getComponentByEl<EditorComponent>(editorEl);\n    return component.detectEmbedType(normalizeUrl(url) ?? url);',
-      '    return detectEmbedType(normalizeUrl(url) ?? url);',
-    );
-    if (src !== before) {
-      fs.writeFileSync(linkEmbedUiPath, src, 'utf8');
-      console.log(`${logPrefix} patched ckeditor5/src/plugins/link_embed/link_embed_ui.ts`);
-    }
-  }
-
-  // link_embed_commands.ts and link_embed_autodetect.ts import isHttpUrl/chooseLinkPreviewKind/
-  // isUrlAloneInBlock/BlockChildLike from @triliumnext/commons, which isn't shipped with this
-  // standalone extension - redirected to the local port (src/ckeditor/linkEmbedShared.ts). Their
-  // detectEmbedType() calls are pure URL matching (see the link_embed_ui.ts patch above) and are
-  // redirected the same way. Their fetchLinkMetadata() calls need the extension host (the actual
-  // network fetch, outside the webview's CSP) - redirected to an editor-config callback (wired in
-  // triliumTextEditorProvider.ts, same shape as markdownImport's/cutToNote's), not to a local
-  // function.
-  const linkEmbedCommandsPath = path.join(vendorDir, 'ckeditor5', 'src', 'plugins', 'link_embed', 'link_embed_commands.ts');
-  if (fs.existsSync(linkEmbedCommandsPath)) {
-    let src = fs.readFileSync(linkEmbedCommandsPath, 'utf8');
-    const before = src;
-    src = src.replace(
-      "import { isHttpUrl } from '@triliumnext/commons';",
-      "import { isHttpUrl, detectEmbedType } from '../../../../../src/ckeditor/linkEmbedShared.js';",
-    );
-    src = src.replace(
-      '        const editorEl = editor.editing.view.getDomRoot();\n        const component = glob.getComponentByEl<EditorComponent>(editorEl);\n\n        const metadata = await component.fetchLinkMetadata(url);',
-      "        const config = editor.config.get('linkEmbed') as { fetchMetadata?: (url: string) => Promise<LinkEmbedMetadata> } | undefined;\n        if (!config?.fetchMetadata) return;\n        const metadata = await config.fetchMetadata(url);",
-    );
-    src = src.replace(
-      '        const editorEl = editor.editing.view.getDomRoot();\n        const component = glob.getComponentByEl<EditorComponent>(editorEl);\n\n        // The linked text is tracked as a live range: the metadata fetch reads the page server-side\n        // and can take seconds, and edits made meanwhile must not shift what gets replaced.\n        const liveRange = ModelLiveRange.fromRange(findAttributeRange(position, \'linkHref\', href, model));\n        const metadata = await component.fetchLinkMetadata(href);',
-      "        const config = editor.config.get('linkEmbed') as { fetchMetadata?: (url: string) => Promise<LinkEmbedMetadata> } | undefined;\n        if (!config?.fetchMetadata) return;\n\n        // The linked text is tracked as a live range: the metadata fetch reads the page host-side\n        // and can take seconds, and edits made meanwhile must not shift what gets replaced.\n        const liveRange = ModelLiveRange.fromRange(findAttributeRange(position, 'linkHref', href, model));\n        const metadata = await config.fetchMetadata(href);",
-    );
-    src = src.replaceAll(
-      '    /** Delegates to the client service to avoid duplicating URL detection logic. */\n    private _detectEmbedType(url: string): string {\n        const editorEl = this.editor.editing.view.getDomRoot();\n        const component = glob.getComponentByEl<EditorComponent>(editorEl);\n        return component.detectEmbedType(url);\n    }',
-      '    private _detectEmbedType(url: string): string {\n        return detectEmbedType(url);\n    }',
-    );
-    if (src !== before) {
-      fs.writeFileSync(linkEmbedCommandsPath, src, 'utf8');
-      console.log(`${logPrefix} patched ckeditor5/src/plugins/link_embed/link_embed_commands.ts`);
-    }
-  }
-
-  const linkEmbedAutodetectPath = path.join(vendorDir, 'ckeditor5', 'src', 'plugins', 'link_embed', 'link_embed_autodetect.ts');
-  if (fs.existsSync(linkEmbedAutodetectPath)) {
-    let src = fs.readFileSync(linkEmbedAutodetectPath, 'utf8');
-    const before = src;
-    src = src.replace(
-      "import { chooseLinkPreviewKind, isUrlAloneInBlock, type BlockChildLike } from '@triliumnext/commons';",
-      "import { chooseLinkPreviewKind, isUrlAloneInBlock, type BlockChildLike } from '../../../../../src/ckeditor/linkEmbedShared.js';",
-    );
-    src = src.replace(
-      "        const editorEl = editor.editing.view.getDomRoot();\n        const component = glob.getComponentByEl<EditorComponent>(editorEl);\n\n        component.fetchLinkMetadata(url).then((metadata: LinkEmbedMetadata) => {",
-      "        const config = editor.config.get('linkEmbed') as { fetchMetadata?: (url: string) => Promise<LinkEmbedMetadata> } | undefined;\n        if (!config?.fetchMetadata) return;\n\n        config.fetchMetadata(url).then((metadata: LinkEmbedMetadata) => {",
-    );
-    if (src !== before) {
-      fs.writeFileSync(linkEmbedAutodetectPath, src, 'utf8');
-      console.log(`${logPrefix} patched ckeditor5/src/plugins/link_embed/link_embed_autodetect.ts`);
     }
   }
 

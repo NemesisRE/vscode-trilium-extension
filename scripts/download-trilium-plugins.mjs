@@ -102,10 +102,13 @@ async function downloadAllPlugins() {
     fs.mkdirSync(VENDOR_DIR, { recursive: true });
   }
 
-  // Clean the consolidated CKEditor package used by current Trilium releases.
-  const targetDir = path.join(VENDOR_DIR, 'ckeditor5');
-  if (fs.existsSync(targetDir)) {
-    fs.rmSync(targetDir, { recursive: true, force: true });
+  // Clean the consolidated CKEditor package used by current Trilium releases,
+  // and the shared commons package the plugins depend on since Trilium v0.107.0.
+  for (const dir of ['ckeditor5', 'commons']) {
+    const targetDir = path.join(VENDOR_DIR, dir);
+    if (fs.existsSync(targetDir)) {
+      fs.rmSync(targetDir, { recursive: true, force: true });
+    }
   }
   for (const plugin of PLUGINS) {
     const legacyTargetDir = path.join(VENDOR_DIR, plugin);
@@ -121,13 +124,22 @@ async function downloadAllPlugins() {
   });
 }
 
+// Packages vendored whole out of the Trilium monorepo tarball, mapped from
+// their monorepo path to the directory name used under vendor/.
+const VENDORED_PACKAGES = {
+  ckeditor5: 'ckeditor5',
+  commons: 'commons',
+};
+
 /**
- * Extract only the plugin directories we need from the tarball stream, while
+ * Extract only the package directories we need from the tarball stream, while
  * verifying the whole tarball's SHA-256 against the locked hash so a
  * compromised/MITM'd download can't silently vendor unexpected code.
  */
 function extractPlugins(stream, resolve, reject) {
-  const repoPrefix = `Trilium-${TRILIUM_REF}/packages/ckeditor5/`;
+  const repoPrefixes = Object.keys(VENDORED_PACKAGES).map(
+    (pkg) => `Trilium-${TRILIUM_REF}/packages/${pkg}/`,
+  );
   const hash = crypto.createHash('sha256');
   let hashDone = false;
   let extractDone = false;
@@ -166,15 +178,15 @@ function extractPlugins(stream, resolve, reject) {
   stream.pipe(tar.extract({
     cwd: VENDOR_DIR,
     filter: (filepath) => {
-      // Current Trilium releases consolidate these plugins in one package.
-      return filepath.startsWith(repoPrefix) && !filepath.endsWith('/tsconfig.json');
+      return repoPrefixes.some((prefix) => filepath.startsWith(prefix)) && !filepath.endsWith('/tsconfig.json');
     },
     // Don't strip - we'll handle the path transformation in onentry
     onentry: (entry) => {
-      // Transform 'Trilium-<ref>/packages/ckeditor5/...' to 'ckeditor5/...'.
+      // Transform 'Trilium-<ref>/packages/<pkg>/...' to '<pkg>/...'.
       const pathParts = entry.path.split('/');
-      if (pathParts.length > 3 && pathParts[0].startsWith('Trilium-') && pathParts[1] === 'packages' && pathParts[2] === 'ckeditor5') {
-        entry.path = ['ckeditor5', ...pathParts.slice(3)].join('/');
+      const pkg = pathParts[2];
+      if (pathParts.length > 3 && pathParts[0].startsWith('Trilium-') && pathParts[1] === 'packages' && VENDORED_PACKAGES[pkg]) {
+        entry.path = [VENDORED_PACKAGES[pkg], ...pathParts.slice(3)].join('/');
       }
     }
   }))

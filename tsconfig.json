@@ -2,8 +2,8 @@
   "compilerOptions": {
     "module": "esnext",
     "moduleResolution": "bundler",
-    "target": "ES2022",
-    "lib": ["ES2022", "DOM"],
+    "target": "ES2023",
+    "lib": ["ES2023", "DOM"],
     "types": ["node", "mocha"],
     "outDir": "out",
     "noEmit": true,
@@ -12,7 +12,10 @@
     "skipLibCheck": true,
     "esModuleInterop": true,
     "resolveJsonModule": true,
-    "declaration": false
+    "declaration": false,
+    "paths": {
+      "@triliumnext/commons": ["./vendor/commons/src/index.ts"]
+    }
   },
   "include": ["src/**/*.ts", "test/**/*.ts"],
   "exclude": ["node_modules", ".vscode-test", "out"]
