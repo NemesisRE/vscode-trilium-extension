@@ -17,6 +17,7 @@ import { AttributesViewProvider } from './attributesViewProvider';
 import { TriliumTextEditorProvider } from './triliumTextEditorProvider';
 import { VirtualDocumentProvider, createVirtualDocumentUri } from './virtualDocumentProvider';
 import { openReorderChildrenPanel } from './reorderChildrenPanel';
+import { openDocNotePanel } from './docNotePanel';
 import { openKanbanViewPanel } from './kanbanViewPanel';
 import { openCalendarViewPanel, getBookViewTypeLabel } from './calendarViewPanel';
 import { RecentNotesProvider } from './recentNotesProvider';
@@ -2176,6 +2177,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
       const { note } = item;
 
+      // doc notes are static, server-authored HTML with no editing affordances
+      // in Trilium's own UI either - render them read-only instead of warning.
+      if (note.type === 'doc') {
+        await openDocNotePanel(client, note);
+        await maybeAutoRevealOpenedNote(note.noteId, treeProvider, treeView);
+        return;
+      }
+
       // book notes with #viewType=board get a native Kanban board instead of
       // the browser fallback below.
       if (note.type === 'book' && getBookViewTypeLabel(note) === 'board') {
@@ -3298,6 +3307,14 @@ async function openNoteInEditor(
   context: vscode.ExtensionContext,
   notePathOrId?: string,
 ): Promise<void> {
+  // doc notes are static, server-authored HTML with no editing affordances
+  // in Trilium's own UI either - render them read-only instead of warning.
+  if (note.type === 'doc') {
+    await openDocNotePanel(client, note);
+    await maybeAutoRevealOpenedNote(note.noteId, treeProvider, treeView);
+    return;
+  }
+
   // book notes with #viewType=board get a native Kanban board instead of
   // the browser fallback below.
   if (note.type === 'book' && getBookViewTypeLabel(note) === 'board') {
