@@ -82,6 +82,9 @@ const ckeditorBuildOptions = {
     '.ttf': 'dataurl',
     '.eot': 'dataurl',
   },
+  alias: {
+    '@triliumnext/commons': path.join(workspaceRoot, 'vendor', 'commons', 'src', 'index.ts'),
+  },
   plugins: [svgRawPlugin],
   treeShaking: true,
 };
