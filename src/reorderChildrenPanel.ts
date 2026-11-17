@@ -162,7 +162,7 @@ export async function openReorderChildrenPanel(
 ): Promise<void> {
   const parent = await client.getNote(source.note.noteId);
   if (parent.childNoteIds.length === 0) {
-    void vscode.window.showInformationMessage(`Trilium: "${parent.title}" has no child notes to reorder.`);
+    void vscode.window.showInformationMessage(vscode.l10n.t('Trilium: "{0}" has no child notes to reorder.', String(parent.title)));
     return;
   }
 
@@ -183,7 +183,7 @@ export async function openReorderChildrenPanel(
 
   const panel = vscode.window.createWebviewPanel(
     'triliumReorderChildren',
-    `Reorder: ${parent.title}`,
+    vscode.l10n.t('Reorder: {0}', parent.title),
     vscode.ViewColumn.Beside,
     { enableScripts: true, retainContextWhenHidden: false },
   );
@@ -202,14 +202,14 @@ export async function openReorderChildrenPanel(
 
     const orderedNoteIds = msg.orderedNoteIds ?? [];
     if (orderedNoteIds.length !== entries.length) {
-      void vscode.window.showErrorMessage('Trilium: Invalid reorder payload.');
+      void vscode.window.showErrorMessage(vscode.l10n.t('Trilium: Invalid reorder payload.'));
       return;
     }
 
     const expected = new Set(entries.map((e) => e.noteId));
     const actual = new Set(orderedNoteIds);
     if (expected.size !== actual.size || Array.from(expected).some((id) => !actual.has(id))) {
-      void vscode.window.showErrorMessage('Trilium: Invalid reorder selection.');
+      void vscode.window.showErrorMessage(vscode.l10n.t('Trilium: Invalid reorder selection.'));
       return;
     }
 
@@ -225,9 +225,9 @@ export async function openReorderChildrenPanel(
       await client.refreshNoteOrdering(parent.noteId);
       onApplied();
       panel.dispose();
-      void vscode.window.showInformationMessage(`Trilium: Saved child order for "${parent.title}".`);
+      void vscode.window.showInformationMessage(vscode.l10n.t('Trilium: Saved child order for "{0}".', String(parent.title)));
     } catch (err) {
-      void vscode.window.showErrorMessage(`Trilium: Failed to save child order: ${err}`);
+      void vscode.window.showErrorMessage(vscode.l10n.t('Trilium: Failed to save child order: {0}', String(err)));
     }
   });
 

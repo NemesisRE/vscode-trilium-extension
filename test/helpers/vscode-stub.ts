@@ -155,3 +155,8 @@ export enum ConfigurationTarget {
   Workspace = 2,
   WorkspaceFolder = 3,
 }
+
+export const l10n = {
+  t: (message: string, ...args: Array<string | number | boolean>): string =>
+    message.replace(/\{(\d+)\}/g, (_match, index: string) => String(args[Number(index)] ?? '')),
+};
