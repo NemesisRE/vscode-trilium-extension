@@ -13,7 +13,8 @@
     },
     {
       "groupName": "vscode",
-      "matchPackageNames": ["@types/vscode", "@vscode/**"]
+      "matchPackageNames": ["@types/vscode", "@vscode/**"],
+      "rangeStrategy": "bump"
     },
     {
       "description": "Prefer release-based updates for GitHub Actions; skip digest-only PRs for actions whose pinned tag commit moved without a new release.",
