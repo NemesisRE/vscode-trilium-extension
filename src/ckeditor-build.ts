@@ -87,8 +87,16 @@ import Collapsible from '../vendor/ckeditor5/src/plugins/collapsible/collapsible
 import InlineIcon from '../vendor/ckeditor5/src/plugins/inline_icon/inline_icon';
 import FileAttachmentLink from './ckeditor/fileAttachmentLink';
 import InternalLink from './ckeditor/internalLink';
-import IncludeNote from '../vendor/ckeditor5/src/plugins/includenote';
-import IncludeNoteToolbar from '../vendor/ckeditor5/src/plugins/include_note_toolbar';
+import ContentEmbed from '../vendor/ckeditor5/src/plugins/content_embed/content_embed';
+import ContentEmbedToolbar from '../vendor/ckeditor5/src/plugins/content_embed/content_embed_toolbar';
+import ContentEmbedCaret from '../vendor/ckeditor5/src/plugins/content_embed/content_embed_caret';
+export {
+  insertContentEmbedForNote,
+  setContentEmbedCollapsed,
+  sanitizeEmbedHtml,
+  renderUnknownEmbed,
+  renderMediaEmbed,
+} from './ckeditor/contentEmbedHost';
 import { SyntaxHighlighting } from './ckeditor/syntaxHighlighting';
 import { getHighlightJs, mapCodeBlockLanguage } from './ckeditor/highlightSupport';
 import TodoListMultistate from '../vendor/ckeditor5/src/plugins/todo_list_multistate/todo_list_multistate';
@@ -125,6 +133,7 @@ import TriliumEmojiMention from '../vendor/ckeditor5/src/plugins/mention/emoji_m
 import TriliumMentionUI from '../vendor/ckeditor5/src/plugins/mention/trilium_mention_ui';
 import TriliumSlashCommands from '../vendor/ckeditor5/src/plugins/mention/slash_commands';
 import LinkEmbedToolbar from '../vendor/ckeditor5/src/plugins/link_embed/link_embed_toolbar';
+import LinkEmbedUnlinkButton from './ckeditor/linkEmbedUnlink';
 import { mediaEmbedProviders } from './ckeditor/mediaEmbedFacade';
 import MediaEmbedFacadeClickHandling from './ckeditor/mediaEmbedFacadeClick';
 import emojiDefinitions from '../vendor/ckeditor5/src/emoji_definitions/en.json';
@@ -138,7 +147,6 @@ import '../vendor/ckeditor5/src/theme/math_form.css';
 // positioning, font-face declarations) - never wired up before, which is why
 // rendered equations came out unstyled/overflowing rather than typeset math.
 import 'katex/dist/katex.css';
-import '../vendor/ckeditor5/src/theme/mermaid.css';
 import '../vendor/ckeditor5/src/theme/collapsible.css';
 import './ckeditor/trilium-parity.css';
 import 'mathlive/fonts.css';
@@ -254,6 +262,7 @@ export class TriliumEditor extends ClassicEditor {
     CopyLinkUrlButton,
     CopyAnchorLinkButton,
     LinkEmbedToolbar,
+    LinkEmbedUnlinkButton,
 
     // Special characters & emoji
     SpecialCharacters,
@@ -283,8 +292,9 @@ export class TriliumEditor extends ClassicEditor {
     Mermaid,
     InlineIcon,
     InternalLink,
-    IncludeNote,
-    IncludeNoteToolbar,
+    ContentEmbed,
+    ContentEmbedToolbar,
+    ContentEmbedCaret,
 
     // Text snippets ("Templates"): a searchable dropdown of reusable text sourced from the
     // user's own #snippet/#textSnippet notes.
@@ -345,7 +355,7 @@ export class TriliumEditor extends ClassicEditor {
           label: 'Insert',
           icon: 'plus',
           items: [
-            'link', 'internalLink', 'includeNote', 'bookmark', '|',
+            'link', 'internalLink', 'contentEmbed', 'bookmark', '|',
             'collapsible', 'math', 'mermaid', 'horizontalLine', 'pageBreak', '|',
             'dateTime', 'specialCharacters', 'emoji', 'insertIcon', 'insertTemplate',
           ],
@@ -470,7 +480,7 @@ export async function loadMermaid() {
   return mermaid.default;
 }
 
-// Used by the IncludeNote preview renderer (wired in triliumTextEditorProvider.ts) to
+// Used by the ContentEmbed note preview renderer (wired in triliumTextEditorProvider.ts) to
 // highlight an included code note's content with the same highlight.js pipeline the editor's
 // own code blocks use (see syntaxHighlighting.ts). Only this bundle has highlight.js loaded -
 // the webview's own inline script can't import it directly (see the note by ckeditorUri's

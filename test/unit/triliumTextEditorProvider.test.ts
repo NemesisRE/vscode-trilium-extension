@@ -237,7 +237,7 @@ describe('TriliumTextEditorProvider', () => {
   });
 });
 
-describe('TriliumTextEditorProvider.fetchIncludedNotePreview (IncludeNote)', () => {
+describe('TriliumTextEditorProvider.fetchIncludedNotePreview (ContentEmbed note preview)', () => {
   it('returns an error result when not connected', async () => {
     const provider = createProvider(undefined as unknown as EtapiClient);
 

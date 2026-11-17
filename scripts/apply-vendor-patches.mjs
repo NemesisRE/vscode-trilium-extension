@@ -350,38 +350,6 @@ export function applyVendorPatches(vendorDir, logPrefix = '[patch-plugins]') {
     }
   }
 
-  // includenote.ts has three app-level dependencies with no equivalent here: the insert
-  // command opens Trilium's own note-picker dialog via glob.getComponentByEl(editorEl)
-  // .triggerCommand('addIncludeNoteToText'), and both the initial render and the box-size-
-  // change reload call component.loadIncludedNote(noteId, $(domElement), boxSize) - Trilium's
-  // own recursive note-type renderer. Redirect the insert command to a pickNote() config
-  // callback (same debounced-search QuickPick as internalLink.ts) that inserts the
-  // includeNote widget directly via model.insertObject() (same API inline_icon_editing.ts
-  // already uses for its own object-widget insert), and redirect both render call sites to a
-  // renderNote() config callback (wired in triliumTextEditorProvider.ts to an ETAPI
-  // getNote()/getNoteContent() fetch plus a per-note-type preview renderer).
-  const includeNotePath = path.join(vendorDir, 'ckeditor5', 'src', 'plugins', 'includenote.ts');
-  if (fs.existsSync(includeNotePath)) {
-    let src = fs.readFileSync(includeNotePath, 'utf8');
-    const before = src;
-    src = src.replace(
-      '\toverride execute() {\n\t\tconst editorEl = this.editor.editing.view.getDomRoot();\n\t\tconst component = glob.getComponentByEl(editorEl);\n\n\t\tcomponent.triggerCommand(\'addIncludeNoteToText\');\n\t}',
-      '\toverride execute() {\n\t\tconst editor = this.editor;\n\t\tconst config = editor.config.get( \'includeNote\' ) as { pickNote?: () => Promise<{ noteId: string } | undefined> } | undefined;\n\n\t\tif ( !config?.pickNote ) {\n\t\t\treturn;\n\t\t}\n\n\t\tvoid config.pickNote().then( picked => {\n\t\t\tif ( !picked ) {\n\t\t\t\treturn;\n\t\t\t}\n\n\t\t\teditor.model.change( writer => {\n\t\t\t\tconst includeNoteElement = writer.createElement( \'includeNote\', { noteId: picked.noteId, boxSize: \'medium\' } );\n\t\t\t\teditor.model.insertObject( includeNoteElement, null, null, { setSelection: \'after\' } );\n\t\t\t} );\n\t\t} );\n\t}',
-    );
-    src = src.replace(
-      '\t\t\t\t\tconst editorEl = editor.editing.view.getDomRoot();\n\t\t\t\t\tconst component = glob.getComponentByEl<EditorComponent>( editorEl );\n\n\t\t\t\t\tcomponent.loadIncludedNote( noteId, $( domElement ), boxSize );',
-      '\t\t\t\t\tconst renderNote = ( editor.config.get( \'includeNote\' ) as { renderNote?: ( noteId: string, domElement: HTMLElement, boxSize: string | undefined ) => void } | undefined )?.renderNote;\n\t\t\t\t\trenderNote?.( noteId, domElement, boxSize );',
-    );
-    src = src.replace(
-      '\tif ( wrapperDom && noteId ) {\n\t\tconst component = glob.getComponentByEl<EditorComponent>( editor.editing.view.getDomRoot() );\n\t\tcomponent.loadIncludedNote( noteId, $( wrapperDom ), boxSize );\n\t}',
-      '\tif ( wrapperDom && noteId ) {\n\t\tconst renderNote = ( editor.config.get( \'includeNote\' ) as { renderNote?: ( noteId: string, domElement: HTMLElement, boxSize: string | undefined ) => void } | undefined )?.renderNote;\n\t\trenderNote?.( noteId, wrapperDom, boxSize );\n\t}',
-    );
-    if (src !== before) {
-      fs.writeFileSync(includeNotePath, src, 'utf8');
-      console.log(`${logPrefix} patched ckeditor5/src/plugins/includenote.ts`);
-    }
-  }
-
   // copy_anchor_link.ts's "Copy anchor reference link" button (on the bookmark widget's
   // balloon toolbar) resolves the current note through glob.getActiveContextNote() and the
   // link's display title through glob.getReferenceLinkTitleSync() - both app-level lookups
@@ -503,16 +471,41 @@ export function applyVendorPatches(vendorDir, logPrefix = '[patch-plugins]') {
     }
   }
 
+  // link_embed_toolbar.ts (v0.107.0+) requires upstream's InternalLinkPlugin - which pulls in the
+  // unported internallink.ts/referencelink.ts and registers a second `reference` schema item next
+  // to this extension's own local ReferenceLink, aborting editor startup - and lists the
+  // `editLink`/`linkMenu` items that plugin and link_menu.ts provide (an app-level link dialog and
+  // a host-drawn "More actions" menu, neither of which exists here). Redirect the plugin to this
+  // extension's local InternalLink (same as the slash-commands patch below) and swap those two
+  // items for a local Unlink button (src/ckeditor/linkEmbedUnlink.ts).
+  const linkEmbedToolbarPath = path.join(vendorDir, 'ckeditor5', 'src', 'plugins', 'link_embed', 'link_embed_toolbar.ts');
+  if (fs.existsSync(linkEmbedToolbarPath)) {
+    let src = fs.readFileSync(linkEmbedToolbarPath, 'utf8');
+    const before = src;
+    src = src.replace(
+      'import InternalLinkPlugin from "../internallink.js";',
+      'import InternalLinkPlugin from "../../../../../src/ckeditor/internalLink.js";',
+    );
+    src = src.replace(
+      '"linkEmbedLink", "linkEmbedCopyUrl", "editLink", "|",\n                "linkEmbedDisplayDropdown", "linkMenu"',
+      '"linkEmbedLink", "linkEmbedCopyUrl", "linkEmbedUnlink", "|",\n                "linkEmbedDisplayDropdown"',
+    );
+    if (src !== before) {
+      fs.writeFileSync(linkEmbedToolbarPath, src, 'utf8');
+      console.log(`${logPrefix} patched ckeditor5/src/plugins/link_embed/link_embed_toolbar.ts`);
+    }
+  }
+
   // slash_commands.ts's catalog pulls in two entries this standalone extension can't build as
   // vendored: the "icon" and "internal-link" entries import their commands from the vendor's
   // own unported inline_icon_ui.ts/internallink.ts (both still full of
   // glob.getComponentByEl()/EditorComponent/jQuery references - this extension never uses
   // those originals, see the inline_icon.ts patch above). Redirect both to this extension's
   // own local reimplementations (src/ckeditor/inlineIconUi.ts, src/ckeditor/internalLink.ts -
-  // same command name, 'insertInternalLink'). The "include-note" entry needs no redirect: it
-  // imports includenote.ts, which is patch-free to import from now that Tier 3c ported it
-  // (see the includenote.ts patch above) - COMMAND_NAME there still resolves to the same
-  // 'insertIncludeNote' string, so the catalog entry works unchanged.
+  // same command name, 'insertInternalLink'). The "content-embed" entry needs no redirect: it
+  // imports content_embed.ts, which is patch-free - Trilium's ContentEmbed plugin takes its
+  // app-level dependencies (note picker, rendering) from the `contentEmbed` editor config, which
+  // the webview script wires up.
   const slashCommandsPath = path.join(vendorDir, 'ckeditor5', 'src', 'plugins', 'mention', 'slash_commands.ts');
   if (fs.existsSync(slashCommandsPath)) {
     let src = fs.readFileSync(slashCommandsPath, 'utf8');

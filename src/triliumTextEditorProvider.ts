@@ -1665,7 +1665,10 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
     <div id="editor-container"></div>
 
     <script type="module" nonce="${nonce}">
-      import { TriliumEditor, loadKatex, loadMermaid, highlightCodeForIncludedNote } from '${ckeditorUri}';
+      import {
+        TriliumEditor, loadKatex, loadMermaid, highlightCodeForIncludedNote,
+        insertContentEmbedForNote, setContentEmbedCollapsed, sanitizeEmbedHtml, renderUnknownEmbed, renderMediaEmbed,
+      } from '${ckeditorUri}';
 
       (function() {
         const vscode = acquireVsCodeApi();
@@ -1760,21 +1763,20 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
           diff: 'text-x-diff',
         };
 
-        // IncludeNote plugin: requests a preview from the extension host (see the
-        // 'renderIncludedNote' message handler and fetchIncludedNotePreview() in
-        // triliumTextEditorProvider.ts) and renders the widget's content once it arrives -
-        // see the 'renderIncludedNoteResult' case below. boxSize only affects the CSS sizing
-        // CKEditor already applies to the enclosing <section> (see includenote.ts), so it
-        // isn't needed here.
-        function renderIncludedNote(noteId, domElement, _boxSize) {
+        // ContentEmbed plugin (formerly IncludeNote): requests a preview from the extension host
+        // (see the 'renderIncludedNote' message handler and fetchIncludedNotePreview() in
+        // triliumTextEditorProvider.ts) and renders the widget's content once it arrives - see the
+        // 'renderIncludedNoteResult' case below. The box size decides what is drawn: a Compact
+        // embed shows its title row only, an Expandable one starts collapsed to it.
+        function renderIncludedNote(noteId, domElement, boxSize) {
           const id = Math.random().toString(36).slice(2);
-          pendingIncludeNoteRenders.set(id, { domElement, noteId });
+          pendingIncludeNoteRenders.set(id, { domElement, noteId, boxSize });
           domElement.textContent = '';
           domElement.classList.add('include-note-loading');
           vscode.postMessage({ type: 'renderIncludedNote', id, noteId });
         }
 
-        async function applyIncludedNotePreview(domElement, noteId, preview) {
+        async function applyIncludedNotePreview(domElement, noteId, preview, boxSize) {
           domElement.classList.remove('include-note-loading');
           domElement.textContent = '';
 
@@ -1790,6 +1792,31 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
           body.className = 'include-note-content';
 
           domElement.appendChild(header);
+
+          if (boxSize === 'compact') {
+            return;
+          }
+          if (boxSize === 'expandable') {
+            const toggle = document.createElement('button');
+            toggle.type = 'button';
+            toggle.className = 'include-note-toggle';
+            let collapsed = true;
+            const sync = () => {
+              toggle.textContent = collapsed ? '\u25B8' : '\u25BE';
+              toggle.title = collapsed ? 'Expand' : 'Collapse';
+              body.hidden = collapsed;
+              if (editor) {
+                setContentEmbedCollapsed(editor, domElement, collapsed);
+              }
+            };
+            toggle.addEventListener('click', () => {
+              collapsed = !collapsed;
+              sync();
+            });
+            header.prepend(toggle);
+            sync();
+          }
+
           domElement.appendChild(body);
 
           const renderFallbackLink = () => {
@@ -2011,7 +2038,7 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
                   label: 'Insert',
                   icon: 'plus',
                   items: [
-                    'link', 'internalLink', 'includeNote', 'bookmark', 'linkEmbed', '|',
+                    'link', 'internalLink', 'contentEmbed', 'bookmark', 'linkEmbed', '|',
                     'collapsible', 'math', 'mermaid', 'horizontalLine', 'pageBreak', '|',
                     'dateTime', 'specialCharacters', 'emoji', 'insertIcon', 'insertTemplate',
                   ],
@@ -2263,19 +2290,51 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
                 vscode.postMessage({ type: 'openExternalLink', url });
               },
             },
-            // IncludeNote plugin: the note picker reuses the same QuickPick as internalLink
-            // (see showNotePickerQuickPick in triliumTextEditorProvider.ts), and the preview
-            // itself is rendered here from an extension-host fetch - see renderIncludedNote()
-            // below and includenote.ts's vendor patch.
-            includeNote: {
-              pickNote: () => new Promise((resolve) => {
+            // ContentEmbed plugin (formerly IncludeNote): the note picker reuses the same
+            // QuickPick as internalLink (see showNotePickerQuickPick in
+            // triliumTextEditorProvider.ts), and what an embed shows is rendered here from an
+            // extension-host fetch - see renderIncludedNote() above. Callbacks this extension
+            // has no equivalent for (inline diagram sources, the canvas tools, caret handoff into
+            // a nested editor, ...) are simply left out: every one is optional in the plugin.
+            contentEmbed: {
+              // Shows the picker outside the editor (a QuickPick), so the balloon the plugin
+              // opens for it stays empty and closes again - see ContentEmbed.showDialog().
+              pickNote: (request) => {
                 const id = Math.random().toString(36).slice(2);
-                pendingNotePicks.set(id, (note) => resolve(note ? { noteId: note.href.replace(/^#/, '') } : undefined));
+                pendingNotePicks.set(id, (note) => {
+                  request.close();
+                  if (note) {
+                    insertContentEmbedForNote(editor, note.href.replace(/^#/, ''));
+                  }
+                });
                 vscode.postMessage({ type: 'showNotePicker', id, title: 'Insert Included Note' });
-              }),
-              renderNote: (noteId, domElement, boxSize) => {
-                renderIncludedNote(noteId, domElement, boxSize);
+                return null;
               },
+              inlineLanguages: [],
+              loadNote: (noteId, wrapper, boxSize) => {
+                renderIncludedNote(noteId, wrapper, boxSize);
+              },
+              loadAttachment: (attachmentId, wrapper) => {
+                wrapper.textContent = '';
+                const link = document.createElement('a');
+                link.href = '#';
+                link.className = 'include-note-fallback-link';
+                link.textContent = 'Open attachment';
+                link.addEventListener('click', (evt) => {
+                  evt.preventDefault();
+                  vscode.postMessage({ type: 'openAttachment', attachmentId, filename: '' });
+                });
+                wrapper.appendChild(link);
+              },
+              loadMedia: (preview, wrapper, boxSize) => {
+                renderMediaEmbed(preview, wrapper, boxSize, (url) => {
+                  vscode.postMessage({ type: 'openExternalLink', url });
+                });
+              },
+              loadUnknown: (wrapper) => {
+                renderUnknownEmbed(wrapper);
+              },
+              sanitizeHtml: (html) => sanitizeEmbedHtml(html),
             },
             // Text snippets: the initial list fetched from #snippet/#textSnippet notes when this
             // editor opened (see loadSnippetDefinitions). Each definition's data field is the
@@ -2582,7 +2641,7 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
               const pending = pendingIncludeNoteRenders.get(message.id);
               pendingIncludeNoteRenders.delete(message.id);
               if (pending) {
-                void applyIncludedNotePreview(pending.domElement, pending.noteId, message.preview);
+                void applyIncludedNotePreview(pending.domElement, pending.noteId, message.preview, pending.boxSize);
               }
               break;
             }

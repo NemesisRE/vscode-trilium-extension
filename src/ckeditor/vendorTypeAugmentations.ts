@@ -22,6 +22,41 @@ declare global {
      * becoming a preview that shows less than the URL itself did. */
     unresolved?: boolean;
   }
+
+  /** A button that the content of an embed adds to the toolbar of the embed. */
+  interface ContentEmbedTool {
+    id: string;
+    label: string;
+    text?: string;
+    icon?: string;
+    isOn?: boolean;
+    isEnabled?: boolean;
+    group?: string;
+    keystroke?: string;
+    children?: ContentEmbedTool[];
+    opensMenu?: boolean;
+    class?: string;
+  }
+
+  /** An item of the embed toolbar that the content of an embed can hide. */
+  type ContentEmbedToolbarItem =
+    'contentEmbedBoxSizeDropdown' | 'contentEmbedPositionDropdown' | 'toggleContentEmbedEditable';
+
+  /** The buttons that the content of an embed, such as a canvas drawing, adds to its toolbar.
+   * content_embed.ts's `ContentEmbedHost.getTools()` returns one (or `null`). */
+  interface ContentEmbedToolProvider {
+    getTools(): ContentEmbedTool[];
+    execute(id: string): void;
+    openMenu?(id: string, anchor: HTMLElement): void;
+    subscribe(callback: () => void): () => void;
+    toolbarTitle?: string;
+    hiddenToolbarItems?: readonly ContentEmbedToolbarItem[];
+    hiddenToolbarItemsWhileEditable?: readonly ContentEmbedToolbarItem[];
+    boxSizeIcon?: string;
+    hasEditableFlag?: boolean;
+    hasDisplayModes?: boolean;
+    hasPositions?: boolean;
+  }
 }
 
 declare module 'ckeditor5' {
