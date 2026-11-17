@@ -400,6 +400,17 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
           });
           break;
         }
+        case 'editLinkTitle': {
+          const { id: titleId, title: currentTitle } = message as { type: string; id: string; title?: string };
+          void vscode.window.showInputBox({
+            title: 'Edit link preview title',
+            value: currentTitle ?? '',
+            prompt: 'Leave empty to use the page title.',
+          }).then(title => {
+            void webviewPanel.webview.postMessage({ type: 'linkTitleResult', id: titleId, title });
+          });
+          break;
+        }
         case 'showNotePicker': {
           const { id: notePickId, title: notePickTitle } = message as { type: string; id: string; title?: string };
           void this.showNotePickerQuickPick(notePickTitle).then(note => {
@@ -1692,6 +1703,7 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
         const pendingMarkdownImportRequests = new Map();
         const pendingLinkMetadataRequests = new Map();
         const pendingIncludeNoteRenders = new Map();
+        const pendingLinkTitleEdits = new Map();
 
         const triliumToLocalLanguageMap = {
           'text-plain': 'plaintext',
@@ -2296,6 +2308,13 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
             // extension-host fetch - see renderIncludedNote() above. Callbacks this extension
             // has no equivalent for (inline diagram sources, the canvas tools, caret handoff into
             // a nested editor, ...) are simply left out: every one is optional in the plugin.
+            linkEmbedTitle: {
+              edit: (currentTitle) => new Promise((resolve) => {
+                const id = Math.random().toString(36).slice(2);
+                pendingLinkTitleEdits.set(id, resolve);
+                vscode.postMessage({ type: 'editLinkTitle', id, title: currentTitle });
+              }),
+            },
             contentEmbed: {
               // Shows the picker outside the editor (a QuickPick), so the balloon the plugin
               // opens for it stays empty and closes again - see ContentEmbed.showDialog().
@@ -2572,6 +2591,12 @@ export class TriliumTextEditorProvider implements vscode.CustomEditorProvider<Tr
               const resolve = pendingIconPicks.get(message.id);
               pendingIconPicks.delete(message.id);
               resolve?.(message.iconClass);
+              break;
+            }
+            case 'linkTitleResult': {
+              const resolve = pendingLinkTitleEdits.get(message.id);
+              pendingLinkTitleEdits.delete(message.id);
+              resolve?.(message.title);
               break;
             }
             case 'notePickerResult': {

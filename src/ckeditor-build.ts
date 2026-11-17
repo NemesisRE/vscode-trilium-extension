@@ -134,6 +134,7 @@ import TriliumMentionUI from '../vendor/ckeditor5/src/plugins/mention/trilium_me
 import TriliumSlashCommands from '../vendor/ckeditor5/src/plugins/mention/slash_commands';
 import LinkEmbedToolbar from '../vendor/ckeditor5/src/plugins/link_embed/link_embed_toolbar';
 import LinkEmbedUnlinkButton from './ckeditor/linkEmbedUnlink';
+import LinkEmbedEditTitleButton from './ckeditor/linkEmbedEditTitle';
 import { mediaEmbedProviders } from './ckeditor/mediaEmbedFacade';
 import MediaEmbedFacadeClickHandling from './ckeditor/mediaEmbedFacadeClick';
 import emojiDefinitions from '../vendor/ckeditor5/src/emoji_definitions/en.json';
@@ -263,6 +264,7 @@ export class TriliumEditor extends ClassicEditor {
     CopyAnchorLinkButton,
     LinkEmbedToolbar,
     LinkEmbedUnlinkButton,
+    LinkEmbedEditTitleButton,
 
     // Special characters & emoji
     SpecialCharacters,

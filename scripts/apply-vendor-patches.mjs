@@ -477,7 +477,7 @@ export function applyVendorPatches(vendorDir, logPrefix = '[patch-plugins]') {
   // `editLink`/`linkMenu` items that plugin and link_menu.ts provide (an app-level link dialog and
   // a host-drawn "More actions" menu, neither of which exists here). Redirect the plugin to this
   // extension's local InternalLink (same as the slash-commands patch below) and swap those two
-  // items for a local Unlink button (src/ckeditor/linkEmbedUnlink.ts).
+  // items for local Edit title and Unlink buttons (src/ckeditor/linkEmbedEditTitle.ts, linkEmbedUnlink.ts).
   const linkEmbedToolbarPath = path.join(vendorDir, 'ckeditor5', 'src', 'plugins', 'link_embed', 'link_embed_toolbar.ts');
   if (fs.existsSync(linkEmbedToolbarPath)) {
     let src = fs.readFileSync(linkEmbedToolbarPath, 'utf8');
@@ -488,7 +488,7 @@ export function applyVendorPatches(vendorDir, logPrefix = '[patch-plugins]') {
     );
     src = src.replace(
       '"linkEmbedLink", "linkEmbedCopyUrl", "editLink", "|",\n                "linkEmbedDisplayDropdown", "linkMenu"',
-      '"linkEmbedLink", "linkEmbedCopyUrl", "linkEmbedUnlink", "|",\n                "linkEmbedDisplayDropdown"',
+      '"linkEmbedLink", "linkEmbedCopyUrl", "linkEmbedEditTitle", "linkEmbedUnlink", "|",\n                "linkEmbedDisplayDropdown"',
     );
     if (src !== before) {
       fs.writeFileSync(linkEmbedToolbarPath, src, 'utf8');
