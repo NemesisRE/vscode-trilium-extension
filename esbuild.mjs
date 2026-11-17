@@ -72,7 +72,7 @@ const ckeditorBuildOptions = {
   platform: 'browser',
   sourcemap: !production,
   minify: production,
-  target: ['es2020'],
+  target: ['es2023'],
   logLevel: 'info',
   loader: {
     '.svg': 'text',
@@ -102,7 +102,7 @@ const webviewBuildOptions = {
   conditions: ['production'],
   sourcemap: false,
   minify: production,
-  target: ['es2020'],
+  target: ['es2023'],
   logLevel: 'info',
   loader: {
     '.css': 'css',
